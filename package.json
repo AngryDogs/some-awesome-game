@@ -1,0 +1,13 @@
+{
+  "name": "some-awesome-game",
+  "version": "0.0.1",
+  "scripts": {
+    "babel": "babel --presets es2015 js/main.js -o build/main.bundle.js",
+    "start": "http-server",
+    "webpack": "webpack"
+  },
+  "dependencies": {
+    "babel-loader": "^7.1.2",
+    "webpack": "^3.8.1"
+  }
+}
