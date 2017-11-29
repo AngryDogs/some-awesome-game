@@ -3,11 +3,15 @@
   "version": "0.0.1",
   "scripts": {
     "babel": "babel --presets es2015 js/main.js -o build/main.bundle.js",
-    "start": "http-server",
-    "webpack": "webpack"
+    "start": "webpack-dev-server --hot",
+    "build": "webpack --progress --color"
   },
   "dependencies": {
+    "babel-core": "^6.26.0",
     "babel-loader": "^7.1.2",
-    "webpack": "^3.8.1"
+    "css-loader": "^0.28.7",
+    "style-loader": "^0.19.0",
+    "webpack": "^3.8.1",
+    "webpack-dev-server": "^2.9.5"
   }
 }
