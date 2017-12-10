@@ -13,41 +13,43 @@ class Ship {
         this.context = this.canvas.getContext('2d');
         this.moveSpeed = 0;
         this.rotationSpeed = 0;
+        this.crossSpeed = 0;
         this.init();
     }
 
     init() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+
         loadArrowKeyHandler(this);
         this.render();
     }
 
-    setMovementParameters(moveSpeed, rotationSpeed, useTrajectory) {
+    setMovementParameters(moveSpeed, rotationSpeed, crossSpeed) {
         this.moveSpeed = moveSpeed;
         this.rotationSpeed = rotationSpeed;
-
-        if(useTrajectory) this.trajectory();
+        this.crossSpeed = crossSpeed;
         this.move();
         this.rotate();
 
     }
 
-    trajectory() {
-        const { angle, moveSpeed } = this;
-
-        if(angle < this.movementAngle) {
-            this.movementAngle -= 1;
-        }
-
-        if(angle > this.movementAngle) {
-            this.movementAngle += 1;
-        }
-    }
-
     move() {
-        const { angle, positionX, positionY, moveSpeed, movementAngle } = this;
+        const { angle, positionX, positionY, moveSpeed, movementAngle, crossSpeed } = this;
 
-        this.positionX = Math.cos((movementAngle) * Math.PI / 180) * moveSpeed + positionX;
-        this.positionY = Math.sin((movementAngle) * Math.PI / 180) * moveSpeed + positionY;
+        const positionXWithAngle = Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX;
+        const positionYWithAngle = Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY;
+
+        let crossAngle = 0;
+
+        if(crossSpeed > 0) crossAngle = angle - 90;
+        if(crossSpeed < 0) crossAngle = angle - 90;
+
+        const positionXWithCrossAngle = Math.cos((crossAngle) * Math.PI / 180) * crossSpeed + positionX;
+        const positionYWithCrossAngle = Math.sin((crossAngle) * Math.PI / 180) * crossSpeed + positionY;
+        
+        this.positionX = (positionXWithAngle + positionXWithCrossAngle) / 2;
+        this.positionY = (positionYWithAngle + positionYWithCrossAngle) / 2;
 
         this.render();
     }

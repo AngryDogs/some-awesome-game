@@ -1,14 +1,15 @@
-let ROTATION_STEP = 1;
-let MOVE_STEP = 1;
+const ROTATION_STEP = 0.05;
+const MOVE_STEP = 0.05;
+const CROSS_SPEED_STEP = 0.05;
+
 let longPress = false;
-let lastPressedKey = undefined;
-let useTrajectory = false;
 
 let MOVE_SPEED = 0;
 let ROTATION_SPEED = 0;
+let CROSS_SPEED = 0;
 
 const keyPressStorage = {};
-const allowedKeys = ['w', 'a', 's', 'd'];
+const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e'];
 
 const isAnyKeysDown = () => {
   return Object.keys(keyPressStorage).find((key) => {
@@ -17,28 +18,14 @@ const isAnyKeysDown = () => {
 };
 
 const makeKeyPressActions = (ship) => {
-  const { angle, movementAngle } = ship
-  let direction = movementAngle - angle + 180;
+  if(keyPressStorage['w'] && MOVE_SPEED <= 1) MOVE_SPEED += MOVE_STEP;
+  if(keyPressStorage['s'] && MOVE_SPEED >= -1) MOVE_SPEED -= MOVE_STEP;
 
-  if(keyPressStorage['w'] && MOVE_SPEED <= 1) {
-    if(direction <= 90 && direction >= -90) {
-      MOVE_SPEED -= 0.005;
-    } else {
-      MOVE_SPEED += 0.005;
-    }
-    useTrajectory = true;
-  }
+  if(keyPressStorage['d'] && ROTATION_SPEED <= 1) ROTATION_SPEED += ROTATION_STEP;
+  if(keyPressStorage['a'] && ROTATION_SPEED >= -1) ROTATION_SPEED -= ROTATION_STEP;
 
-  if(keyPressStorage['s'] && MOVE_SPEED >= -1) {
-    if(direction <= 90 && direction >= -90) {
-      MOVE_SPEED += 0.005;
-    } else {
-      MOVE_SPEED -= 0.005;
-    }
-    useTrajectory = true;
-  };
-  if(keyPressStorage['d'] && ROTATION_SPEED <= 1) ROTATION_SPEED += 0.005;
-  if(keyPressStorage['a'] && ROTATION_SPEED >= -1) ROTATION_SPEED -= 0.005;
+  if(keyPressStorage['q'] && CROSS_SPEED <= 1) CROSS_SPEED += CROSS_SPEED_STEP;
+  if(keyPressStorage['e'] && CROSS_SPEED >= -1) CROSS_SPEED -= CROSS_SPEED_STEP;
 }
 
 const loadArrowKeyHandler = (ship) => {
@@ -51,8 +38,6 @@ const loadArrowKeyHandler = (ship) => {
     window.addEventListener("keyup", function (event) {
       if(allowedKeys.includes(event.key)) {
         keyPressStorage[event.key] = false;
-
-        if(event.key === 'w' || event.key === 's') useTrajectory = false;
       }
     });
 
@@ -60,8 +45,8 @@ const loadArrowKeyHandler = (ship) => {
       if(isAnyKeysDown()) {
         makeKeyPressActions(ship);
       }
-      ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, useTrajectory);
-    }, 3);
+      ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
+    }, 16.7);
 };
 
 export default loadArrowKeyHandler;
