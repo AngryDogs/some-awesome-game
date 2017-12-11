@@ -10,7 +10,7 @@ class RockParticle {
         this.context = this.canvas.getContext('2d');
         this.moveSpeed = Math.floor((Math.random() * 2) + 1);
         this.gameboard = document.getElementById("gameboard");
-        this.lifeCycle = Math.floor((Math.random() * 100) + 30);
+        this.lifeCycle = Math.floor((Math.random() * 50) + 30);
         this.rock = rock;
 
         this.init();

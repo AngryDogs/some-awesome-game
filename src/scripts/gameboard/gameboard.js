@@ -5,7 +5,7 @@ let repeater;
 let ship = new Ship();
 let lastLoop = new Date;
 
-let rock = new Rock();
+let rock = new Rock(ship.shotBullets);
 
 const repeateFunction = () => {
     const thisLoop = new Date;

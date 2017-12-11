@@ -1,9 +1,11 @@
 import RockParticle from './rockParitcle';
 
+const EXPLOSION_PARTICLE_COUNT = 4;
+
 class Rock {
 
-    constructor() {
-        this.health = Math.floor((Math.random() * 80) + 20);
+    constructor(shotBullets) {
+        this.health = Math.floor((Math.random() * 40) + 20);
         this.sizeX =  this.health;
         this.sizeY =  this.health;
         this.positionX = 300;
@@ -14,6 +16,8 @@ class Rock {
         this.moveSpeed = Math.floor((Math.random() * 0));
         this.gameboard = document.getElementById("gameboard");
         this.rockParticles = [];
+        this.shotBullets = shotBullets;
+        this.allowHits = true;
 
         //this.initPositionCoordinates();
         this.init();
@@ -66,41 +70,6 @@ class Rock {
         context.fill();
         context.stroke();
 
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-        this.rockParticles.push(new RockParticle(this));
-
         this.gameboard.appendChild(canvas);
     }
 
@@ -114,10 +83,25 @@ class Rock {
         return false;
     }
 
+    bulletHit() {
+        this.rockParticles.push(new RockParticle(this));
+    }
+
+    explosion() {
+        let interval = 0;
+
+        const explosionInterval = setInterval(() => {
+            interval++;
+
+            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+            this.rockParticles.push(new RockParticle(this));
+        }, 1000 / 60);
+    }
+
     move() {
         const { angle, positionX, positionY, moveSpeed, canvas, health } = this;
         
-        if(this.outOfScreen() || health < 1) {
+        if(this.outOfScreen()) {
             canvas.remove();
             return;
         }
@@ -134,12 +118,41 @@ class Rock {
         }
     }
 
+    renderIntersection() {
+        const { shotBullets, positionX, positionY, sizeX, sizeY, canvas, allowHits } = this;
+        if(!shotBullets && !allowHits) return;
+        
+        shotBullets.forEach((bullet, index) => {
+            const hasIntersected = (bullet.positionX > positionX - 6 && bullet.positionX < positionX + sizeX - 6) && 
+                (bullet.positionY > positionY - 6 && bullet.positionY < positionY + sizeY - 6);
+
+            if(this.health < 0 && allowHits) {
+                this.allowHits = false;
+                canvas.style.visibility = "hidden";
+                this.explosion();
+                return;
+            } else if(hasIntersected && allowHits) {
+                shotBullets.splice(index, 1);
+                bullet.canvas.remove();
+                if(this.health > 15) this.bulletHit();
+                this.health--;
+                return;
+            }
+        });
+    }
+
     render() {
-        const { canvas, positionX, positionY, angle } = this;
+        const { canvas, positionX, positionY, angle, rockParticles, allowHits } = this;
+
+        if(rockParticles.length == 0 && !allowHits) {
+            canvas.remove();
+            return;
+        }
         
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
 
+        this.renderIntersection();
         this.renderRockParticles();
     }
 }

@@ -109,7 +109,7 @@ class Ship {
     }
 
     render() {
-        const { canvas, positionX, positionY, angle } = this;
+        const { canvas, positionX, positionY, angle, shotBullets } = this;
         
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
