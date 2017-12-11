@@ -2,12 +2,6 @@ const ROTATION_STEP = 0.05;
 const MOVE_STEP = 0.05;
 const CROSS_SPEED_STEP = 0.05;
 
-let lastLoop = new Date;
-let initializedShip;
-let repeater;
-
-let longPress = false;
-
 let MOVE_SPEED = 0;
 let ROTATION_SPEED = 0;
 let CROSS_SPEED = 0;
@@ -15,17 +9,11 @@ let CROSS_SPEED = 0;
 const keyPressStorage = {};
 const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e', ' '];
 
-const repeatOften = () => {
-  if(isAnyKeysDown() && initializedShip) {
-    makeKeyPressActions(initializedShip);
+const changeStates = (ship) => {
+  console.log("Yes");
+  if(isAnyKeysDown()) {
+    makeKeyPressActions(ship);
   }
-
-  const thisLoop = new Date;
-  const fps = 1000 / (thisLoop - lastLoop);
-  lastLoop = thisLoop;
-
-  initializedShip.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
-  repeater = requestAnimationFrame(repeatOften);
 }
 
 const isAnyKeysDown = () => {
@@ -45,10 +33,12 @@ const makeKeyPressActions = (ship) => {
   if(keyPressStorage['e'] && CROSS_SPEED >= -1) CROSS_SPEED -= CROSS_SPEED_STEP;
 
   if(keyPressStorage[' ']) ship.shootMachineGun();
+
+  ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
 }
 
 const loadArrowKeyHandler = (ship) => {
-    initializedShip = ship;
+
 
     window.addEventListener("keydown", function (event) {
       if(allowedKeys.includes(event.key)) {
@@ -62,7 +52,7 @@ const loadArrowKeyHandler = (ship) => {
       }
     });
 
-    repeater = requestAnimationFrame(repeatOften);
+    setInterval(() => changeStates(ship), 1000 / 60);
 };
 
 export default loadArrowKeyHandler;

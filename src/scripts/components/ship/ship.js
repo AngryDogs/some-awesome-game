@@ -51,13 +51,16 @@ class Ship {
         this.moveSpeed = moveSpeed;
         this.rotationSpeed = rotationSpeed;
         this.crossSpeed = crossSpeed;
-        this.move();
-        this.rotate();
     }
 
     shootMachineGun() {
         if(this.shotBullets.length < 500)
             this.shotBullets.push(new Bullet(this));
+    }
+
+    translateNewValues() {
+        this.move();
+        this.rotate();
     }
 
     move() {

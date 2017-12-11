@@ -8,7 +8,7 @@ class Bullet {
         this.angle = this.dispersion(ship.angle - 2, ship.angle + 2);
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = 10;
+        this.moveSpeed = 5;
         this.gameboard = document.getElementById("gameboard");
         this.ship = ship;
 
