@@ -1,8 +1,8 @@
 class Bullet {
 
     constructor(ship) {
-        this.sizeX = 10;
-        this.sizeY = 2;
+        this.sizeX = 12;
+        this.sizeY = 12;
         this.positionX = ship.positionX + 1;
         this.positionY = ship.positionY + 1;
         this.angle = this.dispersion(ship.angle - 2, ship.angle + 2);
@@ -17,12 +17,10 @@ class Bullet {
 
     init() {
         const shape = [[0, 0], [6, 0]];
-        const { canvas, context, angle, positionX, positionY } = this;
+        const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
 
-        console.log(positionX);
-
-        canvas.width = 12;
-        canvas.height = 12;
+        canvas.width = sizeX;
+        canvas.height = sizeY;
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
         canvas.style.position = "absolute";

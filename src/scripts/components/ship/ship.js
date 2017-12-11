@@ -4,8 +4,8 @@ import Bullet from '../bullet/bullet';
 class Ship {
 
     constructor() {
-        this.sizeX = 20;
-        this.sizeY = 10;
+        this.sizeX = 16;
+        this.sizeY = 14;
         this.positionX = 110;
         this.positionY = 110;
         this.angle = 0;
@@ -22,10 +22,10 @@ class Ship {
 
     init() {
         const shape = [[0, 6], [0, -6], [15, 0]];
-        const { canvas, context, angle, positionX, positionY } = this;
+        const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
 
-        canvas.width = 16;
-        canvas.height = 14;
+        canvas.width = sizeX;
+        canvas.height = sizeY;
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
         canvas.style.position = "absolute";

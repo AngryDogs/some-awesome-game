@@ -10,7 +10,6 @@ const keyPressStorage = {};
 const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e', ' '];
 
 const changeStates = (ship) => {
-  console.log("Yes");
   if(isAnyKeysDown()) {
     makeKeyPressActions(ship);
   }
