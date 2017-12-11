@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 0);
+/******/ 	return __webpack_require__(__webpack_require__.s = 1);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -68,9 +68,91 @@
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+class Particle {
+    
+        constructor(element) {
+            this.sizeX = 2;
+            this.sizeY = 2;
+            this.positionX = element.positionX + (element.sizeX / 2);
+            this.positionY = element.positionY + (element.sizeY / 2);
+            this.angle = Math.floor((Math.random() * 360));
+            this.canvas = document.createElement("canvas");
+            this.context = this.canvas.getContext('2d');
+            this.moveSpeed = Math.floor((Math.random() * 2) + 1);
+            this.gameboard = document.getElementById("gameboard");
+            this.lifeCycle = Math.floor((Math.random() * 50) + 30);
+            this.rock;
+            this.ship;
+            if(element.type === 'ship') this.ship = element;
+            if(element.type === 'rock') this.rock = element;
+    
+            this.init();
+        }
+    
+        init() {
+            const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
+    
+            canvas.width = sizeX;
+            canvas.height = sizeY;
+            canvas.style.left = positionX + 'px';
+            canvas.style.top = positionY + 'px';
+            canvas.style.position = "absolute";
+    
+            context.beginPath();
+            context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
+            context.fillStyle = '#000';
+            context.fill();
+            context.stroke();
+    
+            this.gameboard.appendChild(canvas);
+        }
+    
+        move(index) {
+            const { angle, positionX, positionY, moveSpeed, rock, canvas, lifeCycle, ship } = this;
+    
+            if(this.outOfScreen() || lifeCycle < 1) {
+                if(rock) rock.rockParticles.splice(index, 1);
+                if(ship) ship.shipParticles.splice(index, 1);
+                canvas.remove();
+                return;
+            }
+    
+            this.positionX = Math.round((Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX) * 100) / 100;
+            this.positionY = Math.round((Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY) * 100) / 100;
+    
+            this.lifeCycle--;
+    
+            this.render();
+        }
+    
+        outOfScreen() {
+            const { canvas, positionX, positionY, sizeX, sizeY } = this;
+            if(positionX < 0 - sizeX) return true;
+            if(positionY < 0 - sizeY) return true;
+            if(positionX > window.innerWidth) return true;
+            if(positionY > window.innerHeight) return true;
+    
+            return false;
+        }
+    
+        render() {
+            const { canvas, positionX, positionY } = this;
+    
+            canvas.style.left = positionX + 'px';
+            canvas.style.top = positionY + 'px';
+        }
+    }
+    
+    /* harmony default export */ __webpack_exports__["a"] = (Particle);
+
+/***/ }),
+/* 1 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__styles_main_css__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__styles_main_css__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_1__styles_main_css__);
 
 
@@ -78,16 +160,20 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
 
 /***/ }),
-/* 1 */
+/* 2 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(6);
+
 
 
 let repeater;
 let ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */]();
 let lastLoop = new Date;
+
+let rocks = [];
 
 const repeateFunction = () => {
     const thisLoop = new Date;
@@ -95,29 +181,45 @@ const repeateFunction = () => {
     lastLoop = thisLoop;
 
     if(ship) ship.translateNewValues();
+    if(rocks) rocks.forEach(rock => rock.move());
+
+    if(ship && ship.lifeCount < 0) {
+        window.cancelAnimationFrame(repeateFunction);
+        return;
+    }
 
     repeater = requestAnimationFrame(repeateFunction);
 }
 
 const constructGameBoard = () => {
+
+    setInterval(() => {
+        rocks.push(new __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* default */](ship));
+    }, 1000);
+
     repeater = requestAnimationFrame(repeateFunction);
 }
 
 /* harmony default export */ __webpack_exports__["a"] = (constructGameBoard);
 
 /***/ }),
-/* 2 */
+/* 3 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__handlers__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bullet_bullet__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__handlers__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bullet_bullet__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(0);
 
 
+
+
+const EXPLOSION_PARTICLE_COUNT = 10;
 
 class Ship {
 
     constructor() {
+        this.type = 'ship';
         this.sizeX = 16;
         this.sizeY = 14;
         this.positionX = 110;
@@ -132,6 +234,9 @@ class Ship {
         this.gameboard = document.getElementById("gameboard");
         this.init();
         this.shotBullets = [];
+        this.lifeCount = 3;
+        this.immunity = 100;
+        this.shipParticles = [];
     }
 
     init() {
@@ -178,11 +283,22 @@ class Ship {
     }
 
     outOfScreenMovement() {
-        const { canvas, positionX, positionY } = this;
-        if(positionX < 0) this.positionX = window.innerWidth;
-        if(positionY < 0) this.positionY = window.innerHeight;
-        if(positionX > window.innerWidth) this.positionX = 0;
-        if(positionY > window.innerHeight) this.positionY = 0;
+        const { canvas, positionX, positionY, sizeX, sizeY } = this;
+        if(positionX < 0 - sizeX) this.positionX = window.innerWidth;
+        if(positionY < 0 - sizeY) this.positionY = window.innerHeight;
+        if(positionX > window.innerWidth) this.positionX = 0 - sizeX;
+        if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
+    }
+
+    explosion() {
+        let interval = 0;
+
+        const explosionInterval = setInterval(() => {
+            interval++;
+
+            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+            this.shipParticles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */](this));
+        }, 1000 / 60);
     }
 
     move() {
@@ -210,9 +326,6 @@ class Ship {
     rotate() {
         this.angle += this.rotationSpeed;
 
-        if(this.angle > 360) this.angle = 0;
-        if(this.angle < 0) this.angle = 360;
-
         this.render();
     }
 
@@ -222,21 +335,38 @@ class Ship {
         }
     }
 
+    renderShipParticles() {
+        if(this.shipParticles) {
+            this.shipParticles.forEach((shipParticle, index) => shipParticle.move(index));
+        }
+    }
+
     render() {
-        const { canvas, positionX, positionY, angle } = this;
+        const { canvas, positionX, positionY, angle, shotBullets, lifeCount, immunity, shipParticles } = this;
+
+        if(lifeCount < 0) canvas.style.visibility = "hidden";
+
+        if(shipParticles && shipParticles.length == 0 && lifeCount < 0) {
+            canvas.remove();
+            delete this;
+            return;
+        }
+
+        if(immunity != 0) this.immunity--;
         
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
         canvas.style.transform = 'rotate(' + angle + 'deg)';
 
         this.renderBullets();
+        this.renderShipParticles();
     }
 }
 
 /* harmony default export */ __webpack_exports__["a"] = (Ship);
 
 /***/ }),
-/* 3 */
+/* 4 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -299,7 +429,7 @@ const loadArrowKeyHandler = (ship) => {
 /* harmony default export */ __webpack_exports__["a"] = (loadArrowKeyHandler);
 
 /***/ }),
-/* 4 */
+/* 5 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -343,7 +473,7 @@ class Bullet {
     }
 
     dispersion(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
+        return Math.random() * (max - min + 1) + min;
       }
 
     move(index) {
@@ -362,9 +492,9 @@ class Bullet {
     }
 
     outOfScreen() {
-        const { canvas, positionX, positionY } = this;
-        if(positionX < 0) return true;
-        if(positionY < 0) return true;
+        const { canvas, positionX, positionY, sizeX, sizeY } = this;
+        if(positionX < 0 - sizeX) return true;
+        if(positionY < 0 - sizeY) return true;
         if(positionX > window.innerWidth) return true;
         if(positionY > window.innerHeight) return true;
 
@@ -382,13 +512,195 @@ class Bullet {
 /* harmony default export */ __webpack_exports__["a"] = (Bullet);
 
 /***/ }),
-/* 5 */
+/* 6 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(0);
+
+
+const EXPLOSION_PARTICLE_COUNT = 4;
+
+class Rock {
+
+    constructor(ship) {
+        this.type = 'rock';
+        this.health = Math.floor((Math.random() * 40) + 20);
+        this.sizeX =  this.health;
+        this.sizeY =  this.health;
+        this.positionX = 300;
+        this.positionY = 300;
+        this.angle = 0;
+        this.canvas = document.createElement("canvas");
+        this.context = this.canvas.getContext('2d');
+        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
+        this.gameboard = document.getElementById("gameboard");
+        this.rockParticles = [];
+        this.shotBullets = ship.shotBullets;
+        this.ship = ship;
+        this.allowHits = true;
+
+        this.initPositionCoordinates();
+        this.init();
+    }
+
+    initPositionCoordinates() {
+        const { sizeX, sizeY } = this;
+        const screenSide = Math.floor((Math.random() * 4) + 1);
+
+        switch(screenSide) {
+            // LEFT SCREEN SIDE
+            case 1:
+                this.positionX = 0 - sizeX;
+                this.positionY = Math.floor((Math.random() * window.innerHeight));
+                this.angle = Math.floor((Math.random() * 160) + 290);
+                break;
+            // TOP SCREEN SIDE
+            case 2:
+                this.positionX = Math.floor((Math.random() * window.innerWidth));
+                this.positionY = 0 - sizeY;
+                this.angle = Math.floor((Math.random() * 160) + 20);
+                break;
+            // RIGTH SCREEN SIDE
+            case 3:
+                this.positionX = window.innerWidth
+                this.positionY = Math.floor((Math.random() * window.innerHeight));
+                this.angle = Math.floor((Math.random() * 160) + 110);
+                break;
+            // BOTTOM SCREEN SIDE
+            case 4:
+                this.positionX = Math.floor((Math.random() * window.innerWidth));
+                this.positionY = innerHeight
+                this.angle = Math.floor((Math.random() * 160) + 200);
+                break;    
+        }
+    }
+
+    init() {
+        const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
+        
+        canvas.width = sizeX;
+        canvas.height = sizeY;
+        canvas.style.left = positionX + 'px';
+        canvas.style.top = positionY + 'px';
+        canvas.style.position = "absolute";
+
+        context.beginPath();
+        context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
+        context.fillStyle = '#000';
+        context.fill();
+        context.stroke();
+
+        this.gameboard.appendChild(canvas);
+    }
+
+    outOfScreenMovement() {
+        const { canvas, positionX, positionY, sizeX, sizeY } = this;
+        if(positionX < 0 - sizeX) this.positionX = window.innerWidth;
+        if(positionY < 0 - sizeY) this.positionY = window.innerHeight;
+        if(positionX > window.innerWidth) this.positionX = 0 - sizeX;
+        if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
+    }
+
+    bulletHit() {
+        this.rockParticles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */](this));
+    }
+
+    explosion() {
+        let interval = 0;
+
+        const explosionInterval = setInterval(() => {
+            interval++;
+
+            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+            this.rockParticles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */](this));
+        }, 1000 / 60);
+    }
+
+    move() {
+        const { angle, positionX, positionY, moveSpeed, canvas, health } = this;
+
+        this.positionX = Math.round((Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX) * 100) / 100;
+        this.positionY = Math.round((Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY) * 100) / 100;
+
+        this.outOfScreenMovement();
+
+        this.render();
+    }
+
+    renderRockParticles() {
+        if(this.rockParticles) {
+            this.rockParticles.forEach((rockParticle, index) => rockParticle.move(index));
+        }
+    }
+
+    renderShipIntersection() {
+        const { ship, positionX, positionY, sizeX, sizeY } = this;
+
+        const shipNoseX = ship.positionX + ship.sizeX;
+        const shipNoseY = ship.positionY + (ship.sizeY / 2);
+        
+        const hasIntersected = (shipNoseX > positionX + 10 && shipNoseX < positionX + sizeX + 5) && 
+            (shipNoseY > positionY + 10 && shipNoseY < positionY + sizeY + 5);
+
+        if(hasIntersected && ship.immunity == 0 && allowHits) {
+            ship.immunity = 200;
+            ship.lifeCount--;
+            ship.explosion();
+        }
+    }
+
+    renderIntersection() {
+        const { shotBullets, positionX, positionY, sizeX, sizeY, canvas, allowHits } = this;
+        if(!shotBullets && !allowHits) return;
+        
+        shotBullets.forEach((bullet, index) => {
+            const hasIntersected = (bullet.positionX > positionX - 6 && bullet.positionX < positionX + sizeX - 6) && 
+                (bullet.positionY > positionY - 6 && bullet.positionY < positionY + sizeY - 6);
+
+            if(this.health < 0 && allowHits) {
+                this.allowHits = false;
+                canvas.style.visibility = "hidden";
+                this.explosion();
+                return;
+            } else if(hasIntersected && allowHits) {
+                shotBullets.splice(index, 1);
+                bullet.canvas.remove();
+                if(this.health > 15) this.bulletHit();
+                this.health--;
+                return;
+            }
+        });
+    }
+
+    render() {
+        const { canvas, positionX, positionY, angle, rockParticles, allowHits } = this;
+
+        if(rockParticles.length == 0 && !allowHits) {
+            canvas.remove();
+            delete this;
+            return;
+        }
+        
+        canvas.style.left = positionX + 'px';
+        canvas.style.top = positionY + 'px';
+
+        this.renderIntersection();
+        this.renderShipIntersection();
+        this.renderRockParticles();
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (Rock);
+
+/***/ }),
+/* 7 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(6);
+var content = __webpack_require__(8);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -396,7 +708,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(8)(content, options);
+var update = __webpack_require__(10)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -413,10 +725,10 @@ if(false) {
 }
 
 /***/ }),
-/* 6 */
+/* 8 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(7)(undefined);
+exports = module.exports = __webpack_require__(9)(undefined);
 // imports
 
 
@@ -427,7 +739,7 @@ exports.push([module.i, "html, body {\n    background-color: #f1f1f1;\n    margi
 
 
 /***/ }),
-/* 7 */
+/* 9 */
 /***/ (function(module, exports) {
 
 /*
@@ -509,7 +821,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 8 */
+/* 10 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -565,7 +877,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(9);
+var	fixUrls = __webpack_require__(11);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -881,7 +1193,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 9 */
+/* 11 */
 /***/ (function(module, exports) {
 
 

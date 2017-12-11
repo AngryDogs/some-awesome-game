@@ -124,7 +124,7 @@ class Rock {
         const hasIntersected = (shipNoseX > positionX + 10 && shipNoseX < positionX + sizeX + 5) && 
             (shipNoseY > positionY + 10 && shipNoseY < positionY + sizeY + 5);
 
-        if(hasIntersected && ship.immunity == 0) {
+        if(hasIntersected && ship.immunity == 0 && allowHits) {
             ship.immunity = 200;
             ship.lifeCount--;
             ship.explosion();
