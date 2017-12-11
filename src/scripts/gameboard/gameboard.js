@@ -1,8 +1,11 @@
 import Ship from '../components/ship/ship';
+import Rock from '../components/rock/rock';
 
 let repeater;
 let ship = new Ship();
 let lastLoop = new Date;
+
+let rock = new Rock();
 
 const repeateFunction = () => {
     const thisLoop = new Date;
@@ -10,6 +13,7 @@ const repeateFunction = () => {
     lastLoop = thisLoop;
 
     if(ship) ship.translateNewValues();
+    if(rock) rock.move();
 
     repeater = requestAnimationFrame(repeateFunction);
 }

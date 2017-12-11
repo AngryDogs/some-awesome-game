@@ -57,9 +57,9 @@ class Bullet {
     }
 
     outOfScreen() {
-        const { canvas, positionX, positionY } = this;
-        if(positionX < 0) return true;
-        if(positionY < 0) return true;
+        const { canvas, positionX, positionY, sizeX, sizeY } = this;
+        if(positionX < 0 - sizeX) return true;
+        if(positionY < 0 - sizeY) return true;
         if(positionX > window.innerWidth) return true;
         if(positionY > window.innerHeight) return true;
 

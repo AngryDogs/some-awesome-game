@@ -64,11 +64,11 @@ class Ship {
     }
 
     outOfScreenMovement() {
-        const { canvas, positionX, positionY } = this;
-        if(positionX < 0) this.positionX = window.innerWidth;
-        if(positionY < 0) this.positionY = window.innerHeight;
-        if(positionX > window.innerWidth) this.positionX = 0;
-        if(positionY > window.innerHeight) this.positionY = 0;
+        const { canvas, positionX, positionY, sizeX, sizeY } = this;
+        if(positionX < 0 - sizeX) this.positionX = window.innerWidth;
+        if(positionY < 0 - sizeY) this.positionY = window.innerHeight;
+        if(positionX > window.innerWidth) this.positionX = 0 - sizeX;
+        if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
     }
 
     move() {
