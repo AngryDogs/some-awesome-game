@@ -1,10 +1,11 @@
-import RockParticle from './rockParitcle';
+import Particle from '../particle/particle';
 
 const EXPLOSION_PARTICLE_COUNT = 4;
 
 class Rock {
 
-    constructor(shotBullets) {
+    constructor(ship) {
+        this.type = 'rock';
         this.health = Math.floor((Math.random() * 40) + 20);
         this.sizeX =  this.health;
         this.sizeY =  this.health;
@@ -13,13 +14,14 @@ class Rock {
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = Math.floor((Math.random() * 0));
+        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
         this.gameboard = document.getElementById("gameboard");
         this.rockParticles = [];
-        this.shotBullets = shotBullets;
+        this.shotBullets = ship.shotBullets;
+        this.ship = ship;
         this.allowHits = true;
 
-        //this.initPositionCoordinates();
+        this.initPositionCoordinates();
         this.init();
     }
 
@@ -73,18 +75,16 @@ class Rock {
         this.gameboard.appendChild(canvas);
     }
 
-    outOfScreen() {
+    outOfScreenMovement() {
         const { canvas, positionX, positionY, sizeX, sizeY } = this;
-        if(positionX < 0 - sizeX) return true;
-        if(positionY < 0 - sizeY) return true;
-        if(positionX > window.innerWidth) return true;
-        if(positionY > window.innerHeight) return true;
-
-        return false;
+        if(positionX < 0 - sizeX) this.positionX = window.innerWidth;
+        if(positionY < 0 - sizeY) this.positionY = window.innerHeight;
+        if(positionX > window.innerWidth) this.positionX = 0 - sizeX;
+        if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
     }
 
     bulletHit() {
-        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new Particle(this));
     }
 
     explosion() {
@@ -94,20 +94,17 @@ class Rock {
             interval++;
 
             if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
-            this.rockParticles.push(new RockParticle(this));
+            this.rockParticles.push(new Particle(this));
         }, 1000 / 60);
     }
 
     move() {
         const { angle, positionX, positionY, moveSpeed, canvas, health } = this;
-        
-        if(this.outOfScreen()) {
-            canvas.remove();
-            return;
-        }
 
         this.positionX = Math.round((Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX) * 100) / 100;
         this.positionY = Math.round((Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY) * 100) / 100;
+
+        this.outOfScreenMovement();
 
         this.render();
     }
@@ -115,6 +112,22 @@ class Rock {
     renderRockParticles() {
         if(this.rockParticles) {
             this.rockParticles.forEach((rockParticle, index) => rockParticle.move(index));
+        }
+    }
+
+    renderShipIntersection() {
+        const { ship, positionX, positionY, sizeX, sizeY } = this;
+
+        const shipNoseX = ship.positionX + ship.sizeX;
+        const shipNoseY = ship.positionY + (ship.sizeY / 2);
+        
+        const hasIntersected = (shipNoseX > positionX + 10 && shipNoseX < positionX + sizeX + 5) && 
+            (shipNoseY > positionY + 10 && shipNoseY < positionY + sizeY + 5);
+
+        if(hasIntersected && ship.immunity == 0) {
+            ship.immunity = 200;
+            ship.lifeCount--;
+            ship.explosion();
         }
     }
 
@@ -146,6 +159,7 @@ class Rock {
 
         if(rockParticles.length == 0 && !allowHits) {
             canvas.remove();
+            delete this;
             return;
         }
         
@@ -153,6 +167,7 @@ class Rock {
         canvas.style.top = positionY + 'px';
 
         this.renderIntersection();
+        this.renderShipIntersection();
         this.renderRockParticles();
     }
 }

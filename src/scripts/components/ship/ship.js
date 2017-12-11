@@ -1,9 +1,13 @@
 import loadArrowKeyHandler from './handlers';
 import Bullet from '../bullet/bullet';
+import Particle from '../particle/particle';
+
+const EXPLOSION_PARTICLE_COUNT = 10;
 
 class Ship {
 
     constructor() {
+        this.type = 'ship';
         this.sizeX = 16;
         this.sizeY = 14;
         this.positionX = 110;
@@ -18,6 +22,9 @@ class Ship {
         this.gameboard = document.getElementById("gameboard");
         this.init();
         this.shotBullets = [];
+        this.lifeCount = 3;
+        this.immunity = 100;
+        this.shipParticles = [];
     }
 
     init() {
@@ -71,6 +78,17 @@ class Ship {
         if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
     }
 
+    explosion() {
+        let interval = 0;
+
+        const explosionInterval = setInterval(() => {
+            interval++;
+
+            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+            this.shipParticles.push(new Particle(this));
+        }, 1000 / 60);
+    }
+
     move() {
         const { angle, positionX, positionY, moveSpeed, movementAngle, crossSpeed } = this;
 
@@ -96,9 +114,6 @@ class Ship {
     rotate() {
         this.angle += this.rotationSpeed;
 
-        if(this.angle > 360) this.angle = 0;
-        if(this.angle < 0) this.angle = 360;
-
         this.render();
     }
 
@@ -108,14 +123,31 @@ class Ship {
         }
     }
 
+    renderShipParticles() {
+        if(this.shipParticles) {
+            this.shipParticles.forEach((shipParticle, index) => shipParticle.move(index));
+        }
+    }
+
     render() {
-        const { canvas, positionX, positionY, angle, shotBullets } = this;
+        const { canvas, positionX, positionY, angle, shotBullets, lifeCount, immunity, shipParticles } = this;
+
+        if(lifeCount < 0) canvas.style.visibility = "hidden";
+
+        if(shipParticles && shipParticles.length == 0 && lifeCount < 0) {
+            canvas.remove();
+            delete this;
+            return;
+        }
+
+        if(immunity != 0) this.immunity--;
         
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
         canvas.style.transform = 'rotate(' + angle + 'deg)';
 
         this.renderBullets();
+        this.renderShipParticles();
     }
 }
 

@@ -5,7 +5,7 @@ let repeater;
 let ship = new Ship();
 let lastLoop = new Date;
 
-let rock = new Rock(ship.shotBullets);
+let rocks = [];
 
 const repeateFunction = () => {
     const thisLoop = new Date;
@@ -13,12 +13,22 @@ const repeateFunction = () => {
     lastLoop = thisLoop;
 
     if(ship) ship.translateNewValues();
-    if(rock) rock.move();
+    if(rocks) rocks.forEach(rock => rock.move());
+
+    if(ship && ship.lifeCount < 0) {
+        window.cancelAnimationFrame(repeateFunction);
+        return;
+    }
 
     repeater = requestAnimationFrame(repeateFunction);
 }
 
 const constructGameBoard = () => {
+
+    setInterval(() => {
+        rocks.push(new Rock(ship));
+    }, 1000);
+
     repeater = requestAnimationFrame(repeateFunction);
 }
 
