@@ -1,4 +1,5 @@
 import loadArrowKeyHandler from './handlers';
+import Bullet from '../bullet/bullet';
 
 class Ship {
 
@@ -9,12 +10,16 @@ class Ship {
         this.positionY = 110;
         this.angle = 0;
         this.movementAngle = 0;
-        this.canvas = document.getElementById('ship');
+        this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
         this.moveSpeed = 0;
         this.rotationSpeed = 0;
         this.crossSpeed = 0;
+        this.gameboard = document.getElementById("gameboard");
         this.init();
+        this.shotBullets = [];
+
+        this.gameboard.appendChild(this.canvas);
     }
 
     init() {
@@ -31,7 +36,11 @@ class Ship {
         this.crossSpeed = crossSpeed;
         this.move();
         this.rotate();
+    }
 
+    shootMachineGun() {
+        if(this.shotBullets.length < 5)
+            this.shotBullets.push(new Bullet(this));
     }
 
     move() {
@@ -63,6 +72,12 @@ class Ship {
         this.render();
     }
 
+    renderBullets() {
+        if(this.shotBullets) {
+            this.shotBullets.forEach((bullet, index) => bullet.move(index));
+        }
+    }
+
     render() {
         const shape = [[0, 6], [0, -6], [15, 0]];
         const { sizeX, sizeY, angle, context, canvas, positionX, positionY } = this;
@@ -79,6 +94,7 @@ class Ship {
         context.stroke();
         context.fill();
         context.restore();
+        this.renderBullets();
     }
 }
 
