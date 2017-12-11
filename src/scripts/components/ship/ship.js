@@ -18,13 +18,30 @@ class Ship {
         this.gameboard = document.getElementById("gameboard");
         this.init();
         this.shotBullets = [];
-
-        this.gameboard.appendChild(this.canvas);
     }
 
     init() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        const shape = [[0, 6], [0, -6], [15, 0]];
+        const { canvas, context, angle, positionX, positionY } = this;
+
+        canvas.width = 16;
+        canvas.height = 14;
+        canvas.style.left = positionX + 'px';
+        canvas.style.top = positionY + 'px';
+        canvas.style.position = "absolute";
+
+        context.translate(0, 7);
+        context.rotate(angle * Math.PI / 180);
+        context.fillStyle = "#000";
+        context.beginPath();
+        context.moveTo(shape[0][0],shape[0][1]);
+        context.lineTo(shape[1][0],shape[1][1]);
+        context.lineTo(shape[2][0],shape[2][1]);
+        context.closePath();
+        context.stroke();
+        context.fill();
+
+        this.gameboard.appendChild(this.canvas);
 
         loadArrowKeyHandler(this);
         this.render();
@@ -39,7 +56,7 @@ class Ship {
     }
 
     shootMachineGun() {
-        if(this.shotBullets.length < 5)
+        if(this.shotBullets.length < 500)
             this.shotBullets.push(new Bullet(this));
     }
 
@@ -79,21 +96,12 @@ class Ship {
     }
 
     render() {
-        const shape = [[0, 6], [0, -6], [15, 0]];
-        const { sizeX, sizeY, angle, context, canvas, positionX, positionY } = this;
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        context.save();
-        context.translate(positionX, positionY);
-        context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
-        context.beginPath();
-        context.moveTo(shape[0][0],shape[0][1]);
-        context.lineTo(shape[1][0],shape[1][1]);
-        context.lineTo(shape[2][0],shape[2][1]);
-        context.closePath();
-        context.stroke();
-        context.fill();
-        context.restore();
+        const { canvas, positionX, positionY, angle } = this;
+        
+        canvas.style.left = positionX + 'px';
+        canvas.style.top = positionY + 'px';
+        canvas.style.transform = 'rotate(' + angle + 'deg)';
+
         this.renderBullets();
     }
 }
