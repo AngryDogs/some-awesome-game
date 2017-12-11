@@ -63,6 +63,14 @@ class Ship {
         this.rotate();
     }
 
+    outOfScreenMovement() {
+        const { canvas, positionX, positionY } = this;
+        if(positionX < 0) this.positionX = window.innerWidth;
+        if(positionY < 0) this.positionY = window.innerHeight;
+        if(positionX > window.innerWidth) this.positionX = 0;
+        if(positionY > window.innerHeight) this.positionY = 0;
+    }
+
     move() {
         const { angle, positionX, positionY, moveSpeed, movementAngle, crossSpeed } = this;
 
@@ -79,6 +87,8 @@ class Ship {
         
         this.positionX = (positionXWithAngle + positionXWithCrossAngle) / 2;
         this.positionY = (positionYWithAngle + positionYWithCrossAngle) / 2;
+
+        this.outOfScreenMovement();
 
         this.render();
     }
