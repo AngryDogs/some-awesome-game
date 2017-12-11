@@ -1,18 +1,21 @@
+import RockParticle from './rockParitcle';
+
 class Rock {
 
     constructor() {
         this.health = Math.floor((Math.random() * 80) + 20);
         this.sizeX =  this.health;
         this.sizeY =  this.health;
-        this.positionX = 0;
-        this.positionY = 0;
+        this.positionX = 300;
+        this.positionY = 300;
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
+        this.moveSpeed = Math.floor((Math.random() * 0));
         this.gameboard = document.getElementById("gameboard");
+        this.rockParticles = [];
 
-        this.initPositionCoordinates();
+        //this.initPositionCoordinates();
         this.init();
     }
 
@@ -63,6 +66,41 @@ class Rock {
         context.fill();
         context.stroke();
 
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+        this.rockParticles.push(new RockParticle(this));
+
         this.gameboard.appendChild(canvas);
     }
 
@@ -77,9 +115,9 @@ class Rock {
     }
 
     move() {
-        const { angle, positionX, positionY, moveSpeed, canvas } = this;
+        const { angle, positionX, positionY, moveSpeed, canvas, health } = this;
         
-        if(this.outOfScreen()) {
+        if(this.outOfScreen() || health < 1) {
             canvas.remove();
             return;
         }
@@ -90,11 +128,19 @@ class Rock {
         this.render();
     }
 
+    renderRockParticles() {
+        if(this.rockParticles) {
+            this.rockParticles.forEach((rockParticle, index) => rockParticle.move(index));
+        }
+    }
+
     render() {
         const { canvas, positionX, positionY, angle } = this;
         
         canvas.style.left = positionX + 'px';
         canvas.style.top = positionY + 'px';
+
+        this.renderRockParticles();
     }
 }
 

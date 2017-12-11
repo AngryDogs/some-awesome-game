@@ -1,22 +1,22 @@
-class Bullet {
+class RockParticle {
 
-    constructor(ship) {
-        this.sizeX = 12;
-        this.sizeY = 12;
-        this.positionX = ship.positionX + 1;
-        this.positionY = ship.positionY + 1;
-        this.angle = this.dispersion(ship.angle - 2, ship.angle + 2);
+    constructor(rock) {
+        this.sizeX = 2;
+        this.sizeY = 2;
+        this.positionX = rock.positionX + (rock.sizeX / 2);
+        this.positionY = rock.positionY + (rock.sizeY / 2);
+        this.angle = Math.floor((Math.random() * 360));
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = 5;
+        this.moveSpeed = Math.floor((Math.random() * 2) + 1);
         this.gameboard = document.getElementById("gameboard");
-        this.ship = ship;
+        this.lifeCycle = Math.floor((Math.random() * 100) + 30);
+        this.rock = rock;
 
         this.init();
     }
 
     init() {
-        const shape = [[0, 0], [6, 0]];
         const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
 
         canvas.width = sizeX;
@@ -25,33 +25,28 @@ class Bullet {
         canvas.style.top = positionY + 'px';
         canvas.style.position = "absolute";
 
-        context.translate(6, 6);
-        context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
         context.beginPath();
-        context.moveTo(shape[0][0],shape[0][1]);
-        context.lineTo(shape[1][0],shape[1][1]);
-        context.closePath();
+        context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
+        context.fillStyle = '#000';
+        context.fill();
         context.stroke();
 
         this.gameboard.appendChild(canvas);
     }
 
-    dispersion(min, max) {
-        return Math.random() * (max - min + 1) + min;
-      }
-
     move(index) {
-        const { angle, positionX, positionY, moveSpeed, ship, canvas } = this;
+        const { angle, positionX, positionY, moveSpeed, rock, canvas, lifeCycle } = this;
 
-        if(this.outOfScreen()) {
-            ship.shotBullets.splice(index, 1);
+        if(this.outOfScreen() || lifeCycle < 1) {
+            rock.rockParticles.splice(index, 1);
             canvas.remove();
             return;
         }
 
         this.positionX = Math.round((Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX) * 100) / 100;
         this.positionY = Math.round((Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY) * 100) / 100;
+
+        this.lifeCycle--;
 
         this.render();
     }
@@ -74,4 +69,4 @@ class Bullet {
     }
 }
 
-export default Bullet;
+export default RockParticle;
