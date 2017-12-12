@@ -1,6 +1,8 @@
 import Particle from '../particle/particle';
 
-const EXPLOSION_PARTICLE_COUNT = 4;
+const EXPLOSION_PARTICLE_COUNT = 20;
+const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
+const rockExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
 
 class Rock {
 
@@ -9,8 +11,8 @@ class Rock {
         this.health = Math.floor((Math.random() * 40) + 20);
         this.sizeX =  this.health;
         this.sizeY =  this.health;
-        this.positionX = 300;
-        this.positionY = 300;
+        this.positionX = 500;
+        this.positionY = 90;
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
@@ -84,18 +86,17 @@ class Rock {
     }
 
     bulletHit() {
+        rockHitSound.currentTime = 0;
+        rockHitSound.play();
         this.rockParticles.push(new Particle(this));
     }
 
     explosion() {
-        let interval = 0;
-
-        const explosionInterval = setInterval(() => {
-            interval++;
-
-            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+        for(let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
             this.rockParticles.push(new Particle(this));
-        }, 1000 / 60);
+        }
+        rockExplosionSound.currentTime = 0;
+        rockExplosionSound.play();
     }
 
     move() {
@@ -116,7 +117,7 @@ class Rock {
     }
 
     renderShipIntersection() {
-        const { ship, positionX, positionY, sizeX, sizeY } = this;
+        const { ship, positionX, positionY, sizeX, sizeY, allowHits } = this;
 
         const shipNoseX = ship.positionX + ship.sizeX;
         const shipNoseY = ship.positionY + (ship.sizeY / 2);
@@ -139,15 +140,10 @@ class Rock {
             const hasIntersected = (bullet.positionX > positionX - 6 && bullet.positionX < positionX + sizeX - 6) && 
                 (bullet.positionY > positionY - 6 && bullet.positionY < positionY + sizeY - 6);
 
-            if(this.health < 0 && allowHits) {
-                this.allowHits = false;
-                canvas.style.visibility = "hidden";
-                this.explosion();
-                return;
-            } else if(hasIntersected && allowHits) {
+            if(hasIntersected && allowHits) {
                 shotBullets.splice(index, 1);
                 bullet.canvas.remove();
-                if(this.health > 15) this.bulletHit();
+                this.bulletHit();
                 this.health--;
                 return;
             }
@@ -155,7 +151,14 @@ class Rock {
     }
 
     render() {
-        const { canvas, positionX, positionY, angle, rockParticles, allowHits } = this;
+        const { canvas, positionX, positionY, angle, rockParticles, allowHits, health } = this;
+
+        if(this.health < 0 && allowHits) {
+            this.allowHits = false;
+            canvas.style.visibility = "hidden";
+            this.explosion();
+            return;
+        }
 
         if(rockParticles.length == 0 && !allowHits) {
             canvas.remove();

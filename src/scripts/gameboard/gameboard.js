@@ -6,6 +6,7 @@ let ship = new Ship();
 let lastLoop = new Date;
 
 let rocks = [];
+rocks.push(new Rock(ship));
 
 const repeateFunction = () => {
     const thisLoop = new Date;
@@ -24,10 +25,9 @@ const repeateFunction = () => {
 }
 
 const constructGameBoard = () => {
-
-    setInterval(() => {
-        rocks.push(new Rock(ship));
-    }, 1000);
+    // setInterval(() => {
+    //     if(rocks && rocks.length < 20) rocks.push(new Rock(ship));
+    // }, 2000);
 
     repeater = requestAnimationFrame(repeateFunction);
 }

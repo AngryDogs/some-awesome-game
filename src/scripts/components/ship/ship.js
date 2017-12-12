@@ -2,6 +2,8 @@ import loadArrowKeyHandler from './handlers';
 import Bullet from '../bullet/bullet';
 import Particle from '../particle/particle';
 
+const shipExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
+
 const EXPLOSION_PARTICLE_COUNT = 10;
 
 class Ship {
@@ -60,9 +62,11 @@ class Ship {
         this.crossSpeed = crossSpeed;
     }
 
-    shootMachineGun() {
-        if(this.shotBullets.length < 500)
+    shootMachineGun(minigunSound) {
+        minigunSound.play();
+        if(this.shotBullets.length < 30) {
             this.shotBullets.push(new Bullet(this));
+        }
     }
 
     translateNewValues() {
@@ -79,14 +83,11 @@ class Ship {
     }
 
     explosion() {
-        let interval = 0;
-
-        const explosionInterval = setInterval(() => {
-            interval++;
-
-            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+        for(let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
             this.shipParticles.push(new Particle(this));
-        }, 1000 / 60);
+        }
+        shipExplosionSound.currentTime = 0;
+        shipExplosionSound.play();
     }
 
     move() {

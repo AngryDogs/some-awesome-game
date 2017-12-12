@@ -7,11 +7,41 @@ let ROTATION_SPEED = 0;
 let CROSS_SPEED = 0;
 
 const keyPressStorage = {};
+const controllKeys = ['w', 'a', 's', 'd'];
 const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e', ' '];
 
+const thrusterSound = new Audio('./assets/sounds/thrust.mp3');
+const minigunSound = new Audio('./assets/sounds/minigun.mp3');
+
+
+const addMinigunSound = () => {
+  minigunSound.addEventListener('timeupdate', function(){
+    const buffer = .44
+    if(this.currentTime > this.duration - buffer){
+        this.currentTime = 0
+        this.play()
+    }}, false);
+}
+
+const addThrusterSound = () => {
+  thrusterSound.addEventListener('timeupdate', function(){
+    const buffer = .44
+    if(this.currentTime > this.duration - buffer){
+        this.currentTime = 0
+        this.play()
+    }}, false);
+}
+
 const changeStates = (ship) => {
+  if(!keyPressStorage[' ']) {
+    minigunSound.pause();
+  }
+
   if(isAnyKeysDown()) {
     makeKeyPressActions(ship);
+  } else {
+    thrusterSound.currentTime = 0;
+    thrusterSound.pause();
   }
 }
 
@@ -31,17 +61,20 @@ const makeKeyPressActions = (ship) => {
   if(keyPressStorage['q'] && CROSS_SPEED <= 1) CROSS_SPEED += CROSS_SPEED_STEP;
   if(keyPressStorage['e'] && CROSS_SPEED >= -1) CROSS_SPEED -= CROSS_SPEED_STEP;
 
-  if(keyPressStorage[' ']) ship.shootMachineGun();
+  if(keyPressStorage[' ']) ship.shootMachineGun(minigunSound);
+
 
   ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
 }
 
 const loadArrowKeyHandler = (ship) => {
-
+    addMinigunSound();
+    addThrusterSound();
 
     window.addEventListener("keydown", function (event) {
       if(allowedKeys.includes(event.key)) {
         keyPressStorage[event.key] = true;
+        if(event.key != ' ') thrusterSound.play();
       }
     });
 
