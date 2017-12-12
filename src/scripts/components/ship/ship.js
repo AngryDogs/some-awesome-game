@@ -3,6 +3,7 @@ import Bullet from '../bullet/bullet';
 import Particle from '../particle/particle';
 
 const shipExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
+const menu = document.getElementById('menu');
 
 const EXPLOSION_PARTICLE_COUNT = 10;
 
@@ -135,7 +136,9 @@ class Ship {
     render() {
         const { canvas, positionX, positionY, angle, shotBullets, lifeCount, immunity, shipParticles } = this;
 
-        if(lifeCount < 0) canvas.style.visibility = "hidden";
+        if(lifeCount < 0) {
+            canvas.style.visibility = "hidden";
+        }
 
         if(shipParticles && shipParticles.length == 0 && lifeCount < 0) {
             canvas.remove();

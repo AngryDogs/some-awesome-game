@@ -1,6 +1,6 @@
 import Particle from '../particle/particle';
 
-const EXPLOSION_PARTICLE_COUNT = 20;
+const EXPLOSION_PARTICLE_COUNT = 30;
 const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
 const rockExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
 
