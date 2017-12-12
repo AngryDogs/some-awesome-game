@@ -16,15 +16,14 @@ class Rock {
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        // this.moveSpeed = Math.floor((Math.random() * 3) + 1);
-        this.moveSpeed = 0;
+        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
         this.gameboard = document.getElementById("gameboard");
         this.rockParticles = [];
         this.shotBullets = ship.shotBullets;
         this.ship = ship;
         this.allowHits = true;
 
-        //this.initPositionCoordinates();
+        this.initPositionCoordinates();
         this.init();
     }
 
@@ -176,6 +175,13 @@ class Rock {
         const { canvas, positionX, positionY, angle, rockParticles, allowHits, health } = this;
 
         if(this.health < 0 && allowHits) {
+            const scoreElement = document.getElementById('score');
+
+            const score = scoreElement.innerHTML.replace(/\D/g,'');
+            const newScore = parseInt(score) + 1;
+
+            scoreElement.innerHTML = 'Score: ' + newScore;
+
             this.allowHits = false;
             canvas.style.visibility = "hidden";
             this.explosion();

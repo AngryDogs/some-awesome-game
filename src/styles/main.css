@@ -50,6 +50,11 @@ canvas {
     margin: 0;
 }
 
+.menu h4 {
+    margin: 0;
+    margin-top: 10px;
+}
+
 .menu h2:hover {
     color: #fff;
     cursor: pointer;

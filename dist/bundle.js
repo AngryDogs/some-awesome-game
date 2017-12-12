@@ -71,16 +71,16 @@
 class Particle {
     
         constructor(element) {
-            this.sizeX = 2;
-            this.sizeY = 2;
+            this.sizeX = 4;
+            this.sizeY = 4;
             this.positionX = element.positionX + (element.sizeX / 2);
             this.positionY = element.positionY + (element.sizeY / 2);
             this.angle = Math.floor((Math.random() * 360));
             this.canvas = document.createElement("canvas");
             this.context = this.canvas.getContext('2d');
-            this.moveSpeed = Math.floor((Math.random() * 2) + 1);
+            this.moveSpeed = Math.floor((Math.random() * 3) + 1);
             this.gameboard = document.getElementById("gameboard");
-            this.lifeCycle = Math.floor((Math.random() * 50) + 30);
+            this.lifeCycle = Math.floor((Math.random() * 50) + 20);
             this.rock;
             this.ship;
             if(element.type === 'ship') this.ship = element;
@@ -99,10 +99,11 @@ class Particle {
             canvas.style.position = "absolute";
     
             context.beginPath();
-            context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
-            context.fillStyle = '#000';
-            context.fill();
-            context.stroke();
+            context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 1), 0, 2 * Math.PI, false);
+            context.fillStyle = '#fff';
+            context.shadowBlur = 15;
+            context.shadowColor = '#fff';
+            context.fill(); 
     
             this.gameboard.appendChild(canvas);
         }
@@ -157,7 +158,13 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 
 
 
-Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
+const startGame = document.getElementById('startGame');
+const menu = document.getElementById('menu');
+
+startGame.addEventListener('click', () => {
+    menu.style.visibility = 'hidden';
+    Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
+});
 
 /***/ }),
 /* 2 */
@@ -170,35 +177,97 @@ Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default
 
 
 let repeater;
-let ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */]();
+let ship;
 let lastLoop = new Date;
+
+let level = 1;
+let score = 0;
+let refrechCounter = 0;
+let rockLimitCounter = 5; 
+
+const gameboard = document.getElementById("gameboard");
+const menu = document.getElementById('menu');
+const levelElement = document.getElementById('level');
+const scoreElement = document.getElementById('score');
+const fpsElement = document.getElementById('fps');
+const healthElement = document.getElementById('health');
+
+let rockInterval;
 
 let rocks = [];
 
-const repeateFunction = () => {
-    const thisLoop = new Date;
-    const fps = 1000 / (thisLoop - lastLoop);
-    lastLoop = thisLoop;
+const levelIncrement = () => {
+    const score = scoreElement.innerHTML.replace(/\D/g,'');
+    const currentScore = parseInt(score);
 
+    if(rocks && currentScore == rockLimitCounter && rocks.length != 0) {
+        level++;
+        rockLimitCounter += 5;
+        rocks = [];
+    }
+}
+
+const renderInfo = () => {
+
+    levelElement.innerHTML = 'Level: ' + level;
+    if(ship) healthElement.innerHTML = 'Lifes: ' + ship.lifeCount;
+    const fps = calculateFps();
+
+    if(refrechCounter === 10) {
+        fpsElement.innerHTML = 'Fps: ' + Math.floor(fps);
+        refrechCounter = 0;
+    } else {
+        refrechCounter++;
+    }
+}
+
+const repeateFunction = () => {
+
+    levelIncrement();
+    renderInfo();
     if(ship) ship.translateNewValues();
-    if(rocks) rocks.forEach(rock => rock.move());
+    if(rocks) rocks.forEach(rock => rock.move(score));
 
     if(ship && ship.lifeCount < 0) {
+        menu.style.visibility = 'visible';
         window.cancelAnimationFrame(repeateFunction);
+        
+        while (gameboard.firstChild) {
+            gameboard.removeChild(gameboard.firstChild);
+        }
         return;
     }
 
     repeater = requestAnimationFrame(repeateFunction);
-}
+};
 
 const constructGameBoard = () => {
+    restoreGameBoard();
 
-    setInterval(() => {
-        rocks.push(new __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* default */](ship));
-    }, 1000);
+    ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */]();
+    rockInterval = setInterval(() => {
+        if(rocks && rocks.length < rockLimitCounter) rocks.push(new __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* default */](ship));
+    }, 2000);
 
     repeater = requestAnimationFrame(repeateFunction);
+};
+
+const restoreGameBoard = () => {
+    level = 1;
+    score = 0;
+    refrechCounter = 0;
+    rocks = [];
+    ship = null;
+
+    if(rockInterval) clearInterval(rockInterval);
 }
+
+const calculateFps = () => {
+    const thisLoop = new Date;
+    const fps = 1000 / (thisLoop - lastLoop);
+    lastLoop = thisLoop;
+    return fps;
+};
 
 /* harmony default export */ __webpack_exports__["a"] = (constructGameBoard);
 
@@ -214,14 +283,17 @@ const constructGameBoard = () => {
 
 
 
+const shipExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
+const menu = document.getElementById('menu');
+
 const EXPLOSION_PARTICLE_COUNT = 10;
 
 class Ship {
 
     constructor() {
         this.type = 'ship';
-        this.sizeX = 16;
-        this.sizeY = 14;
+        this.sizeX = 20;
+        this.sizeY = 19;
         this.positionX = 110;
         this.positionY = 110;
         this.angle = 0;
@@ -249,9 +321,11 @@ class Ship {
         canvas.style.top = positionY + 'px';
         canvas.style.position = "absolute";
 
-        context.translate(0, 7);
+        context.translate(3, 9);
         context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
+        context.fillStyle = "#fff";
+        context.shadowBlur = 5;
+        context.shadowColor = '#fff';
         context.beginPath();
         context.moveTo(shape[0][0],shape[0][1]);
         context.lineTo(shape[1][0],shape[1][1]);
@@ -272,9 +346,11 @@ class Ship {
         this.crossSpeed = crossSpeed;
     }
 
-    shootMachineGun() {
-        if(this.shotBullets.length < 500)
+    shootMachineGun(minigunSound) {
+        minigunSound.play();
+        if(this.shotBullets.length < 300) {
             this.shotBullets.push(new __WEBPACK_IMPORTED_MODULE_1__bullet_bullet__["a" /* default */](this));
+        }
     }
 
     translateNewValues() {
@@ -291,14 +367,11 @@ class Ship {
     }
 
     explosion() {
-        let interval = 0;
-
-        const explosionInterval = setInterval(() => {
-            interval++;
-
-            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+        for(let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
             this.shipParticles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */](this));
-        }, 1000 / 60);
+        }
+        shipExplosionSound.currentTime = 0;
+        shipExplosionSound.play();
     }
 
     move() {
@@ -344,7 +417,9 @@ class Ship {
     render() {
         const { canvas, positionX, positionY, angle, shotBullets, lifeCount, immunity, shipParticles } = this;
 
-        if(lifeCount < 0) canvas.style.visibility = "hidden";
+        if(lifeCount < 0) {
+            canvas.style.visibility = "hidden";
+        }
 
         if(shipParticles && shipParticles.length == 0 && lifeCount < 0) {
             canvas.remove();
@@ -379,11 +454,54 @@ let ROTATION_SPEED = 0;
 let CROSS_SPEED = 0;
 
 const keyPressStorage = {};
+const controllKeys = ['w', 'a', 's', 'd'];
 const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e', ' '];
 
+const thrusterSound = new Audio('./assets/sounds/thrust.mp3');
+const minigunSound = new Audio('./assets/sounds/minigun.mp3'); 
+const engine = new Audio('./assets/sounds/engine.mp3'); 
+
+let interval;
+
+const addMinigunSound = () => {
+  minigunSound.addEventListener('timeupdate', function(){
+    const buffer = .44
+    if(this.currentTime > this.duration - buffer){
+        this.currentTime = 0
+        this.play()
+    }}, false);
+}
+
+const addEngineSound = () => {
+  engine.addEventListener('timeupdate', function(){
+    const buffer = .44
+    if(this.currentTime > this.duration - buffer){
+        this.currentTime = 0
+        this.play()
+    }}, false);
+  engine.volume = 0.2;
+  engine.play();
+}
+
+const addThrusterSound = () => {
+  thrusterSound.addEventListener('timeupdate', function(){
+    const buffer = .44
+    if(this.currentTime > this.duration - buffer){
+        this.currentTime = 0
+        this.play()
+    }}, false);
+}
+
 const changeStates = (ship) => {
+  if(!keyPressStorage[' ']) {
+    minigunSound.pause();
+  }
+
   if(isAnyKeysDown()) {
     makeKeyPressActions(ship);
+  } else {
+    thrusterSound.currentTime = 0;
+    thrusterSound.pause();
   }
 }
 
@@ -403,27 +521,38 @@ const makeKeyPressActions = (ship) => {
   if(keyPressStorage['q'] && CROSS_SPEED <= 1) CROSS_SPEED += CROSS_SPEED_STEP;
   if(keyPressStorage['e'] && CROSS_SPEED >= -1) CROSS_SPEED -= CROSS_SPEED_STEP;
 
-  if(keyPressStorage[' ']) ship.shootMachineGun();
+  if(keyPressStorage[' ']) ship.shootMachineGun(minigunSound);
+
 
   ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
 }
 
+const removeAllPreviousHandles = () => {
+  window.removeEventListener("keydown", state => state);
+  window.removeEventListener("keyup", state => state);
+  if(interval) clearInterval(interval);
+}
+
 const loadArrowKeyHandler = (ship) => {
+    addEngineSound();
+    addMinigunSound();
+    addThrusterSound();
+    removeAllPreviousHandles();
 
-
-    window.addEventListener("keydown", function (event) {
+    window.addEventListener("keydown", (event) => {
       if(allowedKeys.includes(event.key)) {
         keyPressStorage[event.key] = true;
+        if(event.key != ' ') thrusterSound.play();
       }
     });
 
-    window.addEventListener("keyup", function (event) {
+    window.addEventListener("keyup", (event) => {
       if(allowedKeys.includes(event.key)) {
         keyPressStorage[event.key] = false;
       }
     });
 
-    setInterval(() => changeStates(ship), 1000 / 60);
+    interval = setInterval(() => changeStates(ship), 1000 / 60);
 };
 
 /* harmony default export */ __webpack_exports__["a"] = (loadArrowKeyHandler);
@@ -439,11 +568,11 @@ class Bullet {
         this.sizeX = 12;
         this.sizeY = 12;
         this.positionX = ship.positionX + 1;
-        this.positionY = ship.positionY + 1;
+        this.positionY = ship.positionY + 3;
         this.angle = this.dispersion(ship.angle - 2, ship.angle + 2);
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = 5;
+        this.moveSpeed = 10;
         this.gameboard = document.getElementById("gameboard");
         this.ship = ship;
 
@@ -462,7 +591,9 @@ class Bullet {
 
         context.translate(6, 6);
         context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
+        context.strokeStyle = "#fff";
+        context.shadowBlur = 20;
+        context.shadowColor = '#fff';
         context.beginPath();
         context.moveTo(shape[0][0],shape[0][1]);
         context.lineTo(shape[1][0],shape[1][1]);
@@ -519,17 +650,19 @@ class Bullet {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(0);
 
 
-const EXPLOSION_PARTICLE_COUNT = 4;
+const EXPLOSION_PARTICLE_COUNT = 30;
+const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
+const rockExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
 
 class Rock {
 
     constructor(ship) {
         this.type = 'rock';
         this.health = Math.floor((Math.random() * 40) + 20);
-        this.sizeX =  this.health;
-        this.sizeY =  this.health;
-        this.positionX = 300;
-        this.positionY = 300;
+        this.sizeX =  Math.floor((Math.random() * 40) + 30);
+        this.sizeY =  this.sizeX;
+        this.positionX = 500;
+        this.positionY = 90;
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
@@ -586,10 +719,11 @@ class Rock {
         canvas.style.position = "absolute";
 
         context.beginPath();
-        context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
-        context.fillStyle = '#000';
+        context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 6), 0, 2 * Math.PI, false);
+        context.fillStyle = '#fff';
+        context.shadowBlur = 10;
+        context.shadowColor = '#fff';
         context.fill();
-        context.stroke();
 
         this.gameboard.appendChild(canvas);
     }
@@ -603,18 +737,17 @@ class Rock {
     }
 
     bulletHit() {
+        rockHitSound.currentTime = 0;
+        rockHitSound.play();
         this.rockParticles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */](this));
     }
 
     explosion() {
-        let interval = 0;
-
-        const explosionInterval = setInterval(() => {
-            interval++;
-
-            if(interval === EXPLOSION_PARTICLE_COUNT) clearInterval(explosionInterval);
+        for(let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
             this.rockParticles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */](this));
-        }, 1000 / 60);
+        }
+        rockExplosionSound.currentTime = 0;
+        rockExplosionSound.play();
     }
 
     move() {
@@ -634,14 +767,31 @@ class Rock {
         }
     }
 
+    pointInterscetsWithCircle(pointX, pointY, centerX, centerY, radius) {
+        return Math.sqrt((pointX - centerX) * (pointX - centerX) + (pointY - centerY) * (pointY - centerY)) < radius - 3;
+    }
+
     renderShipIntersection() {
-        const { ship, positionX, positionY, sizeX, sizeY } = this;
+        const { ship, positionX, positionY, sizeX, sizeY, allowHits } = this;
+
+        const radius = sizeX / 2;
+        const centerX = positionX + (sizeX / 2);
+        const centerY = positionY + (sizeY / 2);
 
         const shipNoseX = ship.positionX + ship.sizeX;
         const shipNoseY = ship.positionY + (ship.sizeY / 2);
+
+        const shipSide1X = ship.positionX;
+        const shipSide1Y = ship.positionY;
+
+        const shipSide2X = ship.positionX;
+        const shipSide2Y = ship.positionY + ship.sizeY;
+
+        const noseIntersection = this.pointInterscetsWithCircle(shipNoseX, shipNoseY, centerX, centerY, radius);
+        const side1Intersection = this.pointInterscetsWithCircle(shipSide1X, shipSide1Y, centerX, centerY, radius);
+        const side2Intersection = this.pointInterscetsWithCircle(shipSide2X, shipSide2Y, centerX, centerY, radius);
         
-        const hasIntersected = (shipNoseX > positionX + 10 && shipNoseX < positionX + sizeX + 5) && 
-            (shipNoseY > positionY + 10 && shipNoseY < positionY + sizeY + 5);
+        const hasIntersected = noseIntersection || side1Intersection || side2Intersection;
 
         if(hasIntersected && ship.immunity == 0 && allowHits) {
             ship.immunity = 200;
@@ -653,20 +803,18 @@ class Rock {
     renderIntersection() {
         const { shotBullets, positionX, positionY, sizeX, sizeY, canvas, allowHits } = this;
         if(!shotBullets && !allowHits) return;
+
+        const radius = sizeX / 2;
+        const centerX = positionX + (sizeX / 2);
+        const centerY = positionY + (sizeY / 2);
         
         shotBullets.forEach((bullet, index) => {
-            const hasIntersected = (bullet.positionX > positionX - 6 && bullet.positionX < positionX + sizeX - 6) && 
-                (bullet.positionY > positionY - 6 && bullet.positionY < positionY + sizeY - 6);
+            const hasIntersected = this.pointInterscetsWithCircle(bullet.positionX, bullet.positionY, centerX, centerY, radius);
 
-            if(this.health < 0 && allowHits) {
-                this.allowHits = false;
-                canvas.style.visibility = "hidden";
-                this.explosion();
-                return;
-            } else if(hasIntersected && allowHits) {
+            if(hasIntersected && allowHits) {
                 shotBullets.splice(index, 1);
                 bullet.canvas.remove();
-                if(this.health > 15) this.bulletHit();
+                this.bulletHit();
                 this.health--;
                 return;
             }
@@ -674,7 +822,21 @@ class Rock {
     }
 
     render() {
-        const { canvas, positionX, positionY, angle, rockParticles, allowHits } = this;
+        const { canvas, positionX, positionY, angle, rockParticles, allowHits, health } = this;
+
+        if(this.health < 0 && allowHits) {
+            const scoreElement = document.getElementById('score');
+
+            const score = scoreElement.innerHTML.replace(/\D/g,'');
+            const newScore = parseInt(score) + 1;
+
+            scoreElement.innerHTML = 'Score: ' + newScore;
+
+            this.allowHits = false;
+            canvas.style.visibility = "hidden";
+            this.explosion();
+            return;
+        }
 
         if(rockParticles.length == 0 && !allowHits) {
             canvas.remove();
@@ -733,7 +895,7 @@ exports = module.exports = __webpack_require__(9)(undefined);
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #f1f1f1;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n  \ncanvas {\n    position: absolute;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n  \ncanvas {\n    position: absolute;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    height: 250px;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 75px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}", ""]);
 
 // exports
 
