@@ -25,7 +25,7 @@ const levelIncrement = () => {
     const score = scoreElement.innerHTML.replace(/\D/g,'');
     const currentScore = parseInt(score);
 
-    if(rocks && currentScore == rockLimitCounter && rocks.length != 0) {
+    if(rocks && currentScore == rockLimitCounter && rocks.length != 0) {
         level++;
         rockLimitCounter += 5;
         rocks = [];
