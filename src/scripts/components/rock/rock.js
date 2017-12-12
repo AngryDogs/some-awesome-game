@@ -9,21 +9,22 @@ class Rock {
     constructor(ship) {
         this.type = 'rock';
         this.health = Math.floor((Math.random() * 40) + 20);
-        this.sizeX =  this.health;
-        this.sizeY =  this.health;
+        this.sizeX =  20;
+        this.sizeY =  20;
         this.positionX = 500;
         this.positionY = 90;
         this.angle = 0;
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
-        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
+        // this.moveSpeed = Math.floor((Math.random() * 3) + 1);
+        this.moveSpeed = 0;
         this.gameboard = document.getElementById("gameboard");
         this.rockParticles = [];
         this.shotBullets = ship.shotBullets;
         this.ship = ship;
         this.allowHits = true;
 
-        this.initPositionCoordinates();
+        //this.initPositionCoordinates();
         this.init();
     }
 
@@ -69,7 +70,7 @@ class Rock {
         canvas.style.position = "absolute";
 
         context.beginPath();
-        context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
+        context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 1), 0, 2 * Math.PI, false);
         context.fillStyle = '#000';
         context.fill();
         context.stroke();
@@ -116,14 +117,31 @@ class Rock {
         }
     }
 
+    pointInterscetsWithCircle(pointX, pointY, centerX, centerY, radius) {
+        return Math.sqrt((pointX - centerX) * (pointX - centerX) + (pointY - centerY) * (pointY - centerY)) < radius;
+    }
+
     renderShipIntersection() {
         const { ship, positionX, positionY, sizeX, sizeY, allowHits } = this;
 
+        const radius = sizeX / 2;
+        const centerX = positionX + (sizeX / 2);
+        const centerY = positionY + (sizeY / 2);
+
         const shipNoseX = ship.positionX + ship.sizeX;
         const shipNoseY = ship.positionY + (ship.sizeY / 2);
+
+        const shipSide1X = ship.positionX;
+        const shipSide1Y = ship.positionY;
+
+        const shipSide2X = ship.positionX;
+        const shipSide2Y = ship.positionY + ship.sizeY;
+
+        const noseIntersection = this.pointInterscetsWithCircle(shipNoseX, shipNoseY, centerX, centerY, radius);
+        const side1Intersection = this.pointInterscetsWithCircle(shipSide1X, shipSide1Y, centerX, centerY, radius);
+        const side2Intersection = this.pointInterscetsWithCircle(shipSide2X, shipSide2Y, centerX, centerY, radius);
         
-        const hasIntersected = (shipNoseX > positionX + 10 && shipNoseX < positionX + sizeX + 5) && 
-            (shipNoseY > positionY + 10 && shipNoseY < positionY + sizeY + 5);
+        const hasIntersected = noseIntersection || side1Intersection || side2Intersection;
 
         if(hasIntersected && ship.immunity == 0 && allowHits) {
             ship.immunity = 200;

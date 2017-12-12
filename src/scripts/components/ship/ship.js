@@ -64,7 +64,7 @@ class Ship {
 
     shootMachineGun(minigunSound) {
         minigunSound.play();
-        if(this.shotBullets.length < 30) {
+        if(this.shotBullets.length < 300) {
             this.shotBullets.push(new Bullet(this));
         }
     }
