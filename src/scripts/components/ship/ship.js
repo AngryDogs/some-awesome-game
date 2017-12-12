@@ -10,8 +10,8 @@ class Ship {
 
     constructor() {
         this.type = 'ship';
-        this.sizeX = 16;
-        this.sizeY = 14;
+        this.sizeX = 20;
+        this.sizeY = 19;
         this.positionX = 110;
         this.positionY = 110;
         this.angle = 0;
@@ -39,9 +39,11 @@ class Ship {
         canvas.style.top = positionY + 'px';
         canvas.style.position = "absolute";
 
-        context.translate(0, 7);
+        context.translate(3, 9);
         context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
+        context.fillStyle = "#fff";
+        context.shadowBlur = 5;
+        context.shadowColor = '#fff';
         context.beginPath();
         context.moveTo(shape[0][0],shape[0][1]);
         context.lineTo(shape[1][0],shape[1][1]);

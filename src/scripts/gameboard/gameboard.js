@@ -5,14 +5,34 @@ let repeater;
 let ship = new Ship();
 let lastLoop = new Date;
 
+let level = 1;
+let score = 0;
+let refrechCounter = 0;
+
+const levelElement = document.getElementById('level');
+const scoreElement = document.getElementById('score');
+const fpsElement = document.getElementById('fps');
+
 let rocks = [];
 rocks.push(new Rock(ship));
 
-const repeateFunction = () => {
-    const thisLoop = new Date;
-    const fps = 1000 / (thisLoop - lastLoop);
-    lastLoop = thisLoop;
+const renderInfo = () => {
 
+    levelElement.innerHTML = 'Level: ' + level;
+    scoreElement.innerHTML = 'Score: ' + score;
+    const fps = calculateFps();
+
+    if(refrechCounter === 10) {
+        fpsElement.innerHTML = 'Fps: ' + Math.floor(fps);
+        refrechCounter = 0;
+    } else {
+        refrechCounter++;
+    }
+}
+
+const repeateFunction = () => {
+
+    renderInfo();
     if(ship) ship.translateNewValues();
     if(rocks) rocks.forEach(rock => rock.move());
 
@@ -22,7 +42,7 @@ const repeateFunction = () => {
     }
 
     repeater = requestAnimationFrame(repeateFunction);
-}
+};
 
 const constructGameBoard = () => {
     // setInterval(() => {
@@ -30,6 +50,13 @@ const constructGameBoard = () => {
     // }, 2000);
 
     repeater = requestAnimationFrame(repeateFunction);
-}
+};
+
+const calculateFps = () => {
+    const thisLoop = new Date;
+    const fps = 1000 / (thisLoop - lastLoop);
+    lastLoop = thisLoop;
+    return fps;
+};
 
 export default constructGameBoard;

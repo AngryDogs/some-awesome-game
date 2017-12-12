@@ -2,7 +2,26 @@
     <head>
         <title>Some awesome game</title>
     </head>
+    <style>
+        @font-face {
+            font-family: Bungee;
+            src: url('./assets/fonts/Bungee-Regular.ttf');
+        }
+
+        html {
+            font-family: Bungee;
+        }
+
+        body {
+            background: url('./assets/images/bg2.jpg');
+        }
+    </style>
     <body scroll="no">
+        <div class="info" id="info">
+            <p id="score">Score: 0</p>
+            <p id="level">Level: 1</p>
+            <p id="fps">Fps: 0</p>
+        </div>
         <div class="gameboard" id="gameboard">
         </div>
     </body>

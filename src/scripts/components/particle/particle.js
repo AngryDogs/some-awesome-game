@@ -1,16 +1,16 @@
 class Particle {
     
         constructor(element) {
-            this.sizeX = 2;
-            this.sizeY = 2;
+            this.sizeX = 4;
+            this.sizeY = 4;
             this.positionX = element.positionX + (element.sizeX / 2);
             this.positionY = element.positionY + (element.sizeY / 2);
             this.angle = Math.floor((Math.random() * 360));
             this.canvas = document.createElement("canvas");
             this.context = this.canvas.getContext('2d');
-            this.moveSpeed = Math.floor((Math.random() * 2) + 1);
+            this.moveSpeed = Math.floor((Math.random() * 3) + 1);
             this.gameboard = document.getElementById("gameboard");
-            this.lifeCycle = Math.floor((Math.random() * 50) + 30);
+            this.lifeCycle = Math.floor((Math.random() * 50) + 20);
             this.rock;
             this.ship;
             if(element.type === 'ship') this.ship = element;
@@ -29,10 +29,11 @@ class Particle {
             canvas.style.position = "absolute";
     
             context.beginPath();
-            context.arc(sizeX / 2, sizeY / 2, sizeX / 3, 0, 2 * Math.PI, false);
-            context.fillStyle = '#000';
-            context.fill();
-            context.stroke();
+            context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 1), 0, 2 * Math.PI, false);
+            context.fillStyle = '#fff';
+            context.shadowBlur = 15;
+            context.shadowColor = '#fff';
+            context.fill(); 
     
             this.gameboard.appendChild(canvas);
         }

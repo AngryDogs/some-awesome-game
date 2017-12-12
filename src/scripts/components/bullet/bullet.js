@@ -4,7 +4,7 @@ class Bullet {
         this.sizeX = 12;
         this.sizeY = 12;
         this.positionX = ship.positionX + 1;
-        this.positionY = ship.positionY + 1;
+        this.positionY = ship.positionY + 3;
         this.angle = this.dispersion(ship.angle - 2, ship.angle + 2);
         this.canvas = document.createElement("canvas");
         this.context = this.canvas.getContext('2d');
@@ -27,7 +27,9 @@ class Bullet {
 
         context.translate(6, 6);
         context.rotate(angle * Math.PI / 180);
-        context.fillStyle = "#000";
+        context.strokeStyle = "#fff";
+        context.shadowBlur = 20;
+        context.shadowColor = '#fff';
         context.beginPath();
         context.moveTo(shape[0][0],shape[0][1]);
         context.lineTo(shape[1][0],shape[1][1]);

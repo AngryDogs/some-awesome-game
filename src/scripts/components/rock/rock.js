@@ -9,8 +9,8 @@ class Rock {
     constructor(ship) {
         this.type = 'rock';
         this.health = Math.floor((Math.random() * 40) + 20);
-        this.sizeX =  20;
-        this.sizeY =  20;
+        this.sizeX =  Math.floor((Math.random() * 40) + 30);
+        this.sizeY =  this.sizeX;
         this.positionX = 500;
         this.positionY = 90;
         this.angle = 0;
@@ -70,10 +70,11 @@ class Rock {
         canvas.style.position = "absolute";
 
         context.beginPath();
-        context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 1), 0, 2 * Math.PI, false);
-        context.fillStyle = '#000';
+        context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 6), 0, 2 * Math.PI, false);
+        context.fillStyle = '#fff';
+        context.shadowBlur = 10;
+        context.shadowColor = '#fff';
         context.fill();
-        context.stroke();
 
         this.gameboard.appendChild(canvas);
     }
@@ -118,7 +119,7 @@ class Rock {
     }
 
     pointInterscetsWithCircle(pointX, pointY, centerX, centerY, radius) {
-        return Math.sqrt((pointX - centerX) * (pointX - centerX) + (pointY - centerY) * (pointY - centerY)) < radius;
+        return Math.sqrt((pointX - centerX) * (pointX - centerX) + (pointY - centerY) * (pointY - centerY)) < radius - 3;
     }
 
     renderShipIntersection() {
@@ -153,10 +154,13 @@ class Rock {
     renderIntersection() {
         const { shotBullets, positionX, positionY, sizeX, sizeY, canvas, allowHits } = this;
         if(!shotBullets && !allowHits) return;
+
+        const radius = sizeX / 2;
+        const centerX = positionX + (sizeX / 2);
+        const centerY = positionY + (sizeY / 2);
         
         shotBullets.forEach((bullet, index) => {
-            const hasIntersected = (bullet.positionX > positionX - 6 && bullet.positionX < positionX + sizeX - 6) && 
-                (bullet.positionY > positionY - 6 && bullet.positionY < positionY + sizeY - 6);
+            const hasIntersected = this.pointInterscetsWithCircle(bullet.positionX, bullet.positionY, centerX, centerY, radius);
 
             if(hasIntersected && allowHits) {
                 shotBullets.splice(index, 1);
