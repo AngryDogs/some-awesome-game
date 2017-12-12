@@ -53,6 +53,7 @@ class Ship {
         context.stroke();
         context.fill();
 
+        this.canvas.id = "ship";
         this.gameboard.appendChild(this.canvas);
 
         loadArrowKeyHandler(this);

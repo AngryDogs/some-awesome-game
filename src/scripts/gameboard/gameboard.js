@@ -8,7 +8,7 @@ let lastLoop = new Date;
 let level = 1;
 let score = 0;
 let refrechCounter = 0;
-let rockLimitCounter = 5; 
+let rockLimitCounter = 2; 
 
 const gameboard = document.getElementById("gameboard");
 const menu = document.getElementById('menu');
@@ -25,11 +25,21 @@ const levelIncrement = () => {
     const score = scoreElement.innerHTML.replace(/\D/g,'');
     const currentScore = parseInt(score);
 
-    if(rocks && currentScore == rockLimitCounter && rocks.length != 0) {
+    const currentHits = parseInt(localStorage.getItem('currentHits'));
+
+    if(currentHits && rocks && currentHits === rocks.length && !hasAnyParticles()) {
+        localStorage.setItem('currentHits', 0);
         level++;
         rockLimitCounter += 5;
         rocks = [];
     }
+}
+
+const hasAnyParticles = () => {
+    if(rocks) return rocks.find(rock => {
+        return rock.rockParticles.length > 0;
+    });
+    return false;
 }
 
 const renderInfo = () => {
@@ -83,6 +93,8 @@ const restoreGameBoard = () => {
     refrechCounter = 0;
     rocks = [];
     ship = null;
+
+    localStorage.setItem('currentHits', 0);
 
     if(rockInterval) clearInterval(rockInterval);
 }
