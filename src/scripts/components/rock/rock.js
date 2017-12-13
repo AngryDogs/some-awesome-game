@@ -183,8 +183,6 @@ class Rock {
             const currentHits = localStorage.getItem('currentHits');
             localStorage.setItem('currentHits', parseInt(currentHits) + 1);
 
-            console.log(localStorage.getItem('currentHits'));
-
             scoreElement.innerHTML = 'Score: ' + newScore;
 
             this.allowHits = false;

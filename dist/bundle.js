@@ -183,7 +183,7 @@ let lastLoop = new Date;
 let level = 1;
 let score = 0;
 let refrechCounter = 0;
-let rockLimitCounter = 5; 
+let rockLimitCounter = 2; 
 
 const gameboard = document.getElementById("gameboard");
 const menu = document.getElementById('menu');
@@ -200,11 +200,21 @@ const levelIncrement = () => {
     const score = scoreElement.innerHTML.replace(/\D/g,'');
     const currentScore = parseInt(score);
 
-    if(rocks && currentScore == rockLimitCounter && rocks.length != 0) {
+    const currentHits = parseInt(localStorage.getItem('currentHits'));
+
+    if(currentHits && rocks && currentHits === rocks.length && !hasAnyParticles()) {
+        localStorage.setItem('currentHits', 0);
         level++;
         rockLimitCounter += 5;
         rocks = [];
     }
+}
+
+const hasAnyParticles = () => {
+    if(rocks) return rocks.find(rock => {
+        return rock.rockParticles.length > 0;
+    });
+    return false;
 }
 
 const renderInfo = () => {
@@ -230,11 +240,12 @@ const repeateFunction = () => {
 
     if(ship && ship.lifeCount < 0) {
         menu.style.visibility = 'visible';
-        window.cancelAnimationFrame(repeateFunction);
         
         while (gameboard.firstChild) {
             gameboard.removeChild(gameboard.firstChild);
         }
+
+        window.cancelAnimationFrame(repeateFunction);
         return;
     }
 
@@ -255,9 +266,13 @@ const constructGameBoard = () => {
 const restoreGameBoard = () => {
     level = 1;
     score = 0;
+    scoreElement.innerHTML = 'Score: ' + 0;
     refrechCounter = 0;
+    rockLimitCounter = 2;
     rocks = [];
     ship = null;
+
+    localStorage.setItem('currentHits', 0);
 
     if(rockInterval) clearInterval(rockInterval);
 }
@@ -334,6 +349,7 @@ class Ship {
         context.stroke();
         context.fill();
 
+        this.canvas.id = "ship";
         this.gameboard.appendChild(this.canvas);
 
         Object(__WEBPACK_IMPORTED_MODULE_0__handlers__["a" /* default */])(this);
@@ -531,6 +547,11 @@ const removeAllPreviousHandles = () => {
   window.removeEventListener("keydown", state => state);
   window.removeEventListener("keyup", state => state);
   if(interval) clearInterval(interval);
+  if(ship) {
+    ship.moveSpeed = 0;
+    ship.rotationSpeed = 0;
+    ship.crossSpeed = 0;
+  }
 }
 
 const loadArrowKeyHandler = (ship) => {
@@ -829,6 +850,9 @@ class Rock {
 
             const score = scoreElement.innerHTML.replace(/\D/g,'');
             const newScore = parseInt(score) + 1;
+
+            const currentHits = localStorage.getItem('currentHits');
+            localStorage.setItem('currentHits', parseInt(currentHits) + 1);
 
             scoreElement.innerHTML = 'Score: ' + newScore;
 

@@ -65,11 +65,12 @@ const repeateFunction = () => {
 
     if(ship && ship.lifeCount < 0) {
         menu.style.visibility = 'visible';
-        window.cancelAnimationFrame(repeateFunction);
         
         while (gameboard.firstChild) {
             gameboard.removeChild(gameboard.firstChild);
         }
+
+        window.cancelAnimationFrame(repeateFunction);
         return;
     }
 
@@ -90,7 +91,9 @@ const constructGameBoard = () => {
 const restoreGameBoard = () => {
     level = 1;
     score = 0;
+    scoreElement.innerHTML = 'Score: ' + 0;
     refrechCounter = 0;
+    rockLimitCounter = 2;
     rocks = [];
     ship = null;
 

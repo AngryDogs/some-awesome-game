@@ -84,6 +84,11 @@ const removeAllPreviousHandles = () => {
   window.removeEventListener("keydown", state => state);
   window.removeEventListener("keyup", state => state);
   if(interval) clearInterval(interval);
+  if(ship) {
+    ship.moveSpeed = 0;
+    ship.rotationSpeed = 0;
+    ship.crossSpeed = 0;
+  }
 }
 
 const loadArrowKeyHandler = (ship) => {
