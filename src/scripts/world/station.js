@@ -1,12 +1,16 @@
 // Home base at the centre of the map: an Atlantis-style six-armed city-ship.
 // Fly inside the docking ring and press B to dock with the shipyard.
+//
+// Performance: the city's line art (hundreds of glowing strokes) and the shield dome
+// gradient are rendered once into sprites; each frame just stamps them.
+
+import { createSprite, glowSprite, stamp } from '../render/sprites';
 
 export const STATION = {
     x: 0,
     y: 0,
     dockRadius: 420,
     maxDockSpeed: 140,
-    spin: 0.012,
     shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
     impacts: []            // { angle, life, strength } ripples on the city shield
 };
@@ -41,7 +45,7 @@ const hexagon = (r, offset) => {
 
 // One arm along +x. Main piers are long with a broad, angled end platform;
 // the others are shorter with a compact platform.
-const drawArm = (ctx, main, time, index) => {
+const drawArm = (ctx, main, index) => {
     const length = main ? 270 : 215;
     const half = main ? 22 : 18;
 
@@ -73,13 +77,13 @@ const drawArm = (ctx, main, time, index) => {
         ctx.stroke();
     }
 
-    // Window lights along the pier, twinkling slowly.
+    // Window lights along the pier.
     ctx.save();
     ctx.fillStyle = 'rgba(255, 230, 160, 0.85)';
     ctx.shadowBlur = 6;
     ctx.shadowColor = 'rgba(255, 210, 120, 0.9)';
     for(let x = 90; x < length; x += 11) {
-        const on = Math.sin(time * 0.7 + x * 0.37 + index * 1.7) > -0.3;
+        const on = Math.sin(x * 0.37 + index * 1.7) > -0.3;
         if(!on) continue;
         ctx.fillRect(x, -half * 0.75, 2, 2);
         ctx.fillRect(x + 4, half * 0.7, 2, 2);
@@ -87,11 +91,14 @@ const drawArm = (ctx, main, time, index) => {
     ctx.restore();
 };
 
-export const drawStation = (ctx, time, canDock) => {
-    ctx.save();
-    ctx.translate(STATION.x, STATION.y);
+const EXTENT = 460;
+const sprites = {};
 
-    // Docking ring.
+// City, shield dome and docking ring baked together: one straight image copy per frame.
+// Two variants: normal, and with the docking ring lit when the player can dock.
+const buildCity = (canDock) => createSprite(EXTENT * 2, EXTENT * 2, ctx => {
+    ctx.translate(EXTENT, EXTENT);
+
     ctx.setLineDash([12, 14]);
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
@@ -100,54 +107,19 @@ export const drawStation = (ctx, time, canDock) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // City shield dome with a slow shimmer and impact ripples.
     const R = STATION.shieldRadius;
-    const shimmer = 0.85 + 0.15 * Math.sin(time * 1.7);
     const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.85, 'rgba(120, 190, 255, ' + (0.05 * shimmer) + ')');
-    dome.addColorStop(1, 'rgba(140, 205, 255, ' + (0.16 * shimmer) + ')');
+    dome.addColorStop(0.85, 'rgba(120, 190, 255, 0.05)');
+    dome.addColorStop(1, 'rgba(140, 205, 255, 0.15)');
     ctx.fillStyle = dome;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(150, 210, 255, ' + (0.25 * shimmer) + ')';
+    ctx.strokeStyle = 'rgba(150, 210, 255, 0.28)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.globalCompositeOperation = 'lighter';
-    STATION.impacts.forEach(impact => {
-        const ix = Math.cos(impact.angle) * R;
-        const iy = Math.sin(impact.angle) * R;
-        const age = 1 - impact.life;
-        const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 30 + 50 * impact.strength);
-        flare.addColorStop(0, 'rgba(230, 245, 255, ' + (0.7 * impact.life) + ')');
-        flare.addColorStop(0.3, 'rgba(140, 200, 255, ' + (0.4 * impact.life) + ')');
-        flare.addColorStop(1, 'rgba(120, 190, 255, 0)');
-        ctx.fillStyle = flare;
-        ctx.fillRect(ix - 90, iy - 90, 180, 180);
-        ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
-        ctx.lineWidth = 2.5 * impact.life + 0.5;
-        ctx.beginPath();
-        ctx.arc(ix, iy, 10 + age * 160, 0, Math.PI * 2);
-        ctx.stroke();
-    });
-    ctx.restore();
-
-    // Bright arc along the rim where it was struck.
-    STATION.impacts.forEach(impact => {
-        ctx.strokeStyle = 'rgba(200, 235, 255, ' + (0.8 * impact.life) + ')';
-        ctx.lineWidth = 3 * impact.life;
-        ctx.beginPath();
-        ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength, impact.angle + 0.25 * impact.strength);
-        ctx.stroke();
-    });
-
-    ctx.rotate(time * STATION.spin);
     ctx.lineJoin = 'miter';
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = LINE;
@@ -160,52 +132,71 @@ export const drawStation = (ctx, time, canDock) => {
         ctx.rotate(i * Math.PI / 3 - Math.PI / 2);
         ctx.strokeStyle = LINE;
         ctx.fillStyle = FILL;
-        drawArm(ctx, i % 2 === 0, time, i);
+        drawArm(ctx, i % 2 === 0, i);
         ctx.restore();
     }
 
-    // Central hub: layered hexagons, the star-shaped gate room and the central tower.
     poly(ctx, hexagon(92, Math.PI / 6));
     poly(ctx, hexagon(70, 0));
     poly(ctx, hexagon(48, Math.PI / 6));
     const star = hexagon(40, 0);
-    line(ctx, star[0][0], star[0][1], star[2][0], star[2][1]);
-    line(ctx, star[2][0], star[2][1], star[4][0], star[4][1]);
-    line(ctx, star[4][0], star[4][1], star[0][0], star[0][1]);
-    line(ctx, star[1][0], star[1][1], star[3][0], star[3][1]);
-    line(ctx, star[3][0], star[3][1], star[5][0], star[5][1]);
-    line(ctx, star[5][0], star[5][1], star[1][0], star[1][1]);
+    [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].forEach(pair => {
+        line(ctx, star[pair[0]][0], star[pair[0]][1], star[pair[1]][0], star[pair[1]][1]);
+    });
     for(let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
         line(ctx, Math.cos(a) * 70, Math.sin(a) * 70, Math.cos(a) * 92, Math.sin(a) * 92);
     }
-
-    // Gate room glow.
-    ctx.shadowBlur = 0;
-    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
-    const gate = ctx.createRadialGradient(0, 0, 0, 0, 0, 18);
-    gate.addColorStop(0, 'rgba(160, 220, 255, ' + (0.8 * pulse) + ')');
-    gate.addColorStop(1, 'rgba(80, 150, 255, 0)');
-    ctx.fillStyle = gate;
-    ctx.beginPath();
-    ctx.arc(0, 0, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = LINE;
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
+});
+
+export const drawStation = (ctx, time, canDock) => {
+    const key = canDock ? 'dock' : 'idle';
+    if(!sprites[key]) sprites[key] = buildCity(canDock);
+    const R = STATION.shieldRadius;
+
+    ctx.save();
+    ctx.translate(STATION.x, STATION.y);
+    ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+
+    // Impact ripples and flares (only while something has just hit).
+    if(STATION.impacts.length) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        STATION.impacts.forEach(impact => {
+            const ix = Math.cos(impact.angle) * R;
+            const iy = Math.sin(impact.angle) * R;
+            const size = (60 + 100 * impact.strength) * impact.life;
+            ctx.globalAlpha = impact.life;
+            stamp(ctx, glowSprite('140,200,255'), ix, iy, size, size);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+            ctx.lineWidth = 2.5 * impact.life + 0.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength - (1 - impact.life) * 0.4,
+                impact.angle + 0.25 * impact.strength + (1 - impact.life) * 0.4);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // Gate room glow.
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
+    ctx.globalAlpha = 0.8 * pulse;
+    stamp(ctx, glowSprite('80,150,255'), 0, 0, 40, 40);
 
     // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
-    ctx.shadowBlur = 12;
-    for(let i = 0; i < 6; i += 2) {
-        const angle = i * Math.PI / 3 - Math.PI / 2;
-        const color = blink ? (canDock ? '140,255,160' : '255,120,100') : '80,90,110';
-        ctx.fillStyle = 'rgb(' + color + ')';
-        ctx.shadowColor = 'rgb(' + color + ')';
-        ctx.beginPath();
-        ctx.arc(Math.cos(angle) * 372, Math.sin(angle) * 372, 4, 0, Math.PI * 2);
-        ctx.fill();
+    if(blink) {
+        ctx.globalAlpha = 1;
+        const color = canDock ? '140,255,160' : '255,120,100';
+        for(let i = 0; i < 6; i += 2) {
+            const angle = i * Math.PI / 3 - Math.PI / 2;
+            stamp(ctx, glowSprite(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+        }
     }
     ctx.restore();
 

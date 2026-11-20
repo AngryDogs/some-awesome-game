@@ -1,5 +1,6 @@
 import Particle from '../particle/particle';
 import { delta } from '../../physics/physics';
+import { glowSprite, stamp } from '../../render/sprites';
 
 // Tau'ri missiles ('missile') and Ancient drones ('drone').
 const PROFILES = {
@@ -117,13 +118,9 @@ class Missile {
             // Golden squid-like drone with a pulsing glow.
             const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
             ctx.globalCompositeOperation = 'lighter';
-            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 9);
-            glow.addColorStop(0, 'rgba(255, 240, 180, ' + pulse + ')');
-            glow.addColorStop(1, 'rgba(255, 200, 80, 0)');
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(0, 0, 9, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.globalAlpha = pulse;
+            stamp(ctx, glowSprite('255,200,80'), 0, 0, 18, 18);
+            ctx.globalAlpha = 1;
             ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
             ctx.lineWidth = 1.2;
             ctx.beginPath();
@@ -135,9 +132,7 @@ class Missile {
         }
 
         ctx.strokeStyle = 'rgb(255, 160, 140)';
-        ctx.lineWidth = 1.3;
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = 'rgb(255, 120, 90)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(6, 0);
         ctx.lineTo(-4, 0);

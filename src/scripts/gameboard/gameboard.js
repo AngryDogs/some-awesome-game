@@ -12,8 +12,8 @@ import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo, removeCar
 import { getShipyard } from '../shipyard/shipyard';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
-const MAX_STEPS_PER_FRAME = 8;
-const MAX_PARTICLES = 2000;
+const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
+const MAX_PARTICLES = 1200;
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
 const ROCK_BOUNCE = 0.2;
@@ -83,8 +83,13 @@ const createState = () => {
     };
 };
 
+// Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
+// automatically if the game can't hold a smooth frame rate on this computer.
+let resolutionCap = 2;
+let slowTime = 0;
+
 const resize = () => {
-    pixelRatio = window.devicePixelRatio || 1;
+    pixelRatio = Math.min(window.devicePixelRatio || 1, resolutionCap);
     canvas.width = Math.floor(window.innerWidth * pixelRatio);
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
@@ -149,21 +154,28 @@ const banner = (text, duration) => {
 
 // ---------------------------------------------------------------- physics
 
+// Gravity changes slowly, so the expensive all-pairs sum is refreshed GRAVITY_INTERVAL
+// times less often than the physics step and the cached accelerations reused in between.
+const GRAVITY_INTERVAL = 4;
+let gravityCounter = 0;
+
 const applyGravity = (dt) => {
     const { rocks, ship, bullets, missiles, ores } = state;
-
-    // Compute every rock's acceleration before changing any velocity.
-    const accelerations = rocks.map(rock => gravityAt(rock, rocks));
-    rocks.forEach((rock, i) => {
-        rock.vx += accelerations[i].x * dt;
-        rock.vy += accelerations[i].y * dt;
-    });
+    const refresh = gravityCounter++ % GRAVITY_INTERVAL === 0;
 
     const pull = (body) => {
-        const a = gravityAt(body, rocks);
-        body.vx += a.x * dt;
-        body.vy += a.y * dt;
+        if(refresh || !body.gravity) body.gravity = gravityAt(body, rocks);
+        body.vx += body.gravity.x * dt;
+        body.vy += body.gravity.y * dt;
     };
+
+    // Rocks: compute every acceleration before changing any velocity.
+    if(refresh) rocks.forEach(rock => { rock.gravityNext = gravityAt(rock, rocks); });
+    rocks.forEach(rock => {
+        if(refresh || !rock.gravity) rock.gravity = rock.gravityNext || gravityAt(rock, rocks);
+        rock.vx += rock.gravity.x * dt;
+        rock.vy += rock.gravity.y * dt;
+    });
 
     if(ship.alive) pull(ship);
     bullets.forEach(pull);
@@ -202,14 +214,21 @@ const hitRock = (rock, damage, hitX, hitY) => {
         });
     }
 
-    if(result.fragment) {
-        state.newRocks.push(result.fragment);
-        const midX = (rock.x + result.fragment.x) / 2;
-        const midY = (rock.y + result.fragment.y) / 2;
-        Particle.burst(state.particles, midX, midY,
-            rock.vx, rock.vy, 16, { minSpeed: 30, maxSpeed: 130, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230' });
-        Particle.burst(state.particles, midX, midY, rock.vx, rock.vy, 8, {
-            minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+    if(result.pieces) {
+        // Cut clean through: the two halves replace the asteroid, with dust along the cut.
+        result.pieces.forEach(piece => state.newRocks.push(piece));
+        const a = result.pieces[0];
+        const b = result.pieces[1];
+        for(let i = 0; i < 10; i++) {
+            const t = Math.random();
+            const x = a.x + (b.x - a.x) * t + (Math.random() - 0.5) * rock.radius * 0.6;
+            const y = a.y + (b.y - a.y) * t + (Math.random() - 0.5) * rock.radius * 0.6;
+            Particle.burst(state.particles, x, y, rock.vx, rock.vy, 1, {
+                minSpeed: 5, maxSpeed: 30, minLife: 1, maxLife: 2.2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+            });
+        }
+        Particle.burst(state.particles, hitX, hitY, rock.vx, rock.vy, 12, {
+            minSpeed: 20, maxSpeed: 90, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230'
         });
         sounds.rockCrack();
     }
@@ -254,15 +273,24 @@ const bulletCollisions = () => {
         if(bullet.dead) return;
         for(let i = 0; i < rocks.length; i++) {
             const rock = rocks[i];
-            if(rock.dead) continue;
-            const dx = bullet.x - rock.x;
-            const dy = bullet.y - rock.y;
-            if(dx * dx + dy * dy > rock.radius * rock.radius) continue;
+            if(rock.dead || !rock.containsPoint(bullet.x, bullet.y)) continue;
+
+            // Find where the round actually crossed the visible outline this step.
+            const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || 1;
+            const dirX = bullet.vx / speed;
+            const dirY = bullet.vy / speed;
+            const travel = speed * STEP + 2;
+            const startX = bullet.x - dirX * travel;
+            const startY = bullet.y - dirY * travel;
+            const entry = rock.raycast(startX, startY, dirX, dirY, travel);
+            bullet.x = entry === null ? bullet.x : startX + dirX * entry;
+            bullet.y = entry === null ? bullet.y : startY + dirY * entry;
 
             bullet.dead = true;
-            // Projectiles carry momentum and nudge the rock.
-            rock.vx += bullet.vx * bullet.mass / rock.mass;
-            rock.vy += bullet.vy * bullet.mass / rock.mass;
+            // Projectiles carry momentum and nudge the rock (capped so small chunks don't rocket off).
+            const kick = Math.min(30, speed * bullet.mass / rock.mass);
+            rock.vx += dirX * kick;
+            rock.vy += dirY * kick;
             hitRock(rock, bullet.damage, bullet.x, bullet.y);
 
             if(bullet.kind === 'plasma') {
@@ -314,8 +342,9 @@ const explodeMissile = (missile) => {
         if(distance > reach) return;
 
         const falloff = 1 - distance / reach;
-        rock.vx += d.x / distance * MISSILE_PUSH * falloff / rock.mass;
-        rock.vy += d.y / distance * MISSILE_PUSH * falloff / rock.mass;
+        const push = Math.min(70, MISSILE_PUSH * falloff / rock.mass);
+        rock.vx += d.x / distance * push;
+        rock.vy += d.y / distance * push;
         // Damage lands on the face of the rock nearest the blast.
         hitRock(rock, missile.damage * (0.35 + 0.65 * falloff),
             rock.x - d.x / distance * rock.radius, rock.y - d.y / distance * rock.radius);
@@ -330,9 +359,7 @@ const missileCollisions = () => {
             for(let i = 0; i < rocks.length; i++) {
                 const rock = rocks[i];
                 if(rock.dead) continue;
-                const d = delta(rock, missile);
-                const reach = rock.radius + 3;
-                if(d.x * d.x + d.y * d.y > reach * reach) continue;
+                if(!rock.containsPoint(missile.x, missile.y, 3)) continue;
                 missile.dead = true;
                 missile.exploded = true;
                 break;
@@ -618,8 +645,9 @@ const step = (dt) => {
 
     ship.update(dt, input, state);
     state.beamHits.forEach(hit => {
-        hit.rock.vx += hit.dirX * 900 * hit.damage / hit.rock.mass;
-        hit.rock.vy += hit.dirY * 900 * hit.damage / hit.rock.mass;
+        const push = Math.min(0.6, 900 * hit.damage / hit.rock.mass);
+        hit.rock.vx += hit.dirX * push;
+        hit.rock.vy += hit.dirY * push;
         hitRock(hit.rock, hit.damage, hit.x, hit.y);
         if(Math.random() < 0.35) {
             Particle.burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
@@ -878,11 +906,12 @@ const drawBanner = () => {
     if(state.bannerTimer <= 0) return;
     ctx.save();
     ctx.globalAlpha = Math.min(1, state.bannerTimer);
-    ctx.fillStyle = '#fff';
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = '#fff';
     ctx.font = '30px Bungee, sans-serif';
     ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.strokeText(state.bannerText, world.width / 2, world.height / 4);
+    ctx.fillStyle = '#fff';
     ctx.fillText(state.bannerText, world.width / 2, world.height / 4);
     ctx.restore();
 };
@@ -896,8 +925,6 @@ const drawDockPrompt = () => {
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = speed > STATION.maxDockSpeed ? 'rgba(255, 200, 120, 0.95)' : 'rgba(140, 255, 160, 0.95)';
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = ctx.fillStyle;
     ctx.fillText(text, world.width / 2, world.height - 60);
     ctx.restore();
 };
@@ -1048,7 +1075,6 @@ const render = () => {
     if(isVisible(STATION.x, STATION.y, 300)) drawStation(ctx, time, state.canDock);
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
-    visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
     // Merging guests are drawn first so they sink beneath their host.
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
@@ -1062,13 +1088,24 @@ const render = () => {
     state.particles.forEach(particle => { if(!particle.dust && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
+    // Kinetic rounds are batched into one path and stroked twice (soft halo + bright core)
+    // instead of using an expensive blur per bullet.
     ctx.save();
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    state.bullets.forEach(bullet => {
+        if(bullet.kind !== 'bullet') return;
+        ctx.moveTo(bullet.x - bullet.vx * 0.012, bullet.y - bullet.vy * 0.012);
+        ctx.lineTo(bullet.x, bullet.y);
+    });
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = '#fff';
-    state.bullets.forEach(bullet => bullet.draw(ctx));
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
     ctx.restore();
+    state.bullets.forEach(bullet => { if(bullet.kind !== 'bullet') bullet.draw(ctx); });
 
     state.missiles.forEach(missile => missile.draw(ctx));
     state.ship.draw(ctx);
@@ -1213,6 +1250,15 @@ const frame = (now) => {
     const elapsed = Math.min((now - lastFrameTime) / 1000, 0.25);
     lastFrameTime = now;
     if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
+    if(fps < 45 && resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
+        slowTime += elapsed;
+        if(slowTime > 2) {
+            resolutionCap = 1;
+            resize();
+        }
+    } else {
+        slowTime = 0;
+    }
 
     if(!state.paused) {
         accumulator += elapsed;

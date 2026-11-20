@@ -57,9 +57,12 @@ class Ore {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
+        // Soft halo then the crystal itself (cheaper than a canvas blur).
+        ctx.fillStyle = 'rgba(' + color + ',' + (0.22 * pulse).toFixed(2) + ')';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+        ctx.fill();
         ctx.fillStyle = 'rgba(' + color + ',' + pulse.toFixed(2) + ')';
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
         ctx.moveTo(r, 0);
         ctx.lineTo(0, r * 0.8);

@@ -1,7 +1,8 @@
 import Bullet from '../bullet/bullet';
 import Missile from '../missile/missile';
 import Particle from '../particle/particle';
-import { drawHullArt, shieldFor } from '../../shipyard/hulls';
+import { drawHullArt, shieldFor, hullBounds } from '../../shipyard/hulls';
+import { createSprite, glowSprite, flameSprite, stamp } from '../../render/sprites';
 import MODULES, { drawModule } from '../../shipyard/modules';
 import { delta } from '../../physics/physics';
 import sounds from '../../audio/audio';
@@ -38,26 +39,92 @@ const angleDifference = (a, b) => {
     return d;
 };
 
-// Distance along a ray to the first asteroid it hits.
+// Distance along a ray to the first asteroid outline it hits.
 const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
     let best = null;
     let bestDistance = range;
     rocks.forEach(rock => {
         if(rock.dead) return;
-        const mx = rock.x - x;
-        const my = rock.y - y;
-        const along = mx * dirX + my * dirY;
-        if(along < -rock.radius) return;
-        const closestSq = mx * mx + my * my - along * along;
-        const r = rock.radius * 0.92;
-        if(closestSq > r * r) return;
-        const hit = Math.max(0, along - Math.sqrt(r * r - closestSq));
-        if(hit < bestDistance) {
+        const hit = rock.raycast(x, y, dirX, dirY, bestDistance);
+        if(hit !== null && hit < bestDistance) {
             bestDistance = hit;
             best = rock;
         }
     });
     return { rock: best, distance: bestDistance };
+};
+
+// Hull line art with its glow, rendered once per hull and colour.
+const hullSprite = (hull, color) => {
+    hull._sprites = hull._sprites || {};
+    const key = color || 'base';
+    if(!hull._sprites[key]) {
+        const b = hullBounds(hull);
+        const pad = 8;
+        const sprite = createSprite(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
+            ctx.translate(pad - b.minX, pad - b.minY);
+            drawHullArt(ctx, hull, { color: color });
+        });
+        sprite.x = b.minX - pad;
+        sprite.y = b.minY - pad;
+        hull._sprites[key] = sprite;
+    }
+    return hull._sprites[key];
+};
+
+// Shield bubble (soft edge, hexagon lattice and glowing rim) rendered once per hull.
+const shieldSprite = (hull) => {
+    if(hull._shieldSprite) return hull._shieldSprite;
+    const s = shieldFor(hull);
+    const color = hull.shieldColor || '120,210,255';
+    const pad = 6;
+    hull._shieldSprite = createSprite(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
+        ctx.translate(s.rx + pad, s.ry + pad);
+        ctx.scale(1, s.ry / s.rx);
+        const rx = s.rx;
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
+        body.addColorStop(0, 'rgba(' + color + ', 0)');
+        body.addColorStop(0.8, 'rgba(' + color + ', 0.05)');
+        body.addColorStop(1, 'rgba(' + color + ', 0.22)');
+        ctx.fillStyle = body;
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        const lattice = new Path2D();
+        const size = 7;
+        const w = size * Math.sqrt(3);
+        for(let row = -Math.ceil(rx / (size * 1.5)); row <= Math.ceil(rx / (size * 1.5)); row++) {
+            for(let col = -Math.ceil(rx / w) - 1; col <= Math.ceil(rx / w) + 1; col++) {
+                const cx = col * w + (row % 2 ? w / 2 : 0);
+                const cy = row * size * 1.5;
+                if(cx * cx + cy * cy > (rx + size) * (rx + size)) continue;
+                for(let i = 0; i < 6; i++) {
+                    const a1 = Math.PI / 6 + i * Math.PI / 3;
+                    lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                    lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+                }
+            }
+        }
+        // Lattice is brighter towards the rim.
+        const fade = ctx.createRadialGradient(0, 0, rx * 0.3, 0, 0, rx);
+        fade.addColorStop(0, 'rgba(' + color + ', 0.03)');
+        fade.addColorStop(1, 'rgba(' + color + ', 0.2)');
+        ctx.strokeStyle = fade;
+        ctx.lineWidth = 0.6;
+        ctx.stroke(lattice);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(' + color + ', 0.55)';
+        ctx.lineWidth = 1.4;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgb(' + color + ')';
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    hull._shieldSprite.pad = pad;
+    return hull._shieldSprite;
 };
 
 class Ship {
@@ -746,99 +813,54 @@ class Ship {
         }
     }
 
-    drawFlame(ctx, x, y, dirX, dirY, length, width, outer, inner) {
-        if(length < 0.5) return;
-        const nx = -dirY;
-        const ny = dirX;
-
-        ctx.fillStyle = outer;
-        ctx.beginPath();
-        ctx.moveTo(x + nx * width, y + ny * width);
-        ctx.lineTo(x + dirX * length, y + dirY * length);
-        ctx.lineTo(x - nx * width, y - ny * width);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.fillStyle = inner;
-        ctx.beginPath();
-        ctx.moveTo(x + nx * width * 0.45, y + ny * width * 0.45);
-        ctx.lineTo(x + dirX * length * 0.55, y + dirY * length * 0.55);
-        ctx.lineTo(x - nx * width * 0.45, y - ny * width * 0.45);
-        ctx.closePath();
-        ctx.fill();
-    }
-
     drawThrusters(ctx) {
         const t = this.thrusters;
-        const flicker = () => 0.8 + Math.random() * 0.4;
         const jetScale = this.hullDef.jetScale || 1;
-        const jetOuter = 'rgba(170, 210, 255, 0.85)';
-        const jetInner = 'rgba(255, 255, 255, 0.95)';
         const exhaust = this.hullDef.exhaust || '255,150,60';
+        const plume = flameSprite(exhaust, '255,235,190');
+        const jetFlame = flameSprite('170,210,255', '255,255,255');
+        const glow = glowSprite(exhaust);
+        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
 
-        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
-
         this.engines.forEach(engine => {
             const size = engine.size;
-
             // Nozzle glow, pulsing even when idle.
-            const glowRadius = (2.5 + pulse + t.main * 3) * size * 1.6;
-            const glow = ctx.createRadialGradient(engine.x, engine.y, 0, engine.x, engine.y, glowRadius);
-            glow.addColorStop(0, 'rgba(' + exhaust + ', ' + (0.55 + t.main * 0.45) + ')');
-            glow.addColorStop(1, 'rgba(' + exhaust + ', 0)');
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(engine.x, engine.y, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
+            const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
+            ctx.globalAlpha = 0.55 + t.main * 0.45;
+            stamp(ctx, glow, engine.x, engine.y, glowSize, glowSize);
 
             // Plume straight out of the nozzle, as wide as the nozzle.
-            const length = t.main * (14 + Math.random() * 8) * size * 1.4;
-            const plume = ctx.createLinearGradient(engine.x, engine.y, engine.x - length, engine.y);
-            plume.addColorStop(0, 'rgba(255, 235, 190, 0.95)');
-            plume.addColorStop(0.4, 'rgba(' + exhaust + ', 0.8)');
-            plume.addColorStop(1, 'rgba(' + exhaust + ', 0)');
-            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 2.6 * size * flicker(), plume, 'rgba(255, 255, 235, 0.9)');
+            if(t.main > 0.03) {
+                const length = t.main * (14 + Math.random() * 8) * size * 1.4;
+                const width = 5.2 * size * (0.85 + Math.random() * 0.3);
+                ctx.globalAlpha = 1;
+                ctx.save();
+                ctx.translate(engine.x, engine.y);
+                ctx.rotate(Math.PI);
+                ctx.drawImage(plume.canvas, 0, -width / 2, length, width);
+                ctx.restore();
+            }
         });
 
         // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
+        ctx.globalAlpha = 1;
         const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.02) return;
             const length = t[key] * 7 * jetScale;
             jets[key].forEach(jet => {
-                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.3 * jetScale, jetOuter, jetInner);
+                ctx.save();
+                ctx.translate(jet[0], jet[1]);
+                ctx.rotate(Math.atan2(jet[3], jet[2]));
+                ctx.drawImage(jetFlame.canvas, 0, -1.3 * jetScale, length * (0.8 + Math.random() * 0.4), 2.6 * jetScale);
+                ctx.restore();
             });
         });
 
         ctx.restore();
-    }
-
-    // Hexagon lattice for the shield surface, cached per hull.
-    shieldLattice(radius) {
-        const key = Math.round(radius);
-        if(this.latticeKey === key) return this.lattice;
-        const path = new Path2D();
-        const size = 7;
-        const w = size * Math.sqrt(3);
-        for(let row = -Math.ceil(radius / (size * 1.5)); row <= Math.ceil(radius / (size * 1.5)); row++) {
-            for(let col = -Math.ceil(radius / w) - 1; col <= Math.ceil(radius / w) + 1; col++) {
-                const cx = col * w + (row % 2 ? w / 2 : 0);
-                const cy = row * size * 1.5;
-                if(cx * cx + cy * cy > (radius + size) * (radius + size)) continue;
-                for(let i = 0; i < 6; i++) {
-                    const a1 = Math.PI / 6 + i * Math.PI / 3;
-                    const a2 = a1 + Math.PI / 3;
-                    path.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
-                    path.lineTo(cx + Math.cos(a2) * size, cy + Math.sin(a2) * size);
-                }
-            }
-        }
-        this.latticeKey = key;
-        this.lattice = path;
-        return path;
     }
 
     drawShield(ctx) {
@@ -846,71 +868,39 @@ class Ship {
         if(this.maxShield <= 0 || level < 0.01) return;
 
         const s = shieldFor(this.hullDef);
+        const sprite = shieldSprite(this.hullDef);
         const color = this.hullDef.shieldColor || '120,210,255';
         const strength = Math.max(0.15, this.shield / this.maxShield);
         // Bubble expands outwards when powering up and collapses when lowered.
         const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
-        const rx = s.rx * grow;
-        const squash = s.ry / s.rx;
         const flash = Math.max(0, this.shieldFlash) * 3;
-        const t = this.time;
+        const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
 
         ctx.save();
         ctx.translate(s.x, s.y);
-        ctx.scale(1, squash);   // draw the ellipse as a circle in squashed space
+        ctx.globalAlpha = Math.min(1, level * (0.35 + 0.65 * strength) * shimmer + flash);
+        const w = sprite.width * grow;
+        const h = sprite.height * grow;
+        ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
 
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
-        body.addColorStop(0, 'rgba(' + color + ', 0)');
-        body.addColorStop(0.8, 'rgba(' + color + ', ' + (0.05 * level * strength) + ')');
-        body.addColorStop(1, 'rgba(' + color + ', ' + Math.min(0.5, (0.2 + flash * 0.3) * level * strength) + ')');
-        ctx.fillStyle = body;
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-
-        // Lattice with a bright scan band sweeping across it.
-        const sweep = Math.sin(t * 1.3) * rx;
-        const band = ctx.createLinearGradient(sweep - rx * 0.5, -rx, sweep + rx * 0.5, rx);
-        band.addColorStop(0, 'rgba(' + color + ', ' + (0.03 * level) + ')');
-        band.addColorStop(0.5, 'rgba(' + color + ', ' + ((0.16 + flash * 0.3) * level * strength) + ')');
-        band.addColorStop(1, 'rgba(' + color + ', ' + (0.03 * level) + ')');
-        ctx.strokeStyle = band;
-        ctx.lineWidth = 0.6;
-        ctx.stroke(this.shieldLattice(rx));
-
-        // Impact ripples: a hot flare at the hit point and a ring spreading across the bubble.
-        ctx.globalCompositeOperation = 'lighter';
-        this.shieldImpacts.forEach(impact => {
-            const ix = impact.x * grow;
-            const iy = impact.y * grow / squash;
-            const age = 1 - impact.life;
-            const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 10 + 30 * impact.strength);
-            flare.addColorStop(0, 'rgba(255, 255, 255, ' + (0.8 * impact.life * impact.strength) + ')');
-            flare.addColorStop(0.3, 'rgba(' + color + ', ' + (0.5 * impact.life) + ')');
-            flare.addColorStop(1, 'rgba(' + color + ', 0)');
-            ctx.fillStyle = flare;
-            ctx.fillRect(ix - 50, iy - 50, 100, 100);
-
-            ctx.strokeStyle = 'rgba(' + color + ', ' + (0.7 * impact.life) + ')';
-            ctx.lineWidth = 2 * impact.life + 0.5;
-            ctx.beginPath();
-            ctx.arc(ix, iy, 4 + age * rx * 0.9, 0, Math.PI * 2);
-            ctx.stroke();
-        });
-        ctx.restore();
-
-        // Rim.
-        const shimmer = 0.75 + 0.25 * Math.sin(t * 3);
-        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, (0.3 + flash) * shimmer * level * (0.4 + 0.6 * strength)) + ')';
-        ctx.lineWidth = 1.4;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(' + color + ')';
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        ctx.stroke();
+        // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
+        if(this.shieldImpacts.length) {
+            ctx.globalCompositeOperation = 'lighter';
+            const glow = glowSprite(color);
+            this.shieldImpacts.forEach(impact => {
+                const ix = impact.x * grow;
+                const iy = impact.y * grow;
+                const size = (20 + 50 * impact.strength) * impact.life;
+                ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
+                stamp(ctx, glow, ix, iy, size, size);
+                ctx.globalAlpha = 0.7 * impact.life;
+                ctx.strokeStyle = 'rgb(' + color + ')';
+                ctx.lineWidth = 2 * impact.life + 0.5;
+                ctx.beginPath();
+                ctx.ellipse(ix, iy, 4 + (1 - impact.life) * s.rx * 0.6, 4 + (1 - impact.life) * s.ry * 0.6, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        }
         ctx.restore();
     }
 
@@ -931,15 +921,7 @@ class Ship {
                 ctx.lineTo(beam.x2, beam.y2);
                 ctx.stroke();
             });
-            if(beam.hit) {
-                const glow = ctx.createRadialGradient(beam.x2, beam.y2, 0, beam.x2, beam.y2, 16);
-                glow.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
-                glow.addColorStop(1, 'rgba(120, 190, 255, 0)');
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(beam.x2, beam.y2, 16, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            if(beam.hit) stamp(ctx, glowSprite('120,190,255'), beam.x2, beam.y2, 34, 34);
             ctx.restore();
         });
     }
@@ -956,13 +938,14 @@ class Ship {
         ctx.rotate(this.angle);
 
         this.drawThrusters(ctx);
-        drawHullArt(ctx, this.hullDef, { color: this.hullFlash > 0 ? '255,120,120' : undefined });
+        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
+        ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
 
         this.stats.modules.forEach(module => {
             if(TURRET_TYPES.indexOf(module.type) !== -1) return;
             ctx.save();
             ctx.translate(module.slot.x, module.slot.y);
-            drawModule(ctx, module.type, module.level, { scale: u });
+            drawModule(ctx, module.type, module.level, { scale: u, glow: 0 });
             ctx.restore();
         });
 
@@ -971,6 +954,7 @@ class Ship {
             ctx.translate(turret.module.slot.x, turret.module.slot.y);
             drawModule(ctx, turret.kind, turret.module.level, {
                 scale: u,
+                glow: 0,
                 aim: turret.aim - this.angle,
                 heat: turret.kind === 'minigun' ? turret.heat : 0
             });
@@ -981,15 +965,9 @@ class Ship {
                     // Large plasma bloom at the cannon mouth.
                     const fx = Math.cos(turret.aim - this.angle) * tip;
                     const fy = Math.sin(turret.aim - this.angle) * tip;
-                    const bloom = ctx.createRadialGradient(fx, fy, 0, fx, fy, 14 * turret.flash / 0.14 + 4);
-                    bloom.addColorStop(0, 'rgba(255, 245, 210, 0.95)');
-                    bloom.addColorStop(0.4, 'rgba(255, 160, 60, 0.7)');
-                    bloom.addColorStop(1, 'rgba(255, 90, 20, 0)');
                     ctx.globalCompositeOperation = 'lighter';
-                    ctx.fillStyle = bloom;
-                    ctx.beginPath();
-                    ctx.arc(fx, fy, 18, 0, Math.PI * 2);
-                    ctx.fill();
+                    const bloom = 16 + 20 * turret.flash / 0.14;
+                    stamp(ctx, glowSprite('255,150,50'), fx, fy, bloom, bloom);
                 }
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.fillStyle = 'rgba(' + color + ', 0.9)';

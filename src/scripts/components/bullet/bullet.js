@@ -1,3 +1,5 @@
+import { glowSprite, stamp } from '../../render/sprites';
+
 const LIFETIME = { bullet: 1.4, plasma: 2.2 };
 
 // Kinetic minigun rounds ('bullet') and Goa'uld staff plasma bolts ('plasma').
@@ -44,14 +46,8 @@ class Bullet {
                 ctx.lineTo(this.x, this.y);
                 ctx.stroke();
             });
-            const head = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 14 * flicker);
-            head.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
-            head.addColorStop(0.35, 'rgba(255, 170, 60, 0.6)');
-            head.addColorStop(1, 'rgba(255, 90, 20, 0)');
-            ctx.fillStyle = head;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, 14 * flicker, 0, Math.PI * 2);
-            ctx.fill();
+            const head = 28 * flicker;
+            stamp(ctx, glowSprite('255,140,40'), this.x, this.y, head, head);
             ctx.restore();
             return;
         }

@@ -121,6 +121,7 @@ export class SectorManager {
                 keep.push(rock);
             } else {
                 if(!this.dormant[key]) this.dormant[key] = [];
+                rock.releaseSprite();
                 this.dormant[key].push(rock);
             }
         });

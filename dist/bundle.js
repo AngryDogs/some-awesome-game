@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 9);
+/******/ 	return __webpack_require__(__webpack_require__.s = 10);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -137,6 +137,156 @@ const dominantMaterial = (composition) => {
 
 /***/ }),
 /* 1 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Pre-rendered images. Glows, gradients and detailed line art are expensive to draw
+// on a canvas every frame, so anything that doesn't change is drawn once into an
+// offscreen canvas and then stamped with drawImage (a cheap bitmap copy).
+
+const cache = {};
+
+const spriteResolution = () => Math.min(2, window.devicePixelRatio || 1);
+/* unused harmony export spriteResolution */
+
+
+// Draws `draw(ctx)` into a new offscreen canvas of `width` x `height` world pixels.
+const createSprite = (width, height, draw, resolution) => {
+    const res = resolution || spriteResolution();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(width * res));
+    canvas.height = Math.max(1, Math.ceil(height * res));
+    const ctx = canvas.getContext('2d');
+    ctx.scale(res, res);
+    draw(ctx);
+    return { canvas: canvas, width: width, height: height };
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = createSprite;
+
+
+// Soft round glow, white-hot centre fading to `color` then transparent.
+const glowSprite = (color) => {
+    const key = 'glow:' + color;
+    if(!cache[key]) {
+        cache[key] = createSprite(64, 64, ctx => {
+            const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            g.addColorStop(0, 'rgba(255, 250, 235, 1)');
+            g.addColorStop(0.25, 'rgba(' + color + ', 0.8)');
+            g.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 64, 64);
+        }, 1);
+    }
+    return cache[key];
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = glowSprite;
+
+
+// Flame/jet pointing along +x from its left-middle edge (draw it rotated and stretched).
+const flameSprite = (color, core) => {
+    const key = 'flame:' + color + ':' + core;
+    if(!cache[key]) {
+        cache[key] = createSprite(128, 32, ctx => {
+            const g = ctx.createLinearGradient(0, 0, 128, 0);
+            g.addColorStop(0, 'rgba(' + core + ', 0.95)');
+            g.addColorStop(0.35, 'rgba(' + color + ', 0.8)');
+            g.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.moveTo(0, 2);
+            ctx.lineTo(128, 16);
+            ctx.lineTo(0, 30);
+            ctx.closePath();
+            ctx.fill();
+            const inner = ctx.createLinearGradient(0, 0, 70, 0);
+            inner.addColorStop(0, 'rgba(255, 255, 240, 0.95)');
+            inner.addColorStop(1, 'rgba(255, 255, 240, 0)');
+            ctx.fillStyle = inner;
+            ctx.beginPath();
+            ctx.moveTo(0, 9);
+            ctx.lineTo(70, 16);
+            ctx.lineTo(0, 23);
+            ctx.closePath();
+            ctx.fill();
+        }, 1);
+    }
+    return cache[key];
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = flameSprite;
+
+
+// Stamp a sprite centred at (x, y) with the given size.
+const stamp = (ctx, sprite, x, y, width, height) => {
+    ctx.drawImage(sprite.canvas, x - width / 2, y - height / 2, width, height);
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = stamp;
+
+
+
+/***/ }),
+/* 2 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Shared physics helpers for an open, endless zero-gravity world.
+// Units: pixels and seconds. World coordinates are unbounded; the camera follows the ship.
+
+// Gravitational constant, tuned for gameplay. Mass of an asteroid is its area (r^2),
+// so a large asteroid pulls noticeably harder than a small one.
+const G = 150;
+/* harmony export (immutable) */ __webpack_exports__["a"] = G;
+
+
+// Beyond this distance gravity is negligible and skipped for performance.
+const GRAVITY_CUTOFF_SQ = 1300 * 1300;
+
+// Viewport size (the camera's view of the world).
+const world = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+
+    resize(width, height) {
+        this.width = width;
+        this.height = height;
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = world;
+
+
+const delta = (from, to) => ({ x: to.x - from.x, y: to.y - from.y });
+/* harmony export (immutable) */ __webpack_exports__["b"] = delta;
+
+
+// Gravitational acceleration that `attractors` exert on `body`.
+// Softened by the attractor's radius so nothing gets flung to infinity.
+const gravityAt = (body, attractors) => {
+    let ax = 0;
+    let ay = 0;
+
+    for(let i = 0; i < attractors.length; i++) {
+        const other = attractors[i];
+        if(other === body || other.dead) continue;
+
+        const dx = other.x - body.x;
+        const dy = other.y - body.y;
+        const distSq = dx * dx + dy * dy;
+        if(distSq < 0.0001 || distSq > GRAVITY_CUTOFF_SQ) continue;
+
+        const dist = Math.sqrt(distSq);
+        const accel = G * other.mass / (distSq + other.radius * other.radius);
+
+        ax += dx / dist * accel;
+        ay += dy / dist * accel;
+    }
+
+    return { x: ax, y: ay };
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = gravityAt;
+
+
+
+/***/ }),
+/* 3 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -246,69 +396,7 @@ class Particle {
 
 
 /***/ }),
-/* 2 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// Shared physics helpers for an open, endless zero-gravity world.
-// Units: pixels and seconds. World coordinates are unbounded; the camera follows the ship.
-
-// Gravitational constant, tuned for gameplay. Mass of an asteroid is its area (r^2),
-// so a large asteroid pulls noticeably harder than a small one.
-const G = 150;
-/* unused harmony export G */
-
-
-// Beyond this distance gravity is negligible and skipped for performance.
-const GRAVITY_CUTOFF_SQ = 1300 * 1300;
-
-// Viewport size (the camera's view of the world).
-const world = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-
-    resize(width, height) {
-        this.width = width;
-        this.height = height;
-    }
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = world;
-
-
-const delta = (from, to) => ({ x: to.x - from.x, y: to.y - from.y });
-/* harmony export (immutable) */ __webpack_exports__["a"] = delta;
-
-
-// Gravitational acceleration that `attractors` exert on `body`.
-// Softened by the attractor's radius so nothing gets flung to infinity.
-const gravityAt = (body, attractors) => {
-    let ax = 0;
-    let ay = 0;
-
-    for(let i = 0; i < attractors.length; i++) {
-        const other = attractors[i];
-        if(other === body || other.dead) continue;
-
-        const dx = other.x - body.x;
-        const dy = other.y - body.y;
-        const distSq = dx * dx + dy * dy;
-        if(distSq < 0.0001 || distSq > GRAVITY_CUTOFF_SQ) continue;
-
-        const dist = Math.sqrt(distSq);
-        const accel = G * other.mass / (distSq + other.radius * other.radius);
-
-        ax += dx / dist * accel;
-        ay += dy / dist * accel;
-    }
-
-    return { x: ax, y: ay };
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = gravityAt;
-
-
-
-/***/ }),
-/* 3 */
+/* 4 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -821,7 +909,7 @@ const shieldFor = (hull) => {
 
 
 /***/ }),
-/* 4 */
+/* 5 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -1143,12 +1231,12 @@ const drawModule = (ctx, type, level, options) => {
 
 
 /***/ }),
-/* 5 */
+/* 6 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(0);
 // Persistent player profile: credits, owned hulls and the module loadout of each hull.
 
@@ -1412,7 +1500,7 @@ const spendCredits = (amount) => {
 
 
 /***/ }),
-/* 6 */
+/* 7 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -1772,24 +1860,34 @@ const sounds = {
 
 
 /***/ }),
-/* 7 */
+/* 8 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(1);
 
 
-// Asteroids are described by their area (mass) and composition. Weapon hits chip
-// area away (dropping ore), build up stress until a chunk breaks off, and the last
-// bits crumble. Colliding asteroids merge into one.
 
-const CHIP_AREA_PER_DAMAGE = 22;  // area removed per point of weapon damage
-const ORE_AREA = 140;             // area of rock that yields one ore piece
+
+// Asteroids are described by their area (mass), composition and an outline of
+// SHAPE_POINTS radii at evenly spaced angles. Weapon hits carve a groove into the
+// outline (dropping ore); when a groove cuts deep enough the asteroid splits into two
+// along that cut line. Small leftovers crumble. Colliding asteroids merge into one.
+
+const CHIP_AREA_PER_DAMAGE = 14;  // area removed per point of weapon damage
+const GROOVE_PER_DAMAGE = 1.6;    // px of groove per damage point (bigger rocks take longer to cut through)
+const ORE_AREA = 120;             // area of rock that yields one ore piece
 const MIN_RADIUS = 8;             // smaller than this and the asteroid crumbles
-const MIN_SPLIT_RADIUS = 16;      // only asteroids at least this big break apart
-const SPLIT_GRACE = 1.2;          // seconds a fresh fragment won't merge
+const MIN_SPLIT_RADIUS = 14;      // smaller asteroids are ground down instead of splitting
+const CUT_THROUGH = 0.22;         // groove depth (outline factor) that counts as cut through
+const SPLIT_GRACE = 2.5;          // seconds new halves won't merge again
+const MAX_SPLIT_SPEED = 55;       // px/s, halves drift apart gently
 const MAX_SCARS = 10;
-const SHAPE_POINTS = 30;
+const SHAPE_POINTS = 32;
+const SPRITE_REBUILD_INTERVAL = 0.12;
+const LIGHT_REFRESH_ANGLE = 0.26;  // re-bake lighting after the rock turns ~15 degrees
 const MAX_MERGE_RADIUS = 170;
 /* harmony export (immutable) */ __webpack_exports__["a"] = MAX_MERGE_RADIUS;
 
@@ -1800,8 +1898,8 @@ const VISUAL_RADIUS = 0.88;
 // Light comes from the top-left of the screen for every asteroid.
 const LIGHT_X = -0.55;
 const LIGHT_Y = -0.65;
-
 const BASE_ROCK = [118, 110, 102];
+const STEP = Math.PI * 2 / SHAPE_POINTS;
 
 let nextId = 1;
 
@@ -1809,15 +1907,15 @@ let nextId = 1;
 const randomShape = (random) => {
     const rnd = random || Math.random;
     const octaves = [[2, 0.09], [3, 0.07], [5, 0.04], [9, 0.025]].map(o => ({ freq: o[0], amp: o[1], phase: rnd() * Math.PI * 2 }));
-    const points = [];
+    const factors = [];
     for(let i = 0; i < SHAPE_POINTS; i++) {
-        const angle = (i / SHAPE_POINTS) * Math.PI * 2;
+        const angle = i * STEP;
         let factor = 0.86;
         octaves.forEach(o => { factor += Math.sin(angle * o.freq + o.phase) * o.amp; });
         factor += (rnd() - 0.5) * 0.03;
-        points.push({ angle: angle, factor: Math.min(1, Math.max(0.62, factor)) });
+        factors.push(Math.min(1, Math.max(0.62, factor)));
     }
-    return points;
+    return factors;
 };
 
 const normalizeComposition = (composition) => {
@@ -1832,6 +1930,63 @@ const normalizeComposition = (composition) => {
 const parseColor = (color) => color.split(',').map(Number);
 const rgb = (c, alpha) => 'rgba(' + c.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(',') + ',' + (alpha === undefined ? 1 : alpha) + ')';
 const shade = (c, f) => c.map(v => v * f);
+const wrapAngle = (a) => {
+    a %= Math.PI * 2;
+    return a < 0 ? a + Math.PI * 2 : a;
+};
+
+// Signed area and centroid of a polygon.
+const polygonInfo = (pts) => {
+    let area = 0;
+    let cx = 0;
+    let cy = 0;
+    for(let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const cross = a[0] * b[1] - b[0] * a[1];
+        area += cross;
+        cx += (a[0] + b[0]) * cross;
+        cy += (a[1] + b[1]) * cross;
+    }
+    area /= 2;
+    if(Math.abs(area) < 1e-6) return { area: 0, x: 0, y: 0 };
+    return { area: Math.abs(area), x: cx / (6 * area), y: cy / (6 * area) };
+};
+
+// Keep the part of a polygon on one side of the line through the origin along (ux, uy).
+const clipHalf = (pts, ux, uy, sign) => {
+    const side = (p) => sign * (ux * p[1] - uy * p[0]);
+    const out = [];
+    for(let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const sa = side(a);
+        const sb = side(b);
+        if(sa >= 0) out.push(a);
+        if((sa >= 0) !== (sb >= 0)) {
+            const t = sa / (sa - sb);
+            out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+    }
+    return out;
+};
+
+// Distance from the origin to the polygon edge along a ray (furthest crossing).
+const rayToPolygon = (pts, dx, dy) => {
+    let best = 0;
+    for(let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        const ex = b[0] - a[0];
+        const ey = b[1] - a[1];
+        const denom = dx * ey - dy * ex;
+        if(Math.abs(denom) < 1e-9) continue;
+        const t = (a[0] * ey - a[1] * ex) / denom;
+        const s = (a[0] * dy - a[1] * dx) / denom;
+        if(t > 0 && s >= 0 && s <= 1 && t > best) best = t;
+    }
+    return best;
+};
 
 class Rock {
 
@@ -1844,18 +1999,20 @@ class Rock {
         this.vy = options.vy || 0;
         this.setArea(options.radius * options.radius);
         this.composition = normalizeComposition(options.composition || { rock: 1 });
-        this.angle = rnd() * Math.PI * 2;
-        this.spin = (rnd() - 0.5) * 1.5 * (20 / this.radius);
+        this.angle = options.angle !== undefined ? options.angle : rnd() * Math.PI * 2;
+        this.spin = options.spin !== undefined ? options.spin : (rnd() - 0.5) * 1.5 * (20 / this.radius);
         this.grace = options.grace || 0;
         this.flash = 0;
-        this.stress = 0;
         this.oreProgress = 0;
         this.dead = false;
         this.renderScale = 1;
-        this.merging = null;          // active merge link while two asteroids fuse
         this.renderAlpha = 1;
+        this.merging = null;          // active merge link while two asteroids fuse
         this.scars = [];
         this.shape = options.shape || randomShape(rnd);
+        this.sprite = null;
+        this.spriteDirty = true;
+        this.spriteAge = 0;
         this.createSurface(rnd);
         this.updateLook(rnd);
     }
@@ -1866,13 +2023,24 @@ class Rock {
         this.radius = Math.sqrt(this.area);
     }
 
+    get maxFactor() {
+        let max = 0;
+        for(let i = 0; i < this.shape.length; i++) max = Math.max(max, this.shape[i]);
+        return max;
+    }
+
+    // Radius used for quick "could these touch?" checks.
+    get boundRadius() {
+        return this.radius * this.maxFactor;
+    }
+
     // Craters and cracks, in unit coordinates (scaled by radius when drawn).
     createSurface(rnd) {
         this.craters = [];
         const craterCount = 3 + Math.floor(rnd() * 5);
         for(let i = 0; i < craterCount; i++) {
             const angle = rnd() * Math.PI * 2;
-            const distance = Math.sqrt(rnd()) * 0.62;
+            const distance = Math.sqrt(rnd()) * 0.6;
             this.craters.push({
                 x: Math.cos(angle) * distance,
                 y: Math.sin(angle) * distance,
@@ -1885,13 +2053,12 @@ class Rock {
         const crackCount = 1 + Math.floor(rnd() * 3);
         for(let i = 0; i < crackCount; i++) {
             const points = [];
-            let angle = rnd() * Math.PI * 2;
-            let x = Math.cos(angle) * 0.2 * rnd();
-            let y = Math.sin(angle) * 0.2 * rnd();
+            let x = (rnd() - 0.5) * 0.3;
+            let y = (rnd() - 0.5) * 0.3;
             const heading = rnd() * Math.PI * 2;
             points.push([x, y]);
             for(let s = 0; s < 4; s++) {
-                angle = heading + (rnd() - 0.5) * 1.2;
+                const angle = heading + (rnd() - 0.5) * 1.2;
                 x += Math.cos(angle) * 0.14;
                 y += Math.sin(angle) * 0.14;
                 points.push([x, y]);
@@ -1900,7 +2067,7 @@ class Rock {
         }
     }
 
-    // Base colour and glinting mineral crystals from the composition.
+    // Base colour and mineral crystals from the composition.
     updateLook(random) {
         const rnd = random || Math.random;
         this.material = Object(__WEBPACK_IMPORTED_MODULE_0__world_materials__["c" /* dominantMaterial */])(this.composition);
@@ -1920,7 +2087,7 @@ class Rock {
             const clusters = Math.round(1 + this.composition[id] * 5);
             for(let c = 0; c < clusters; c++) {
                 const angle = rnd() * Math.PI * 2;
-                const distance = Math.sqrt(rnd()) * 0.7;
+                const distance = Math.sqrt(rnd()) * 0.65;
                 const cx = Math.cos(angle) * distance;
                 const cy = Math.sin(angle) * distance;
                 const shards = 2 + Math.floor(rnd() * 3);
@@ -1930,29 +2097,92 @@ class Rock {
                         y: cy + (rnd() - 0.5) * 0.12,
                         size: 0.035 + rnd() * 0.05,
                         angle: rnd() * Math.PI,
-                        color: parseColor(__WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color),
-                        phase: rnd() * Math.PI * 2
+                        color: parseColor(__WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color)
                     });
                 }
             }
         });
+        this.spriteDirty = true;
     }
 
-    // Weapon hit at a world point. Returns { ore: [...materialIds], fragment, crumbled }.
+    // ------------------------------------------------------------ outline geometry
+
+    // Outline radius (world px) in the asteroid's local direction `localAngle`.
+    outlineAt(localAngle) {
+        const a = wrapAngle(localAngle) / STEP;
+        const i = Math.floor(a) % SHAPE_POINTS;
+        const j = (i + 1) % SHAPE_POINTS;
+        const t = a - Math.floor(a);
+        return (this.shape[i] * (1 - t) + this.shape[j] * t) * this.radius;
+    }
+
+    containsPoint(x, y, padding) {
+        const dx = x - this.x;
+        const dy = y - this.y;
+        const distSq = dx * dx + dy * dy;
+        const bound = this.boundRadius + (padding || 0);
+        if(distSq > bound * bound) return false;
+        const r = this.outlineAt(Math.atan2(dy, dx) - this.angle) + (padding || 0);
+        return distSq <= r * r;
+    }
+
+    // Outline as world-space points.
+    worldOutline() {
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        return this.shape.map((f, i) => {
+            const lx = Math.cos(i * STEP) * f * this.radius;
+            const ly = Math.sin(i * STEP) * f * this.radius;
+            return [this.x + lx * cos - ly * sin, this.y + lx * sin + ly * cos];
+        });
+    }
+
+    // Distance along a ray to where it first meets the visible outline, or null.
+    raycast(ox, oy, dirX, dirY, maxDistance) {
+        // Cheap circle test first.
+        const mx = this.x - ox;
+        const my = this.y - oy;
+        const along = mx * dirX + my * dirY;
+        const bound = this.boundRadius;
+        if(along < -bound || along - bound > maxDistance) return null;
+        const closestSq = mx * mx + my * my - along * along;
+        if(closestSq > bound * bound) return null;
+
+        if(this.containsPoint(ox, oy)) return 0;
+        const pts = this.worldOutline();
+        let best = null;
+        for(let i = 0; i < pts.length; i++) {
+            const a = pts[i];
+            const b = pts[(i + 1) % pts.length];
+            const ex = b[0] - a[0];
+            const ey = b[1] - a[1];
+            const denom = dirX * ey - dirY * ex;
+            if(Math.abs(denom) < 1e-9) continue;
+            const ax = a[0] - ox;
+            const ay = a[1] - oy;
+            const t = (ax * ey - ay * ex) / denom;
+            const s = (ax * dirY - ay * dirX) / denom;
+            if(t >= 0 && s >= 0 && s <= 1 && t <= maxDistance && (best === null || t < best)) best = t;
+        }
+        return best;
+    }
+
+    // ------------------------------------------------------------ damage
+
+    // Weapon hit at a world point. Returns { ore: [...materialIds], pieces: [a, b] | null, crumbled }.
     chip(damage, hitX, hitY) {
-        const result = { ore: [], fragment: null, crumbled: false };
+        const result = { ore: [], pieces: null, crumbled: false };
         if(this.dead) return result;
 
         const removed = Math.min(this.area, damage * CHIP_AREA_PER_DAMAGE);
         this.setArea(this.area - removed);
         this.oreProgress += removed;
-        this.stress += damage;
         this.flash = 0.05;
 
-        // Dent the outline and leave a fresh, pale scar where the hit landed.
-        const hitAngle = Math.atan2(hitY - this.y, hitX - this.x) - this.angle;
-        this.dent(hitAngle, 1 - 0.06 * Math.min(1, damage), 0.55);
-        this.addScar(hitAngle, damage);
+        // Carve a groove where the hit landed.
+        const localAngle = Math.atan2(hitY - this.y, hitX - this.x) - this.angle;
+        this.carve(localAngle, damage * GROOVE_PER_DAMAGE / this.radius);
+        this.addScar(localAngle, damage);
 
         while(this.oreProgress >= ORE_AREA) {
             this.oreProgress -= ORE_AREA;
@@ -1966,22 +2196,43 @@ class Rock {
             return result;
         }
 
-        // Enough accumulated stress cracks a chunk off the side that was hit.
-        if(this.stress >= 4 + this.radius * 0.35 && this.radius >= MIN_SPLIT_RADIUS) {
-            this.stress = 0;
-            result.fragment = this.breakOff(Math.atan2(hitY - this.y, hitX - this.x));
+        // Cut through? Split into two along the deepest groove.
+        let deepest = 0;
+        for(let i = 1; i < SHAPE_POINTS; i++) if(this.shape[i] < this.shape[deepest]) deepest = i;
+        if(this.shape[deepest] <= CUT_THROUGH) {
+            if(this.radius >= MIN_SPLIT_RADIUS) {
+                result.pieces = this.splitAlong(deepest * STEP);
+            }
+            if(!result.pieces) {
+                // Too small to split cleanly: it falls apart.
+                this.dead = true;
+                result.crumbled = true;
+                const left = Math.max(1, Math.round(this.area / ORE_AREA));
+                for(let i = 0; i < left; i++) result.ore.push(this.pickMaterial());
+            }
         }
         return result;
+    }
+
+    // Narrow groove: the hit point goes deepest, immediate neighbours a little.
+    carve(localAngle, depth) {
+        const a = wrapAngle(localAngle) / STEP;
+        const i = Math.round(a) % SHAPE_POINTS;
+        const offset = a - Math.round(a);
+        [[0, 1], [-1, 0.45 - offset * 0.3], [1, 0.45 + offset * 0.3], [-2, 0.12], [2, 0.12]].forEach(pair => {
+            const k = (i + pair[0] + SHAPE_POINTS) % SHAPE_POINTS;
+            this.shape[k] = Math.max(0.05, this.shape[k] - depth * Math.max(0, pair[1]));
+        });
+        this.spriteDirty = true;
     }
 
     addScar(localAngle, damage) {
         const last = this.scars[this.scars.length - 1];
         if(last && Math.abs(last.angle - localAngle) < 0.25) {
             last.size = Math.min(0.3, last.size + 0.01 * damage);
-            last.fresh = 1;
             return;
         }
-        this.scars.push({ angle: localAngle, size: 0.08 + 0.02 * damage, fresh: 1 });
+        this.scars.push({ angle: localAngle, size: 0.06 + 0.015 * damage });
         if(this.scars.length > MAX_SCARS) this.scars.shift();
     }
 
@@ -1995,51 +2246,64 @@ class Rock {
         return keys[keys.length - 1];
     }
 
-    dent(localAngle, factor, minimum) {
-        const step = Math.PI * 2 / this.shape.length;
-        this.shape.forEach(point => {
-            let diff = Math.abs(point.angle - localAngle) % (Math.PI * 2);
-            if(diff > Math.PI) diff = Math.PI * 2 - diff;
-            if(diff > step * 1.5) return;
-            // Neighbouring points dent less, so the crater is rounded.
-            const weight = 1 - diff / (step * 1.5);
-            point.factor = Math.max(minimum, point.factor * (1 - (1 - factor) * weight));
+    // Splits the outline into two halves along the line from the cut (at `localAngle`)
+    // through the centre. Each half becomes its own asteroid with a correctly clipped
+    // outline; they drift apart sideways (perpendicular to the cut), conserving momentum.
+    splitAlong(localAngle) {
+        const pts = this.shape.map((f, i) => [Math.cos(i * STEP) * f * this.radius, Math.sin(i * STEP) * f * this.radius]);
+        const ux = Math.cos(localAngle);
+        const uy = Math.sin(localAngle);
+        const halves = [clipHalf(pts, ux, uy, 1), clipHalf(pts, ux, uy, -1)]
+            .map(poly => ({ poly: poly, info: polygonInfo(poly) }))
+            .filter(h => h.poly.length >= 3 && h.info.area > 4);
+        if(halves.length < 2) return null;
+
+        const total = halves[0].info.area + halves[1].info.area;
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        const centroidGap = Math.sqrt(Math.pow(halves[0].info.x - halves[1].info.x, 2) + Math.pow(halves[0].info.y - halves[1].info.y, 2)) || 1;
+        // Just over escape velocity so mutual gravity doesn't immediately pull them back.
+        const relative = Math.min(MAX_SPLIT_SPEED * 2, 1.15 * Math.sqrt(2 * __WEBPACK_IMPORTED_MODULE_1__physics_physics__["a" /* G */] * this.area / centroidGap));
+
+        const pieces = halves.map((h, index) => {
+            const share = h.info.area / total;
+            const area = this.area * share;
+            const radius = Math.sqrt(area);
+
+            // Resample the clipped half as an outline around its own centroid.
+            const local = h.poly.map(p => [p[0] - h.info.x, p[1] - h.info.y]);
+            const shape = [];
+            for(let k = 0; k < SHAPE_POINTS; k++) {
+                const d = rayToPolygon(local, Math.cos(k * STEP), Math.sin(k * STEP));
+                shape.push(Math.max(0.05, Math.min(1.6, d / radius)));
+            }
+
+            // Sideways separation: half on the + side moves along +normal, the other -normal.
+            const sign = index === 0 ? 1 : -1;
+            const nx = -uy * sign;
+            const ny = ux * sign;
+            const speed = relative * (1 - share);
+            const worldNx = nx * cos - ny * sin;
+            const worldNy = nx * sin + ny * cos;
+
+            const piece = new Rock({
+                x: this.x + h.info.x * cos - h.info.y * sin,
+                y: this.y + h.info.x * sin + h.info.y * cos,
+                vx: this.vx + worldNx * speed,
+                vy: this.vy + worldNy * speed,
+                radius: radius,
+                composition: Object.assign({}, this.composition),
+                shape: shape,
+                angle: this.angle,
+                spin: this.spin * (0.8 + Math.random() * 0.4),
+                grace: SPLIT_GRACE
+            });
+            piece.oreProgress = this.oreProgress * share;
+            return piece;
         });
-    }
 
-    // Splits off a chunk on the side facing `worldAngle`, conserving momentum.
-    breakOff(worldAngle) {
-        const share = 0.25 + Math.random() * 0.15;
-        const fragmentArea = this.area * share;
-        const dirX = Math.cos(worldAngle);
-        const dirY = Math.sin(worldAngle);
-        const perpendicular = (Math.random() - 0.5) * 60;
-        const kick = 90 + Math.random() * 60;
-
-        const fragment = new Rock({
-            x: this.x + dirX * this.radius * 0.6,
-            y: this.y + dirY * this.radius * 0.6,
-            vx: this.vx + dirX * kick - dirY * perpendicular,
-            vy: this.vy + dirY * kick + dirX * perpendicular,
-            radius: Math.sqrt(fragmentArea),
-            composition: Object.assign({}, this.composition),
-            grace: SPLIT_GRACE
-        });
-
-        this.setArea(this.area - fragmentArea);
-        const ratio = fragmentArea / this.area;
-        this.vx -= (dirX * kick - dirY * perpendicular) * ratio;
-        this.vy -= (dirY * kick + dirX * perpendicular) * ratio;
-        this.x -= dirX * this.radius * 0.15;
-        this.y -= dirY * this.radius * 0.15;
-        this.grace = SPLIT_GRACE;
-
-        // Flatten the broken face.
-        const localAngle = worldAngle - this.angle;
-        for(let i = -2; i <= 2; i++) this.dent(localAngle + i * 0.3, 0.8, 0.55);
-        this.addScar(localAngle, 6);
-
-        return fragment;
+        this.dead = true;
+        return pieces;
     }
 
     // Completes a merge after `guest` has fully sunk in: blend composition by the
@@ -2062,18 +2326,17 @@ class Rock {
         // Bulge where the guest joined, with a flattened seam either side.
         const contact = contactWorldAngle - this.angle;
         const bulge = Math.min(0.35, Math.sqrt(wb) * 0.45);
-        this.shape.forEach(p => {
-            let diff = Math.abs(p.angle - contact) % (Math.PI * 2);
+        this.shape = this.shape.map((f, i) => {
+            let diff = Math.abs(i * STEP - wrapAngle(contact));
             if(diff > Math.PI) diff = Math.PI * 2 - diff;
             if(diff < 0.9) {
                 const w = Math.cos(diff / 0.9 * Math.PI / 2);
-                p.factor = Math.min(1.08, p.factor + bulge * w * w);
-            } else if(diff < 1.4) {
-                p.factor = Math.max(0.6, p.factor - bulge * 0.25);
+                return Math.min(1.08, Math.max(f, 0.6) + bulge * w * w);
             }
+            if(diff < 1.4) return Math.max(0.6, f - bulge * 0.25);
+            return f;
         });
 
-        // Carry over some of the guest's surface features near the seam.
         guest.craters.slice(0, 3).forEach(c => {
             this.craters.push({
                 x: Math.cos(contact) * 0.55 + c.x * Math.sqrt(wb) * 0.6,
@@ -2095,163 +2358,148 @@ class Rock {
         this.angle += this.spin * dt;
         if(this.grace > 0) this.grace -= dt;
         if(this.flash > 0) this.flash -= dt;
-        this.scars.forEach(scar => { if(scar.fresh > 0) scar.fresh -= dt * 0.25; });
+        this.spriteAge += dt;
     }
 
-    // Very faint halo whose reach scales with mass, hinting at the gravity well.
-    drawGravityWell(ctx) {
-        const reach = this.radius * 3;
-        const gradient = ctx.createRadialGradient(this.x, this.y, this.radius * 0.9, this.x, this.y, reach);
-        gradient.addColorStop(0, 'rgba(140, 170, 220, 0.05)');
-        gradient.addColorStop(1, 'rgba(140, 170, 220, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, reach, 0, Math.PI * 2);
-        ctx.fill();
-    }
+    // ------------------------------------------------------------ rendering
 
     outline(ctx, r) {
         ctx.beginPath();
-        this.shape.forEach((p, i) => {
-            const x = Math.cos(p.angle) * r * p.factor;
-            const y = Math.sin(p.angle) * r * p.factor;
+        for(let i = 0; i < SHAPE_POINTS; i++) {
+            const x = Math.cos(i * STEP) * r * this.shape[i];
+            const y = Math.sin(i * STEP) * r * this.shape[i];
             if(i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
-        });
+        }
         ctx.closePath();
     }
 
-    draw(ctx, time) {
+    // The detailed surface (base colour, craters, cracks, scars, crystals) is rendered
+    // once into a sprite and only rebuilt when the asteroid is damaged or reshaped.
+    buildSprite() {
+        const r = this.radius;
+        const extent = r * Math.max(1, this.maxFactor) + 2;
+        const base = this.baseColor;
+        this.sprite = Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["a" /* createSprite */])(extent * 2, extent * 2, ctx => {
+            ctx.translate(extent, extent);
+            this.outline(ctx, r);
+            ctx.fillStyle = rgb(base);
+            ctx.fill();
+            ctx.save();
+            ctx.clip();
+
+            this.craters.forEach(c => {
+                const cx = c.x * r;
+                const cy = c.y * r;
+                const cr = c.r * r;
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.rotate(c.tilt);
+                ctx.scale(1, c.squash);
+                ctx.fillStyle = rgb(shade(base, 0.6), 0.6);
+                ctx.beginPath();
+                ctx.arc(0, 0, cr, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = Math.max(0.8, cr * 0.16);
+                ctx.strokeStyle = rgb(shade(base, 1.35), 0.5);
+                ctx.beginPath();
+                ctx.arc(0, 0, cr, Math.PI * 0.9, Math.PI * 1.9);
+                ctx.stroke();
+                ctx.restore();
+            });
+
+            ctx.strokeStyle = rgb(shade(base, 0.35), 0.75);
+            ctx.lineWidth = Math.max(0.7, r * 0.025);
+            ctx.lineJoin = 'round';
+            this.cracks.forEach(points => {
+                ctx.beginPath();
+                points.forEach((p, i) => {
+                    if(i === 0) ctx.moveTo(p[0] * r, p[1] * r);
+                    else ctx.lineTo(p[0] * r, p[1] * r);
+                });
+                ctx.stroke();
+            });
+
+            // Freshly exposed rock where it was hit.
+            ctx.fillStyle = rgb(shade(base, 1.6), 0.45);
+            this.scars.forEach(scar => {
+                const d = this.outlineAt(scar.angle) * 0.85;
+                ctx.beginPath();
+                ctx.arc(Math.cos(scar.angle) * d, Math.sin(scar.angle) * d, scar.size * r, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            this.crystals.forEach(c => {
+                const s = Math.max(1, c.size * r);
+                ctx.save();
+                ctx.translate(c.x * r, c.y * r);
+                ctx.rotate(c.angle);
+                ctx.fillStyle = rgb(shade(c.color, 0.55));
+                ctx.beginPath();
+                ctx.moveTo(s, 0); ctx.lineTo(0, s * 0.6); ctx.lineTo(-s, 0); ctx.lineTo(0, -s * 0.6);
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = rgb(c.color, 0.95);
+                ctx.beginPath();
+                ctx.moveTo(s * 0.8, 0); ctx.lineTo(0, -s * 0.5); ctx.lineTo(-s * 0.2, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // Lighting, baked for the current orientation (light is fixed on screen).
+            const cos = Math.cos(-this.angle);
+            const sin = Math.sin(-this.angle);
+            const lx = LIGHT_X * cos - LIGHT_Y * sin;
+            const ly = LIGHT_X * sin + LIGHT_Y * cos;
+            const light = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+            light.addColorStop(0, 'rgba(255, 245, 230, 0.22)');
+            light.addColorStop(0.42, 'rgba(0, 0, 0, 0)');
+            light.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
+            ctx.fillStyle = light;
+            ctx.fillRect(-extent, -extent, extent * 2, extent * 2);
+            ctx.restore();
+
+            this.outline(ctx, r);
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(10, 8, 6, 0.6)';
+            ctx.stroke();
+        });
+        this.spriteAngle = this.angle;
+        this.spriteExtent = extent;
+        this.spriteRadius = r;
+        this.spriteDirty = false;
+        this.spriteAge = 0;
+    }
+
+    releaseSprite() {
+        this.sprite = null;
+    }
+
+    draw(ctx) {
         const r = this.radius * this.renderScale;
         if(r < 0.5) return;
-        const base = this.baseColor;
+        let turned = Math.abs(this.angle - (this.spriteAngle || 0)) % (Math.PI * 2);
+        if(turned > Math.PI) turned = Math.PI * 2 - turned;
+        if(!this.sprite || (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
+            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05) {
+            this.buildSprite();
+        }
 
-        // Light direction in the asteroid's rotating frame.
-        const cos = Math.cos(-this.angle);
-        const sin = Math.sin(-this.angle);
-        const lx = LIGHT_X * cos - LIGHT_Y * sin;
-        const ly = LIGHT_X * sin + LIGHT_Y * cos;
-
+        // One image stamp per frame: surface, lighting and outline are all in the sprite.
+        const scale = r / this.spriteRadius;
+        const extent = this.spriteExtent * scale;
         ctx.save();
         ctx.globalAlpha = this.renderAlpha;
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
-
-        // Soft dark rim so the rock separates from the background.
-        this.outline(ctx, r);
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillStyle = rgb(shade(base, 0.35));
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Body shading: lit on the light side, falling off into shadow.
-        const body = ctx.createRadialGradient(lx * r * 0.45, ly * r * 0.45, r * 0.05, 0, 0, r * 1.05);
-        body.addColorStop(0, rgb(shade(base, this.flash > 0 ? 2 : 1.45)));
-        body.addColorStop(0.45, rgb(shade(base, 0.95)));
-        body.addColorStop(1, rgb(shade(base, 0.28)));
-        ctx.fillStyle = body;
-        ctx.fill();
-
-        ctx.save();
-        this.outline(ctx, r);
-        ctx.clip();
-
-        // Craters: dark bowl with a lit far rim and a shadowed near rim.
-        this.craters.forEach(c => {
-            const cx = c.x * r;
-            const cy = c.y * r;
-            const cr = c.r * r;
-            ctx.save();
-            ctx.translate(cx, cy);
-            ctx.rotate(c.tilt);
-            ctx.scale(1, c.squash);
-            ctx.fillStyle = rgb(shade(base, 0.55), 0.55);
-            ctx.beginPath();
-            ctx.arc(0, 0, cr, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-
-            ctx.lineWidth = Math.max(0.8, cr * 0.18);
-            ctx.strokeStyle = rgb(shade(base, 1.6), 0.45);
-            ctx.beginPath();
-            const rimAngle = Math.atan2(-ly, -lx);
-            ctx.ellipse(cx, cy, cr, cr * c.squash, c.tilt, rimAngle - 1.1 - c.tilt, rimAngle + 1.1 - c.tilt);
-            ctx.stroke();
-            ctx.strokeStyle = rgb(shade(base, 0.25), 0.55);
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, cr, cr * c.squash, c.tilt, rimAngle + Math.PI - 1.1 - c.tilt, rimAngle + Math.PI + 1.1 - c.tilt);
-            ctx.stroke();
-        });
-
-        // Cracks.
-        ctx.strokeStyle = rgb(shade(base, 0.3), 0.7);
-        ctx.lineWidth = Math.max(0.7, r * 0.025);
-        ctx.lineJoin = 'round';
-        this.cracks.forEach(points => {
-            ctx.beginPath();
-            points.forEach((p, i) => {
-                if(i === 0) ctx.moveTo(p[0] * r, p[1] * r);
-                else ctx.lineTo(p[0] * r, p[1] * r);
-            });
-            ctx.stroke();
-        });
-
-        // Fresh impact scars: pale, freshly exposed rock that weathers over time.
-        this.scars.forEach(scar => {
-            const sx = Math.cos(scar.angle) * r * 0.72;
-            const sy = Math.sin(scar.angle) * r * 0.72;
-            const sr = scar.size * r;
-            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-            g.addColorStop(0, rgb(shade(base, 1.9), 0.25 + 0.5 * Math.max(0, scar.fresh)));
-            g.addColorStop(1, rgb(shade(base, 1.2), 0));
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-            ctx.fill();
-        });
-
-        // Mineral crystals catch the light and glint as the asteroid turns.
-        const t = time || 0;
-        this.crystals.forEach(c => {
-            const x = c.x * r;
-            const y = c.y * r;
-            const s = Math.max(1, c.size * r);
-            const glint = 0.55 + 0.45 * Math.max(0, Math.sin(t * 2 + c.phase + this.angle * 3));
-            ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(c.angle);
-            ctx.fillStyle = rgb(shade(c.color, 0.55));
-            ctx.beginPath();
-            ctx.moveTo(s, 0); ctx.lineTo(0, s * 0.6); ctx.lineTo(-s, 0); ctx.lineTo(0, -s * 0.6);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = rgb(c.color, glint);
-            ctx.beginPath();
-            ctx.moveTo(s * 0.8, 0); ctx.lineTo(0, -s * 0.5); ctx.lineTo(-s * 0.2, 0);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-        });
-
-        // Terminator: darken the side facing away from the light.
-        const terminator = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
-        terminator.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        terminator.addColorStop(0.55, 'rgba(0, 0, 0, 0.05)');
-        terminator.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
-        ctx.fillStyle = terminator;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
-        ctx.restore();
-
-        // Rim light on the lit edge.
-        this.outline(ctx, r);
-        ctx.lineWidth = Math.max(1, r * 0.03);
-        const rim = ctx.createLinearGradient(lx * r, ly * r, -lx * r * 0.2, -ly * r * 0.2);
-        rim.addColorStop(0, rgb(shade(base, 2), 0.6));
-        rim.addColorStop(1, rgb(shade(base, 2), 0));
-        ctx.strokeStyle = rim;
-        ctx.stroke();
-
+        ctx.drawImage(this.sprite.canvas, -extent, -extent, extent * 2, extent * 2);
+        if(this.flash > 0) {
+            // Hit flash: brighten by stamping the sprite again additively.
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.35;
+            ctx.drawImage(this.sprite.canvas, -extent, -extent, extent * 2, extent * 2);
+        }
         ctx.restore();
     }
 }
@@ -2260,14 +2508,14 @@ class Rock {
 
 
 /***/ }),
-/* 8 */
+/* 9 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(6);
 // Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
 
 
@@ -2940,15 +3188,15 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 9 */
+/* 10 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(19);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
 
 
@@ -2985,22 +3233,22 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 10 */
+/* 11 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(15);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(9);
 
 
 
@@ -3015,8 +3263,8 @@ openShipyard.addEventListener('click', () => {
 
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
-const MAX_STEPS_PER_FRAME = 8;
-const MAX_PARTICLES = 2000;
+const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
+const MAX_PARTICLES = 1200;
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
 const ROCK_BOUNCE = 0.2;
@@ -3086,13 +3334,18 @@ const createState = () => {
     };
 };
 
+// Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
+// automatically if the game can't hold a smooth frame rate on this computer.
+let resolutionCap = 2;
+let slowTime = 0;
+
 const resize = () => {
-    pixelRatio = window.devicePixelRatio || 1;
+    pixelRatio = Math.min(window.devicePixelRatio || 1, resolutionCap);
     canvas.width = Math.floor(window.innerWidth * pixelRatio);
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].resize(window.innerWidth, window.innerHeight);
+    __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].resize(window.innerWidth, window.innerHeight);
 };
 
 const setText = (key, text) => {
@@ -3152,21 +3405,28 @@ const banner = (text, duration) => {
 
 // ---------------------------------------------------------------- physics
 
+// Gravity changes slowly, so the expensive all-pairs sum is refreshed GRAVITY_INTERVAL
+// times less often than the physics step and the cached accelerations reused in between.
+const GRAVITY_INTERVAL = 4;
+let gravityCounter = 0;
+
 const applyGravity = (dt) => {
     const { rocks, ship, bullets, missiles, ores } = state;
-
-    // Compute every rock's acceleration before changing any velocity.
-    const accelerations = rocks.map(rock => Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* gravityAt */])(rock, rocks));
-    rocks.forEach((rock, i) => {
-        rock.vx += accelerations[i].x * dt;
-        rock.vy += accelerations[i].y * dt;
-    });
+    const refresh = gravityCounter++ % GRAVITY_INTERVAL === 0;
 
     const pull = (body) => {
-        const a = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* gravityAt */])(body, rocks);
-        body.vx += a.x * dt;
-        body.vy += a.y * dt;
+        if(refresh || !body.gravity) body.gravity = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(body, rocks);
+        body.vx += body.gravity.x * dt;
+        body.vy += body.gravity.y * dt;
     };
+
+    // Rocks: compute every acceleration before changing any velocity.
+    if(refresh) rocks.forEach(rock => { rock.gravityNext = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(rock, rocks); });
+    rocks.forEach(rock => {
+        if(refresh || !rock.gravity) rock.gravity = rock.gravityNext || Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(rock, rocks);
+        rock.vx += rock.gravity.x * dt;
+        rock.vy += rock.gravity.y * dt;
+    });
 
     if(ship.alive) pull(ship);
     bullets.forEach(pull);
@@ -3179,7 +3439,7 @@ const hitRock = (rock, damage, hitX, hitY) => {
     if(rock.dead) return;
     const result = rock.chip(damage, hitX, hitY);
 
-    const out = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(rock, { x: hitX, y: hitY });
+    const out = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(rock, { x: hitX, y: hitY });
     const outLength = Math.sqrt(out.x * out.x + out.y * out.y) || 1;
     const outX = out.x / outLength;
     const outY = out.y / outLength;
@@ -3205,14 +3465,21 @@ const hitRock = (rock, damage, hitX, hitY) => {
         });
     }
 
-    if(result.fragment) {
-        state.newRocks.push(result.fragment);
-        const midX = (rock.x + result.fragment.x) / 2;
-        const midY = (rock.y + result.fragment.y) / 2;
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, midX, midY,
-            rock.vx, rock.vy, 16, { minSpeed: 30, maxSpeed: 130, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230' });
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, midX, midY, rock.vx, rock.vy, 8, {
-            minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+    if(result.pieces) {
+        // Cut clean through: the two halves replace the asteroid, with dust along the cut.
+        result.pieces.forEach(piece => state.newRocks.push(piece));
+        const a = result.pieces[0];
+        const b = result.pieces[1];
+        for(let i = 0; i < 10; i++) {
+            const t = Math.random();
+            const x = a.x + (b.x - a.x) * t + (Math.random() - 0.5) * rock.radius * 0.6;
+            const y = a.y + (b.y - a.y) * t + (Math.random() - 0.5) * rock.radius * 0.6;
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 1, {
+                minSpeed: 5, maxSpeed: 30, minLife: 1, maxLife: 2.2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+            });
+        }
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx, rock.vy, 12, {
+            minSpeed: 20, maxSpeed: 90, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230'
         });
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
     }
@@ -3257,15 +3524,24 @@ const bulletCollisions = () => {
         if(bullet.dead) return;
         for(let i = 0; i < rocks.length; i++) {
             const rock = rocks[i];
-            if(rock.dead) continue;
-            const dx = bullet.x - rock.x;
-            const dy = bullet.y - rock.y;
-            if(dx * dx + dy * dy > rock.radius * rock.radius) continue;
+            if(rock.dead || !rock.containsPoint(bullet.x, bullet.y)) continue;
+
+            // Find where the round actually crossed the visible outline this step.
+            const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || 1;
+            const dirX = bullet.vx / speed;
+            const dirY = bullet.vy / speed;
+            const travel = speed * STEP + 2;
+            const startX = bullet.x - dirX * travel;
+            const startY = bullet.y - dirY * travel;
+            const entry = rock.raycast(startX, startY, dirX, dirY, travel);
+            bullet.x = entry === null ? bullet.x : startX + dirX * entry;
+            bullet.y = entry === null ? bullet.y : startY + dirY * entry;
 
             bullet.dead = true;
-            // Projectiles carry momentum and nudge the rock.
-            rock.vx += bullet.vx * bullet.mass / rock.mass;
-            rock.vy += bullet.vy * bullet.mass / rock.mass;
+            // Projectiles carry momentum and nudge the rock (capped so small chunks don't rocket off).
+            const kick = Math.min(30, speed * bullet.mass / rock.mass);
+            rock.vx += dirX * kick;
+            rock.vy += dirY * kick;
             hitRock(rock, bullet.damage, bullet.x, bullet.y);
 
             if(bullet.kind === 'plasma') {
@@ -3311,14 +3587,15 @@ const explodeMissile = (missile) => {
 
     state.rocks.forEach(rock => {
         if(rock.dead) return;
-        const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(missile, rock);
+        const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(missile, rock);
         const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
         const reach = missile.blast + rock.radius;
         if(distance > reach) return;
 
         const falloff = 1 - distance / reach;
-        rock.vx += d.x / distance * MISSILE_PUSH * falloff / rock.mass;
-        rock.vy += d.y / distance * MISSILE_PUSH * falloff / rock.mass;
+        const push = Math.min(70, MISSILE_PUSH * falloff / rock.mass);
+        rock.vx += d.x / distance * push;
+        rock.vy += d.y / distance * push;
         // Damage lands on the face of the rock nearest the blast.
         hitRock(rock, missile.damage * (0.35 + 0.65 * falloff),
             rock.x - d.x / distance * rock.radius, rock.y - d.y / distance * rock.radius);
@@ -3333,9 +3610,7 @@ const missileCollisions = () => {
             for(let i = 0; i < rocks.length; i++) {
                 const rock = rocks[i];
                 if(rock.dead) continue;
-                const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(rock, missile);
-                const reach = rock.radius + 3;
-                if(d.x * d.x + d.y * d.y > reach * reach) continue;
+                if(!rock.containsPoint(missile.x, missile.y, 3)) continue;
                 missile.dead = true;
                 missile.exploded = true;
                 break;
@@ -3486,7 +3761,7 @@ const shipCollisions = () => {
         const rockRadius = rock.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
 
         // Broad phase against the whole ship first.
-        const center = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(ship, rock);
+        const center = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(ship, rock);
         const reach = ship.radius * 1.5 + rockRadius;
         if(center.x * center.x + center.y * center.y > reach * reach) return;
 
@@ -3509,7 +3784,7 @@ const shipCollisions = () => {
         const colliders = ship.worldColliders();
         for(let i = 0; i < colliders.length; i++) {
             const c = colliders[i];
-            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(c, rock);
+            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(c, rock);
             const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
             const overlap = c.r + rockRadius - distance;
             if(overlap <= 0) continue;
@@ -3616,13 +3891,14 @@ const step = (dt) => {
     state.time += dt;
 
     // Mouse is in screen space; turrets need it in world space.
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimX = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2 + state.camera.x;
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2 + state.camera.y;
+    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimX = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 + state.camera.x;
+    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 + state.camera.y;
 
     ship.update(dt, __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], state);
     state.beamHits.forEach(hit => {
-        hit.rock.vx += hit.dirX * 900 * hit.damage / hit.rock.mass;
-        hit.rock.vy += hit.dirY * 900 * hit.damage / hit.rock.mass;
+        const push = Math.min(0.6, 900 * hit.damage / hit.rock.mass);
+        hit.rock.vx += hit.dirX * push;
+        hit.rock.vy += hit.dirY * push;
         hitRock(hit.rock, hit.damage, hit.x, hit.y);
         if(Math.random() < 0.35) {
             __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
@@ -3706,8 +3982,8 @@ const STAR_LAYERS = [
 
 // Parallax starfield generated from the camera position, so it never runs out.
 const drawStarfield = () => {
-    const w = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width;
-    const h = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height;
+    const w = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width;
+    const h = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height;
     STAR_LAYERS.forEach((layer, index) => {
         const offsetX = state.camera.x * layer.factor;
         const offsetY = state.camera.y * layer.factor;
@@ -3729,8 +4005,8 @@ const drawStarfield = () => {
 };
 
 const isVisible = (x, y, r) => {
-    const halfW = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2 + r;
-    const halfH = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2 + r;
+    const halfW = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 + r;
+    const halfH = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 + r;
     return Math.abs(x - state.camera.x) < halfW && Math.abs(y - state.camera.y) < halfH;
 };
 
@@ -3881,12 +4157,13 @@ const drawBanner = () => {
     if(state.bannerTimer <= 0) return;
     ctx.save();
     ctx.globalAlpha = Math.min(1, state.bannerTimer);
-    ctx.fillStyle = '#fff';
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = '#fff';
     ctx.font = '30px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.bannerText, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 4);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.strokeText(state.bannerText, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 4);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(state.bannerText, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 4);
     ctx.restore();
 };
 
@@ -3899,21 +4176,19 @@ const drawDockPrompt = () => {
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? 'rgba(255, 200, 120, 0.95)' : 'rgba(140, 255, 160, 0.95)';
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = ctx.fillStyle;
-    ctx.fillText(text, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height - 60);
+    ctx.fillText(text, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 60);
     ctx.restore();
 };
 
 // Edge-of-screen pointer to the shipyard when it's out of view.
 const drawStationPointer = () => {
-    const sx = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - state.camera.x + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2;
-    const sy = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - state.camera.y + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2;
+    const sx = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - state.camera.x + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
+    const sy = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - state.camera.y + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
     const margin = 40;
-    if(sx > -100 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width + 100 && sy > -100 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height + 100) return;
+    if(sx > -100 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width + 100 && sy > -100 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height + 100) return;
 
-    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2;
-    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2;
+    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
     const angle = Math.atan2(sy - cy, sx - cx);
     const scale = Math.min(
         Math.abs((cx - margin) / Math.cos(angle) || Infinity),
@@ -3942,7 +4217,7 @@ const drawWeaponPanel = () => {
     if(!weapons.length) return;
     const left = 16;
     const rowHeight = 22;
-    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height - 16 - weapons.length * rowHeight - 18;
+    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 16 - weapons.length * rowHeight - 18;
 
     ctx.save();
     ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
@@ -3977,8 +4252,8 @@ const drawWeaponPanel = () => {
 
 const drawMinimap = () => {
     const size = MINIMAP_SIZE;
-    const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width - size - 16;
-    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height - size - 16;
+    const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - size - 16;
+    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - size - 16;
     const scale = (size / 2) / MINIMAP_RANGE;
     const cx = left + size / 2;
     const cy = top + size / 2;
@@ -4042,16 +4317,15 @@ const drawMinimap = () => {
 const render = () => {
     const time = state.time;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height);
+    ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height);
     drawStarfield();
 
     ctx.save();
-    ctx.translate(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width / 2 - state.camera.x, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2 - state.camera.y);
+    ctx.translate(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 - state.camera.x, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 - state.camera.y);
 
     if(isVisible(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, 300)) Object(__WEBPACK_IMPORTED_MODULE_9__world_station__["b" /* drawStation */])(ctx, time, state.canDock);
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
-    visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
     // Merging guests are drawn first so they sink beneath their host.
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
@@ -4065,13 +4339,24 @@ const render = () => {
     state.particles.forEach(particle => { if(!particle.dust && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
+    // Kinetic rounds are batched into one path and stroked twice (soft halo + bright core)
+    // instead of using an expensive blur per bullet.
     ctx.save();
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    state.bullets.forEach(bullet => {
+        if(bullet.kind !== 'bullet') return;
+        ctx.moveTo(bullet.x - bullet.vx * 0.012, bullet.y - bullet.vy * 0.012);
+        ctx.lineTo(bullet.x, bullet.y);
+    });
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 5;
+    ctx.stroke();
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = '#fff';
-    state.bullets.forEach(bullet => bullet.draw(ctx));
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
     ctx.restore();
+    state.bullets.forEach(bullet => { if(bullet.kind !== 'bullet') bullet.draw(ctx); });
 
     state.missiles.forEach(missile => missile.draw(ctx));
     state.ship.draw(ctx);
@@ -4216,6 +4501,15 @@ const frame = (now) => {
     const elapsed = Math.min((now - lastFrameTime) / 1000, 0.25);
     lastFrameTime = now;
     if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
+    if(fps < 45 && resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
+        slowTime += elapsed;
+        if(slowTime > 2) {
+            resolutionCap = 1;
+            resize();
+        }
+    } else {
+        slowTime = 0;
+    }
 
     if(!state.paused) {
         accumulator += elapsed;
@@ -4333,17 +4627,19 @@ const constructGameBoard = () => {
 
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(12);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(13);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__shipyard_modules__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(7);
+
 
 
 
@@ -4384,26 +4680,92 @@ const angleDifference = (a, b) => {
     return d;
 };
 
-// Distance along a ray to the first asteroid it hits.
+// Distance along a ray to the first asteroid outline it hits.
 const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
     let best = null;
     let bestDistance = range;
     rocks.forEach(rock => {
         if(rock.dead) return;
-        const mx = rock.x - x;
-        const my = rock.y - y;
-        const along = mx * dirX + my * dirY;
-        if(along < -rock.radius) return;
-        const closestSq = mx * mx + my * my - along * along;
-        const r = rock.radius * 0.92;
-        if(closestSq > r * r) return;
-        const hit = Math.max(0, along - Math.sqrt(r * r - closestSq));
-        if(hit < bestDistance) {
+        const hit = rock.raycast(x, y, dirX, dirY, bestDistance);
+        if(hit !== null && hit < bestDistance) {
             bestDistance = hit;
             best = rock;
         }
     });
     return { rock: best, distance: bestDistance };
+};
+
+// Hull line art with its glow, rendered once per hull and colour.
+const hullSprite = (hull, color) => {
+    hull._sprites = hull._sprites || {};
+    const key = color || 'base';
+    if(!hull._sprites[key]) {
+        const b = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["d" /* hullBounds */])(hull);
+        const pad = 8;
+        const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
+            ctx.translate(pad - b.minX, pad - b.minY);
+            Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color });
+        });
+        sprite.x = b.minX - pad;
+        sprite.y = b.minY - pad;
+        hull._sprites[key] = sprite;
+    }
+    return hull._sprites[key];
+};
+
+// Shield bubble (soft edge, hexagon lattice and glowing rim) rendered once per hull.
+const shieldSprite = (hull) => {
+    if(hull._shieldSprite) return hull._shieldSprite;
+    const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(hull);
+    const color = hull.shieldColor || '120,210,255';
+    const pad = 6;
+    hull._shieldSprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
+        ctx.translate(s.rx + pad, s.ry + pad);
+        ctx.scale(1, s.ry / s.rx);
+        const rx = s.rx;
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
+        body.addColorStop(0, 'rgba(' + color + ', 0)');
+        body.addColorStop(0.8, 'rgba(' + color + ', 0.05)');
+        body.addColorStop(1, 'rgba(' + color + ', 0.22)');
+        ctx.fillStyle = body;
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        const lattice = new Path2D();
+        const size = 7;
+        const w = size * Math.sqrt(3);
+        for(let row = -Math.ceil(rx / (size * 1.5)); row <= Math.ceil(rx / (size * 1.5)); row++) {
+            for(let col = -Math.ceil(rx / w) - 1; col <= Math.ceil(rx / w) + 1; col++) {
+                const cx = col * w + (row % 2 ? w / 2 : 0);
+                const cy = row * size * 1.5;
+                if(cx * cx + cy * cy > (rx + size) * (rx + size)) continue;
+                for(let i = 0; i < 6; i++) {
+                    const a1 = Math.PI / 6 + i * Math.PI / 3;
+                    lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                    lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+                }
+            }
+        }
+        // Lattice is brighter towards the rim.
+        const fade = ctx.createRadialGradient(0, 0, rx * 0.3, 0, 0, rx);
+        fade.addColorStop(0, 'rgba(' + color + ', 0.03)');
+        fade.addColorStop(1, 'rgba(' + color + ', 0.2)');
+        ctx.strokeStyle = fade;
+        ctx.lineWidth = 0.6;
+        ctx.stroke(lattice);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(' + color + ', 0.55)';
+        ctx.lineWidth = 1.4;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgb(' + color + ')';
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    hull._shieldSprite.pad = pad;
+    return hull._shieldSprite;
 };
 
 class Ship {
@@ -4508,8 +4870,8 @@ class Ship {
     toggleShields() {
         if(this.maxShield <= 0) return false;
         this.shieldsEnabled = !this.shieldsEnabled;
-        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldUp();
-        else __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldDown();
+        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldUp();
+        else __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldDown();
         return true;
     }
 
@@ -4747,7 +5109,7 @@ class Ship {
         const from = { x: x, y: y };
         rocks.forEach(rock => {
             if(rock.dead) return;
-            const d = Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(from, rock);
+            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(from, rock);
             const distSq = d.x * d.x + d.y * d.y;
             if(distSq < bestDist) {
                 bestDist = distSq;
@@ -4805,7 +5167,7 @@ class Ship {
 
             if(!input.firing && turret.target) {
                 const target = turret.target;
-                let d = Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target);
+                let d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target);
                 const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
                 const time = turret.kind === 'beam' ? 0 : Math.sqrt(d.x * d.x + d.y * d.y) / speed;
                 d = { x: d.x + target.vx * time, y: d.y + target.vy * time };
@@ -4865,7 +5227,7 @@ class Ship {
         if(turret.heat >= 1) {
             turret.heat = 1;
             turret.overheated = true;
-            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].overheat();
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].overheat();
         }
     }
 
@@ -4895,7 +5257,7 @@ class Ship {
                 life: 0.15 + Math.random() * 0.2, size: 3, color: i % 2 ? '255,200,90' : '255,120,40'
             }));
         }
-        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].staffShot();
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].staffShot();
     }
 
     // Asgard beam: fires a burst for a few seconds, then must recharge.
@@ -4963,7 +5325,7 @@ class Ship {
         const stats = launcher.module.stats;
         const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
         const target = this.guidance ? this.missileLock : null;
-        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
         const angle = Math.atan2(aimAt.y, aimAt.x);
 
         world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
@@ -4978,7 +5340,7 @@ class Ship {
             homing: this.guidance ? this.guidance.homing : 0
         }));
         launcher.cooldown = stats.cooldown;
-        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].missileLaunch();
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].missileLaunch();
     }
 
     // Ancient drones: a fan of self-guided drones that hunt asteroids on their own.
@@ -4986,7 +5348,7 @@ class Ship {
         const stats = launcher.module.stats;
         const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
         const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 400);
-        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
         const base = Math.atan2(aimAt.y, aimAt.x);
 
         for(let i = 0; i < stats.count; i++) {
@@ -5006,14 +5368,14 @@ class Ship {
             }));
         }
         launcher.cooldown = stats.cooldown;
-        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].droneLaunch();
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].droneLaunch();
     }
 
     // Readiness of each weapon group for the HUD: 1 = ready.
     weaponStatus() {
         const groups = {};
         this.turrets.concat(this.launchers).forEach(w => {
-            const def = __WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["c" /* default */][w.kind];
+            const def = __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["c" /* default */][w.kind];
             if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
             const g = groups[w.kind];
             const stats = w.module.stats;
@@ -5056,21 +5418,21 @@ class Ship {
         if(absorbed > 0) {
             this.shieldFlash = 0.25;
             if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
-            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldHit();
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit();
         }
 
         if(remaining > 0) {
             this.hp -= remaining;
             this.hullFlash = 0.15;
             this.explode(particles, 10 + Math.round(remaining / 2));
-            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hullHit();
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].hullHit();
         }
 
         if(this.hp <= 0) {
             this.hp = 0;
             this.alive = false;
             this.explode(particles, 40 + this.radius * 2);
-            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].explosion(1);
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].explosion(1);
         }
         return true;
     }
@@ -5092,99 +5454,54 @@ class Ship {
         }
     }
 
-    drawFlame(ctx, x, y, dirX, dirY, length, width, outer, inner) {
-        if(length < 0.5) return;
-        const nx = -dirY;
-        const ny = dirX;
-
-        ctx.fillStyle = outer;
-        ctx.beginPath();
-        ctx.moveTo(x + nx * width, y + ny * width);
-        ctx.lineTo(x + dirX * length, y + dirY * length);
-        ctx.lineTo(x - nx * width, y - ny * width);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.fillStyle = inner;
-        ctx.beginPath();
-        ctx.moveTo(x + nx * width * 0.45, y + ny * width * 0.45);
-        ctx.lineTo(x + dirX * length * 0.55, y + dirY * length * 0.55);
-        ctx.lineTo(x - nx * width * 0.45, y - ny * width * 0.45);
-        ctx.closePath();
-        ctx.fill();
-    }
-
     drawThrusters(ctx) {
         const t = this.thrusters;
-        const flicker = () => 0.8 + Math.random() * 0.4;
         const jetScale = this.hullDef.jetScale || 1;
-        const jetOuter = 'rgba(170, 210, 255, 0.85)';
-        const jetInner = 'rgba(255, 255, 255, 0.95)';
         const exhaust = this.hullDef.exhaust || '255,150,60';
+        const plume = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["b" /* flameSprite */])(exhaust, '255,235,190');
+        const jetFlame = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["b" /* flameSprite */])('170,210,255', '255,255,255');
+        const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])(exhaust);
+        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
 
-        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
-
         this.engines.forEach(engine => {
             const size = engine.size;
-
             // Nozzle glow, pulsing even when idle.
-            const glowRadius = (2.5 + pulse + t.main * 3) * size * 1.6;
-            const glow = ctx.createRadialGradient(engine.x, engine.y, 0, engine.x, engine.y, glowRadius);
-            glow.addColorStop(0, 'rgba(' + exhaust + ', ' + (0.55 + t.main * 0.45) + ')');
-            glow.addColorStop(1, 'rgba(' + exhaust + ', 0)');
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(engine.x, engine.y, glowRadius, 0, Math.PI * 2);
-            ctx.fill();
+            const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
+            ctx.globalAlpha = 0.55 + t.main * 0.45;
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
 
             // Plume straight out of the nozzle, as wide as the nozzle.
-            const length = t.main * (14 + Math.random() * 8) * size * 1.4;
-            const plume = ctx.createLinearGradient(engine.x, engine.y, engine.x - length, engine.y);
-            plume.addColorStop(0, 'rgba(255, 235, 190, 0.95)');
-            plume.addColorStop(0.4, 'rgba(' + exhaust + ', 0.8)');
-            plume.addColorStop(1, 'rgba(' + exhaust + ', 0)');
-            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 2.6 * size * flicker(), plume, 'rgba(255, 255, 235, 0.9)');
+            if(t.main > 0.03) {
+                const length = t.main * (14 + Math.random() * 8) * size * 1.4;
+                const width = 5.2 * size * (0.85 + Math.random() * 0.3);
+                ctx.globalAlpha = 1;
+                ctx.save();
+                ctx.translate(engine.x, engine.y);
+                ctx.rotate(Math.PI);
+                ctx.drawImage(plume.canvas, 0, -width / 2, length, width);
+                ctx.restore();
+            }
         });
 
         // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
+        ctx.globalAlpha = 1;
         const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.02) return;
             const length = t[key] * 7 * jetScale;
             jets[key].forEach(jet => {
-                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.3 * jetScale, jetOuter, jetInner);
+                ctx.save();
+                ctx.translate(jet[0], jet[1]);
+                ctx.rotate(Math.atan2(jet[3], jet[2]));
+                ctx.drawImage(jetFlame.canvas, 0, -1.3 * jetScale, length * (0.8 + Math.random() * 0.4), 2.6 * jetScale);
+                ctx.restore();
             });
         });
 
         ctx.restore();
-    }
-
-    // Hexagon lattice for the shield surface, cached per hull.
-    shieldLattice(radius) {
-        const key = Math.round(radius);
-        if(this.latticeKey === key) return this.lattice;
-        const path = new Path2D();
-        const size = 7;
-        const w = size * Math.sqrt(3);
-        for(let row = -Math.ceil(radius / (size * 1.5)); row <= Math.ceil(radius / (size * 1.5)); row++) {
-            for(let col = -Math.ceil(radius / w) - 1; col <= Math.ceil(radius / w) + 1; col++) {
-                const cx = col * w + (row % 2 ? w / 2 : 0);
-                const cy = row * size * 1.5;
-                if(cx * cx + cy * cy > (radius + size) * (radius + size)) continue;
-                for(let i = 0; i < 6; i++) {
-                    const a1 = Math.PI / 6 + i * Math.PI / 3;
-                    const a2 = a1 + Math.PI / 3;
-                    path.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
-                    path.lineTo(cx + Math.cos(a2) * size, cy + Math.sin(a2) * size);
-                }
-            }
-        }
-        this.latticeKey = key;
-        this.lattice = path;
-        return path;
     }
 
     drawShield(ctx) {
@@ -5192,71 +5509,39 @@ class Ship {
         if(this.maxShield <= 0 || level < 0.01) return;
 
         const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
+        const sprite = shieldSprite(this.hullDef);
         const color = this.hullDef.shieldColor || '120,210,255';
         const strength = Math.max(0.15, this.shield / this.maxShield);
         // Bubble expands outwards when powering up and collapses when lowered.
         const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
-        const rx = s.rx * grow;
-        const squash = s.ry / s.rx;
         const flash = Math.max(0, this.shieldFlash) * 3;
-        const t = this.time;
+        const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
 
         ctx.save();
         ctx.translate(s.x, s.y);
-        ctx.scale(1, squash);   // draw the ellipse as a circle in squashed space
+        ctx.globalAlpha = Math.min(1, level * (0.35 + 0.65 * strength) * shimmer + flash);
+        const w = sprite.width * grow;
+        const h = sprite.height * grow;
+        ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
 
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
-        body.addColorStop(0, 'rgba(' + color + ', 0)');
-        body.addColorStop(0.8, 'rgba(' + color + ', ' + (0.05 * level * strength) + ')');
-        body.addColorStop(1, 'rgba(' + color + ', ' + Math.min(0.5, (0.2 + flash * 0.3) * level * strength) + ')');
-        ctx.fillStyle = body;
-        ctx.fill();
-
-        ctx.save();
-        ctx.clip();
-
-        // Lattice with a bright scan band sweeping across it.
-        const sweep = Math.sin(t * 1.3) * rx;
-        const band = ctx.createLinearGradient(sweep - rx * 0.5, -rx, sweep + rx * 0.5, rx);
-        band.addColorStop(0, 'rgba(' + color + ', ' + (0.03 * level) + ')');
-        band.addColorStop(0.5, 'rgba(' + color + ', ' + ((0.16 + flash * 0.3) * level * strength) + ')');
-        band.addColorStop(1, 'rgba(' + color + ', ' + (0.03 * level) + ')');
-        ctx.strokeStyle = band;
-        ctx.lineWidth = 0.6;
-        ctx.stroke(this.shieldLattice(rx));
-
-        // Impact ripples: a hot flare at the hit point and a ring spreading across the bubble.
-        ctx.globalCompositeOperation = 'lighter';
-        this.shieldImpacts.forEach(impact => {
-            const ix = impact.x * grow;
-            const iy = impact.y * grow / squash;
-            const age = 1 - impact.life;
-            const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 10 + 30 * impact.strength);
-            flare.addColorStop(0, 'rgba(255, 255, 255, ' + (0.8 * impact.life * impact.strength) + ')');
-            flare.addColorStop(0.3, 'rgba(' + color + ', ' + (0.5 * impact.life) + ')');
-            flare.addColorStop(1, 'rgba(' + color + ', 0)');
-            ctx.fillStyle = flare;
-            ctx.fillRect(ix - 50, iy - 50, 100, 100);
-
-            ctx.strokeStyle = 'rgba(' + color + ', ' + (0.7 * impact.life) + ')';
-            ctx.lineWidth = 2 * impact.life + 0.5;
-            ctx.beginPath();
-            ctx.arc(ix, iy, 4 + age * rx * 0.9, 0, Math.PI * 2);
-            ctx.stroke();
-        });
-        ctx.restore();
-
-        // Rim.
-        const shimmer = 0.75 + 0.25 * Math.sin(t * 3);
-        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, (0.3 + flash) * shimmer * level * (0.4 + 0.6 * strength)) + ')';
-        ctx.lineWidth = 1.4;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(' + color + ')';
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        ctx.stroke();
+        // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
+        if(this.shieldImpacts.length) {
+            ctx.globalCompositeOperation = 'lighter';
+            const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])(color);
+            this.shieldImpacts.forEach(impact => {
+                const ix = impact.x * grow;
+                const iy = impact.y * grow;
+                const size = (20 + 50 * impact.strength) * impact.life;
+                ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, glow, ix, iy, size, size);
+                ctx.globalAlpha = 0.7 * impact.life;
+                ctx.strokeStyle = 'rgb(' + color + ')';
+                ctx.lineWidth = 2 * impact.life + 0.5;
+                ctx.beginPath();
+                ctx.ellipse(ix, iy, 4 + (1 - impact.life) * s.rx * 0.6, 4 + (1 - impact.life) * s.ry * 0.6, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        }
         ctx.restore();
     }
 
@@ -5277,15 +5562,7 @@ class Ship {
                 ctx.lineTo(beam.x2, beam.y2);
                 ctx.stroke();
             });
-            if(beam.hit) {
-                const glow = ctx.createRadialGradient(beam.x2, beam.y2, 0, beam.x2, beam.y2, 16);
-                glow.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
-                glow.addColorStop(1, 'rgba(120, 190, 255, 0)');
-                ctx.fillStyle = glow;
-                ctx.beginPath();
-                ctx.arc(beam.x2, beam.y2, 16, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            if(beam.hit) Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 34, 34);
             ctx.restore();
         });
     }
@@ -5302,21 +5579,23 @@ class Ship {
         ctx.rotate(this.angle);
 
         this.drawThrusters(ctx);
-        Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, this.hullDef, { color: this.hullFlash > 0 ? '255,120,120' : undefined });
+        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
+        ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
 
         this.stats.modules.forEach(module => {
             if(TURRET_TYPES.indexOf(module.type) !== -1) return;
             ctx.save();
             ctx.translate(module.slot.x, module.slot.y);
-            Object(__WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: u });
+            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: u, glow: 0 });
             ctx.restore();
         });
 
         this.turrets.forEach(turret => {
             ctx.save();
             ctx.translate(turret.module.slot.x, turret.module.slot.y);
-            Object(__WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["d" /* drawModule */])(ctx, turret.kind, turret.module.level, {
+            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, turret.kind, turret.module.level, {
                 scale: u,
+                glow: 0,
                 aim: turret.aim - this.angle,
                 heat: turret.kind === 'minigun' ? turret.heat : 0
             });
@@ -5327,15 +5606,9 @@ class Ship {
                     // Large plasma bloom at the cannon mouth.
                     const fx = Math.cos(turret.aim - this.angle) * tip;
                     const fy = Math.sin(turret.aim - this.angle) * tip;
-                    const bloom = ctx.createRadialGradient(fx, fy, 0, fx, fy, 14 * turret.flash / 0.14 + 4);
-                    bloom.addColorStop(0, 'rgba(255, 245, 210, 0.95)');
-                    bloom.addColorStop(0.4, 'rgba(255, 160, 60, 0.7)');
-                    bloom.addColorStop(1, 'rgba(255, 90, 20, 0)');
                     ctx.globalCompositeOperation = 'lighter';
-                    ctx.fillStyle = bloom;
-                    ctx.beginPath();
-                    ctx.arc(fx, fy, 18, 0, Math.PI * 2);
-                    ctx.fill();
+                    const bloom = 16 + 20 * turret.flash / 0.14;
+                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
                 }
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.fillStyle = 'rgba(' + color + ', 0.9)';
@@ -5358,10 +5631,13 @@ class Ship {
 
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(1);
+
+
 const LIFETIME = { bullet: 1.4, plasma: 2.2 };
 
 // Kinetic minigun rounds ('bullet') and Goa'uld staff plasma bolts ('plasma').
@@ -5408,14 +5684,8 @@ class Bullet {
                 ctx.lineTo(this.x, this.y);
                 ctx.stroke();
             });
-            const head = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 14 * flicker);
-            head.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
-            head.addColorStop(0.35, 'rgba(255, 170, 60, 0.6)');
-            head.addColorStop(1, 'rgba(255, 90, 20, 0)');
-            ctx.fillStyle = head;
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, 14 * flicker, 0, Math.PI * 2);
-            ctx.fill();
+            const head = 28 * flicker;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
             ctx.restore();
             return;
         }
@@ -5432,12 +5702,14 @@ class Bullet {
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(1);
+
 
 
 
@@ -5492,7 +5764,7 @@ class Missile {
         if(this.homing > 0 && armed) {
             if(!this.target || this.target.dead) this.target = this.findTarget(rocks);
             if(this.target) {
-                const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["a" /* delta */])(this, this.target);
+                const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["b" /* delta */])(this, this.target);
                 const desired = Math.atan2(d.y, d.x);
                 const turn = Math.max(-this.homing * dt, Math.min(this.homing * dt, angleDifference(this.angle, desired)));
                 this.angle += turn;
@@ -5538,7 +5810,7 @@ class Missile {
         let bestDist = this.profile.retarget * this.profile.retarget;
         rocks.forEach(rock => {
             if(rock.dead) return;
-            const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["a" /* delta */])(this, rock);
+            const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["b" /* delta */])(this, rock);
             const distSq = d.x * d.x + d.y * d.y;
             if(distSq < bestDist) {
                 bestDist = distSq;
@@ -5557,13 +5829,9 @@ class Missile {
             // Golden squid-like drone with a pulsing glow.
             const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
             ctx.globalCompositeOperation = 'lighter';
-            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 9);
-            glow.addColorStop(0, 'rgba(255, 240, 180, ' + pulse + ')');
-            glow.addColorStop(1, 'rgba(255, 200, 80, 0)');
-            ctx.fillStyle = glow;
-            ctx.beginPath();
-            ctx.arc(0, 0, 9, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.globalAlpha = pulse;
+            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["c" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
+            ctx.globalAlpha = 1;
             ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
             ctx.lineWidth = 1.2;
             ctx.beginPath();
@@ -5575,9 +5843,7 @@ class Missile {
         }
 
         ctx.strokeStyle = 'rgb(255, 160, 140)';
-        ctx.lineWidth = 1.3;
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = 'rgb(255, 120, 90)';
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(6, 0);
         ctx.lineTo(-4, 0);
@@ -5593,7 +5859,7 @@ class Missile {
 
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5657,9 +5923,12 @@ class Ore {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
+        // Soft halo then the crystal itself (cheaper than a canvas blur).
+        ctx.fillStyle = 'rgba(' + color + ',' + (0.22 * pulse).toFixed(2) + ')';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+        ctx.fill();
         ctx.fillStyle = 'rgba(' + color + ',' + pulse.toFixed(2) + ')';
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
         ctx.moveTo(r, 0);
         ctx.lineTo(0, r * 0.8);
@@ -5675,7 +5944,7 @@ class Ore {
 
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5790,11 +6059,11 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(8);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(0);
 // Endless asteroid fields. Space is divided into square sectors that are generated
 // deterministically from a seed the first time the ship comes near. Sectors that
@@ -5925,6 +6194,7 @@ class SectorManager {
                 keep.push(rock);
             } else {
                 if(!this.dormant[key]) this.dormant[key] = [];
+                rock.releaseSprite();
                 this.dormant[key].push(rock);
             }
         });
@@ -5953,19 +6223,24 @@ class SectorManager {
 
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(1);
 // Home base at the centre of the map: an Atlantis-style six-armed city-ship.
 // Fly inside the docking ring and press B to dock with the shipyard.
+//
+// Performance: the city's line art (hundreds of glowing strokes) and the shield dome
+// gradient are rendered once into sprites; each frame just stamps them.
+
+
 
 const STATION = {
     x: 0,
     y: 0,
     dockRadius: 420,
     maxDockSpeed: 140,
-    spin: 0.012,
     shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
     impacts: []            // { angle, life, strength } ripples on the city shield
 };
@@ -6002,7 +6277,7 @@ const hexagon = (r, offset) => {
 
 // One arm along +x. Main piers are long with a broad, angled end platform;
 // the others are shorter with a compact platform.
-const drawArm = (ctx, main, time, index) => {
+const drawArm = (ctx, main, index) => {
     const length = main ? 270 : 215;
     const half = main ? 22 : 18;
 
@@ -6034,13 +6309,13 @@ const drawArm = (ctx, main, time, index) => {
         ctx.stroke();
     }
 
-    // Window lights along the pier, twinkling slowly.
+    // Window lights along the pier.
     ctx.save();
     ctx.fillStyle = 'rgba(255, 230, 160, 0.85)';
     ctx.shadowBlur = 6;
     ctx.shadowColor = 'rgba(255, 210, 120, 0.9)';
     for(let x = 90; x < length; x += 11) {
-        const on = Math.sin(time * 0.7 + x * 0.37 + index * 1.7) > -0.3;
+        const on = Math.sin(x * 0.37 + index * 1.7) > -0.3;
         if(!on) continue;
         ctx.fillRect(x, -half * 0.75, 2, 2);
         ctx.fillRect(x + 4, half * 0.7, 2, 2);
@@ -6048,11 +6323,14 @@ const drawArm = (ctx, main, time, index) => {
     ctx.restore();
 };
 
-const drawStation = (ctx, time, canDock) => {
-    ctx.save();
-    ctx.translate(STATION.x, STATION.y);
+const EXTENT = 460;
+const sprites = {};
 
-    // Docking ring.
+// City, shield dome and docking ring baked together: one straight image copy per frame.
+// Two variants: normal, and with the docking ring lit when the player can dock.
+const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(EXTENT * 2, EXTENT * 2, ctx => {
+    ctx.translate(EXTENT, EXTENT);
+
     ctx.setLineDash([12, 14]);
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
@@ -6061,54 +6339,19 @@ const drawStation = (ctx, time, canDock) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // City shield dome with a slow shimmer and impact ripples.
     const R = STATION.shieldRadius;
-    const shimmer = 0.85 + 0.15 * Math.sin(time * 1.7);
     const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.85, 'rgba(120, 190, 255, ' + (0.05 * shimmer) + ')');
-    dome.addColorStop(1, 'rgba(140, 205, 255, ' + (0.16 * shimmer) + ')');
+    dome.addColorStop(0.85, 'rgba(120, 190, 255, 0.05)');
+    dome.addColorStop(1, 'rgba(140, 205, 255, 0.15)');
     ctx.fillStyle = dome;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(150, 210, 255, ' + (0.25 * shimmer) + ')';
+    ctx.strokeStyle = 'rgba(150, 210, 255, 0.28)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, Math.PI * 2);
-    ctx.clip();
-    ctx.globalCompositeOperation = 'lighter';
-    STATION.impacts.forEach(impact => {
-        const ix = Math.cos(impact.angle) * R;
-        const iy = Math.sin(impact.angle) * R;
-        const age = 1 - impact.life;
-        const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 30 + 50 * impact.strength);
-        flare.addColorStop(0, 'rgba(230, 245, 255, ' + (0.7 * impact.life) + ')');
-        flare.addColorStop(0.3, 'rgba(140, 200, 255, ' + (0.4 * impact.life) + ')');
-        flare.addColorStop(1, 'rgba(120, 190, 255, 0)');
-        ctx.fillStyle = flare;
-        ctx.fillRect(ix - 90, iy - 90, 180, 180);
-        ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
-        ctx.lineWidth = 2.5 * impact.life + 0.5;
-        ctx.beginPath();
-        ctx.arc(ix, iy, 10 + age * 160, 0, Math.PI * 2);
-        ctx.stroke();
-    });
-    ctx.restore();
-
-    // Bright arc along the rim where it was struck.
-    STATION.impacts.forEach(impact => {
-        ctx.strokeStyle = 'rgba(200, 235, 255, ' + (0.8 * impact.life) + ')';
-        ctx.lineWidth = 3 * impact.life;
-        ctx.beginPath();
-        ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength, impact.angle + 0.25 * impact.strength);
-        ctx.stroke();
-    });
-
-    ctx.rotate(time * STATION.spin);
     ctx.lineJoin = 'miter';
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = LINE;
@@ -6121,52 +6364,71 @@ const drawStation = (ctx, time, canDock) => {
         ctx.rotate(i * Math.PI / 3 - Math.PI / 2);
         ctx.strokeStyle = LINE;
         ctx.fillStyle = FILL;
-        drawArm(ctx, i % 2 === 0, time, i);
+        drawArm(ctx, i % 2 === 0, i);
         ctx.restore();
     }
 
-    // Central hub: layered hexagons, the star-shaped gate room and the central tower.
     poly(ctx, hexagon(92, Math.PI / 6));
     poly(ctx, hexagon(70, 0));
     poly(ctx, hexagon(48, Math.PI / 6));
     const star = hexagon(40, 0);
-    line(ctx, star[0][0], star[0][1], star[2][0], star[2][1]);
-    line(ctx, star[2][0], star[2][1], star[4][0], star[4][1]);
-    line(ctx, star[4][0], star[4][1], star[0][0], star[0][1]);
-    line(ctx, star[1][0], star[1][1], star[3][0], star[3][1]);
-    line(ctx, star[3][0], star[3][1], star[5][0], star[5][1]);
-    line(ctx, star[5][0], star[5][1], star[1][0], star[1][1]);
+    [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].forEach(pair => {
+        line(ctx, star[pair[0]][0], star[pair[0]][1], star[pair[1]][0], star[pair[1]][1]);
+    });
     for(let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
         line(ctx, Math.cos(a) * 70, Math.sin(a) * 70, Math.cos(a) * 92, Math.sin(a) * 92);
     }
-
-    // Gate room glow.
-    ctx.shadowBlur = 0;
-    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
-    const gate = ctx.createRadialGradient(0, 0, 0, 0, 0, 18);
-    gate.addColorStop(0, 'rgba(160, 220, 255, ' + (0.8 * pulse) + ')');
-    gate.addColorStop(1, 'rgba(80, 150, 255, 0)');
-    ctx.fillStyle = gate;
-    ctx.beginPath();
-    ctx.arc(0, 0, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = LINE;
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
+});
+
+const drawStation = (ctx, time, canDock) => {
+    const key = canDock ? 'dock' : 'idle';
+    if(!sprites[key]) sprites[key] = buildCity(canDock);
+    const R = STATION.shieldRadius;
+
+    ctx.save();
+    ctx.translate(STATION.x, STATION.y);
+    ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+
+    // Impact ripples and flares (only while something has just hit).
+    if(STATION.impacts.length) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        STATION.impacts.forEach(impact => {
+            const ix = Math.cos(impact.angle) * R;
+            const iy = Math.sin(impact.angle) * R;
+            const size = (60 + 100 * impact.strength) * impact.life;
+            ctx.globalAlpha = impact.life;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('140,200,255'), ix, iy, size, size);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+            ctx.lineWidth = 2.5 * impact.life + 0.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength - (1 - impact.life) * 0.4,
+                impact.angle + 0.25 * impact.strength + (1 - impact.life) * 0.4);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // Gate room glow.
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
+    ctx.globalAlpha = 0.8 * pulse;
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
 
     // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
-    ctx.shadowBlur = 12;
-    for(let i = 0; i < 6; i += 2) {
-        const angle = i * Math.PI / 3 - Math.PI / 2;
-        const color = blink ? (canDock ? '140,255,160' : '255,120,100') : '80,90,110';
-        ctx.fillStyle = 'rgb(' + color + ')';
-        ctx.shadowColor = 'rgb(' + color + ')';
-        ctx.beginPath();
-        ctx.arc(Math.cos(angle) * 372, Math.sin(angle) * 372, 4, 0, Math.PI * 2);
-        ctx.fill();
+    if(blink) {
+        ctx.globalAlpha = 1;
+        const color = canDock ? '140,255,160' : '255,120,100';
+        for(let i = 0; i < 6; i += 2) {
+            const angle = i * Math.PI / 3 - Math.PI / 2;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+        }
     }
     ctx.restore();
 
@@ -6182,13 +6444,13 @@ const drawStation = (ctx, time, canDock) => {
 
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(19);
+var content = __webpack_require__(20);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -6196,7 +6458,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(21)(content, options);
+var update = __webpack_require__(22)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -6213,10 +6475,10 @@ if(false) {
 }
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(20)(undefined);
+exports = module.exports = __webpack_require__(21)(undefined);
 // imports
 
 
@@ -6227,7 +6489,7 @@ exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 
 
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ (function(module, exports) {
 
 /*
@@ -6309,7 +6571,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -6365,7 +6627,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(22);
+var	fixUrls = __webpack_require__(23);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -6681,7 +6943,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ (function(module, exports) {
 
 
