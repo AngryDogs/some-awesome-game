@@ -178,6 +178,7 @@ class Ship {
         this.shield = Math.min(this.shield || 0, this.maxShield);
         this.guidance = stats.guidance;
         this.scanner = stats.scanner;
+        this.hyperdrive = stats.hyperdrive;
         this.cargoCapacity = stats.cargo;
         this.magnetRange = stats.magnetRange;
         this.collectRadius = hull.radius * 0.55 + 8;

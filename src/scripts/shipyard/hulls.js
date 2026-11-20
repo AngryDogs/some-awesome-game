@@ -164,6 +164,7 @@ const HULLS = {
 
     x304: {
         id: 'x304',
+        hyperdrive: 1.4,          // built-in hyperdrive speed
         name: 'X-304',
         className: 'Daedalus-class',
         faction: "Tau'ri",
@@ -228,6 +229,7 @@ const HULLS = {
 
     hatak: {
         id: 'hatak',
+        hyperdrive: 1.2,          // built-in hyperdrive speed
         name: "Ha'tak",
         className: 'Goa\'uld mothership',
         faction: "Goa'uld",
@@ -286,6 +288,7 @@ const HULLS = {
 
     asgard: {
         id: 'asgard',
+        hyperdrive: 3,          // built-in hyperdrive speed
         name: 'Asgard',
         className: "O'Neill-class",
         faction: 'Asgard',
@@ -361,6 +364,7 @@ const HULLS = {
 
     aurora: {
         id: 'aurora',
+        hyperdrive: 2.2,          // built-in hyperdrive speed
         name: 'Aurora',
         className: 'Ancient warship',
         faction: 'Ancient',

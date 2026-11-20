@@ -727,3 +727,163 @@ body.playing canvas {
     border-color: rgba(255, 120, 100, 0.9);
     box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);
 }
+
+/* ---------------------------------------------------------------- DHD */
+
+.dhd-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 4, 10, 0.72);
+    user-select: none;
+}
+
+.dhd-overlay.open {
+    display: flex;
+}
+
+.dhd-overlay canvas,
+.starmap-overlay canvas {
+    position: static;
+}
+
+.dhd-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px;
+    color: #f0e2cf;
+    background: rgba(20, 16, 12, 0.92);
+    border: 1px solid rgba(240, 160, 90, 0.5);
+    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+.dhd-header {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dhd-title {
+    font-size: 16px;
+}
+
+.dhd-canvas {
+    cursor: pointer;
+}
+
+.dhd-status {
+    font-family: sans-serif;
+    font-size: 13px;
+    min-height: 1.2em;
+    color: #c8f0c0;
+}
+
+.dhd-status.error {
+    color: #ff9c8a;
+}
+
+.dhd-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    max-width: 520px;
+}
+
+.dhd-hint {
+    font-family: sans-serif;
+    font-size: 11px;
+    color: #b8a890;
+}
+
+/* ---------------------------------------------------------------- Starmap */
+
+.starmap-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: none;
+    background: rgb(3, 6, 14);
+    user-select: none;
+}
+
+.starmap-overlay.open {
+    display: flex;
+}
+
+.starmap-canvas {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    cursor: grab;
+}
+
+.starmap-side {
+    width: 320px;
+    padding: 16px;
+    overflow-y: auto;
+    color: #dfe9ff;
+    background: rgba(8, 14, 30, 0.95);
+    border-left: 1px solid rgba(140, 180, 255, 0.3);
+    font-family: sans-serif;
+    font-size: 13px;
+}
+
+.starmap-title {
+    font-family: Bungee, sans-serif;
+    font-size: 22px;
+}
+
+.starmap-hint,
+.starmap-side .muted {
+    color: #9fb2d8;
+    font-size: 12px;
+}
+
+.starmap-here {
+    margin: 12px 0;
+    color: #8cffa0;
+}
+
+.starmap-name {
+    font-family: Bungee, sans-serif;
+    font-size: 20px;
+}
+
+.starmap-galaxy {
+    color: #9fc0ff;
+}
+
+.starmap-label {
+    margin-top: 12px;
+    font-family: Bungee, sans-serif;
+    font-size: 12px;
+    color: #9fc0ff;
+}
+
+.starmap-glyphs {
+    display: block;
+    margin: 6px 0;
+}
+
+.starmap-side .sy-button {
+    margin-top: 10px;
+}
+
+@media (max-width: 760px) {
+    .starmap-overlay.open {
+        flex-direction: column;
+    }
+
+    .starmap-side {
+        width: auto;
+        max-height: 45vh;
+    }
+}

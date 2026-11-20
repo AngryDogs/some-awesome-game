@@ -43,6 +43,17 @@ const MODULES = {
         stats: { count: [5, 5, 6], damage: [24, 32, 42], blast: [36, 44, 54], cooldown: [5, 4.2, 3.4] },
         describe: (s) => s.count + '-drone salvo, ' + s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
     },
+    hyperdrive: {
+        id: 'hyperdrive',
+        name: 'Hyperdrive',
+        short: 'Hyperdrive',
+        description: 'Opens a hyperspace window to travel between star systems (starmap, M). Needs a ship of at least cruiser size: fighters must use the Stargate.',
+        cost: 4000,
+        color: '150,190,255',
+        minHullMass: 3,
+        stats: { speed: [1, 1.6, 2.4] },
+        describe: (s) => 'hyperspace speed x' + s.speed
+    },
     scanner: {
         id: 'scanner',
         name: 'Ore scanner',
@@ -125,7 +136,7 @@ const MODULES = {
     }
 };
 
-export const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'scanner', 'cargo', 'magnet', 'armor'];
+export const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'hyperdrive', 'scanner', 'cargo', 'magnet', 'armor'];
 
 export const moduleStats = (type, level) => {
     const def = MODULES[type];
@@ -295,6 +306,20 @@ export const drawModule = (ctx, type, level, options) => {
             ctx.arc(3 * u, 0, (2 + i * 1.6) * u, -Math.PI / 3, Math.PI / 3);
             ctx.stroke();
         }
+    }
+
+    if(type === 'hyperdrive') {
+        // Hyperdrive core: a ring with a swirl and chevron fins.
+        circle(4.2, true);
+        ctx.beginPath();
+        for(let i = 0; i <= 12; i++) {
+            const a = i / 12 * Math.PI * 2.2;
+            const r = (0.6 + i * 0.25) * u;
+            if(i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+            else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.stroke();
+        for(let i = 0; i < level; i++) line(-6 + i * 1.6, -2.5, -4.5 + i * 1.6, 0);
     }
 
     if(type === 'scanner') {

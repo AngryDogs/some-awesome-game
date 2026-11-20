@@ -367,6 +367,7 @@ class Shipyard {
             ['Cargo hold', stats.cargo],
             ['Tractor', stats.magnetRange + 'px'],
             ['Scanner', stats.scanner ? stats.scanner.range + 'px' : 'none'],
+            ['Hyperdrive', stats.hyperdrive ? 'x' + stats.hyperdrive.speed : 'none'],
             ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
         ];
         this.statsBox.innerHTML = '';
@@ -534,6 +535,10 @@ class Shipyard {
         const hull = this.hull;
         if(loadoutFor(hull.id)[slotId]) {
             this.flash('That mount is taken. Sell its module first.');
+            return;
+        }
+        if(MODULES[type].minHullMass && hull.mass < MODULES[type].minHullMass) {
+            this.flash('The ' + hull.name + ' is too small for a ' + MODULES[type].name + '. Use the Stargate instead.');
             return;
         }
         if(getProfile().credits < priceOf(MODULES[type].cost)) {

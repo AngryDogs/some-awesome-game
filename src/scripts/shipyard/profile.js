@@ -102,6 +102,7 @@ export const buyHull = (hullId) => {
 
 export const installModule = (hullId, slotId, type) => {
     const loadout = loadoutFor(hullId);
+    if(MODULES[type].minHullMass && HULLS[hullId].mass < MODULES[type].minHullMass) return false;
     if(loadout[slotId] || profile.credits < priceOf(MODULES[type].cost)) return false;
     profile.credits -= priceOf(MODULES[type].cost);
     loadout[slotId] = { type: type, level: 1 };
@@ -147,6 +148,8 @@ export const computeShipStats = (hullId) => {
         torqueForce: hull.torque * hull.mass,
         guidance: null,
         scanner: null,
+        // Some hulls come with a hyperdrive built in.
+        hyperdrive: hull.hyperdrive ? { speed: hull.hyperdrive } : null,
         modules: []
     };
 
@@ -169,6 +172,9 @@ export const computeShipStats = (hullId) => {
             stats.mass += s.mass;
         }
         if(module.type === 'cargo') stats.cargo += s.capacity;
+        if(module.type === 'hyperdrive') {
+            if(!stats.hyperdrive || s.speed > stats.hyperdrive.speed) stats.hyperdrive = s;
+        }
         if(module.type === 'scanner') {
             if(!stats.scanner || s.range > stats.scanner.range) stats.scanner = s;
         }
