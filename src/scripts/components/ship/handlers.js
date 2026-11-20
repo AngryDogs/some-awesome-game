@@ -1,116 +1,78 @@
-const ROTATION_STEP = 0.05;
-const MOVE_STEP = 0.05;
-const CROSS_SPEED_STEP = 0.05;
+// Keyboard + mouse input. Listeners are attached once; the game reads `input`
+// every physics step instead of mutating ship state from a separate interval.
 
-let MOVE_SPEED = 0;
-let ROTATION_SPEED = 0;
-let CROSS_SPEED = 0;
-
-const keyPressStorage = {};
-const controllKeys = ['w', 'a', 's', 'd'];
-const allowedKeys = ['w', 'a', 's', 'd', 'q', 'e', ' '];
-
-const thrusterSound = new Audio('./assets/sounds/thrust.mp3');
-const minigunSound = new Audio('./assets/sounds/minigun.mp3'); 
-const engine = new Audio('./assets/sounds/engine.mp3'); 
-
-let interval;
-
-const addMinigunSound = () => {
-  minigunSound.addEventListener('timeupdate', function(){
-    const buffer = .44
-    if(this.currentTime > this.duration - buffer){
-        this.currentTime = 0
-        this.play()
-    }}, false);
-}
-
-const addEngineSound = () => {
-  engine.addEventListener('timeupdate', function(){
-    const buffer = .44
-    if(this.currentTime > this.duration - buffer){
-        this.currentTime = 0
-        this.play()
-    }}, false);
-  engine.volume = 0.2;
-  engine.play();
-}
-
-const addThrusterSound = () => {
-  thrusterSound.addEventListener('timeupdate', function(){
-    const buffer = .44
-    if(this.currentTime > this.duration - buffer){
-        this.currentTime = 0
-        this.play()
-    }}, false);
-}
-
-const changeStates = (ship) => {
-  if(!keyPressStorage[' ']) {
-    minigunSound.pause();
-  }
-
-  if(isAnyKeysDown()) {
-    makeKeyPressActions(ship);
-  } else {
-    thrusterSound.currentTime = 0;
-    thrusterSound.pause();
-  }
-}
-
-const isAnyKeysDown = () => {
-  return Object.keys(keyPressStorage).find((key) => {
-    return keyPressStorage[key];
-  });
+const KEY_MAP = {
+    KeyW: 'forward',
+    KeyS: 'backward',
+    KeyA: 'rotateLeft',
+    KeyD: 'rotateRight',
+    KeyQ: 'strafeLeft',
+    KeyE: 'strafeRight',
+    KeyX: 'stabilize',
+    Space: 'fire'
 };
 
-const makeKeyPressActions = (ship) => {
-  if(keyPressStorage['w'] && MOVE_SPEED <= 10) MOVE_SPEED += MOVE_STEP;
-  if(keyPressStorage['s'] && MOVE_SPEED >= -10) MOVE_SPEED -= MOVE_STEP;
+export const input = {
+    forward: false,
+    backward: false,
+    rotateLeft: false,
+    rotateRight: false,
+    strafeLeft: false,
+    strafeRight: false,
+    stabilize: false,
+    fire: false,
+    mouseDown: false,
+    mouseX: window.innerWidth / 2,
+    mouseY: 0,
+    enabled: false,
 
-  if(keyPressStorage['d'] && ROTATION_SPEED <= 1) ROTATION_SPEED += ROTATION_STEP;
-  if(keyPressStorage['a'] && ROTATION_SPEED >= -1) ROTATION_SPEED -= ROTATION_STEP;
+    get firing() {
+        return this.fire || this.mouseDown;
+    },
 
-  if(keyPressStorage['q'] && CROSS_SPEED <= 1) CROSS_SPEED += CROSS_SPEED_STEP;
-  if(keyPressStorage['e'] && CROSS_SPEED >= -1) CROSS_SPEED -= CROSS_SPEED_STEP;
-
-  if(keyPressStorage[' ']) ship.shootMachineGun(minigunSound);
-
-
-  ship.setMovementParameters(MOVE_SPEED, ROTATION_SPEED, CROSS_SPEED);
-}
-
-const removeAllPreviousHandles = () => {
-  window.removeEventListener("keydown", state => state);
-  window.removeEventListener("keyup", state => state);
-  if(interval) clearInterval(interval);
-  if(ship) {
-    ship.moveSpeed = 0;
-    ship.rotationSpeed = 0;
-    ship.crossSpeed = 0;
-  }
-}
-
-const loadArrowKeyHandler = (ship) => {
-    addEngineSound();
-    addMinigunSound();
-    addThrusterSound();
-    removeAllPreviousHandles();
-
-    window.addEventListener("keydown", (event) => {
-      if(allowedKeys.includes(event.key)) {
-        keyPressStorage[event.key] = true;
-        if(event.key != ' ') thrusterSound.play();
-      }
-    });
-
-    window.addEventListener("keyup", (event) => {
-      if(allowedKeys.includes(event.key)) {
-        keyPressStorage[event.key] = false;
-      }
-    });
-
-    interval = setInterval(() => changeStates(ship), 1000 / 60);
+    reset() {
+        Object.keys(KEY_MAP).forEach(code => { this[KEY_MAP[code]] = false; });
+        this.mouseDown = false;
+    }
 };
 
-export default loadArrowKeyHandler;
+let initialized = false;
+
+const loadInputHandlers = () => {
+    if(initialized) return;
+    initialized = true;
+
+    window.addEventListener('keydown', (event) => {
+        const action = KEY_MAP[event.code];
+        if(!action) return;
+        if(input.enabled) event.preventDefault();
+        input[action] = true;
+    });
+
+    window.addEventListener('keyup', (event) => {
+        const action = KEY_MAP[event.code];
+        if(action) input[action] = false;
+    });
+
+    window.addEventListener('mousemove', (event) => {
+        input.mouseX = event.clientX;
+        input.mouseY = event.clientY;
+    });
+
+    window.addEventListener('mousedown', (event) => {
+        if(event.button === 0 && input.enabled) input.mouseDown = true;
+    });
+
+    window.addEventListener('mouseup', (event) => {
+        if(event.button === 0) input.mouseDown = false;
+    });
+
+    window.addEventListener('contextmenu', (event) => {
+        if(input.enabled) event.preventDefault();
+    });
+
+    // Releasing keys while the window is unfocused would otherwise leave them stuck.
+    window.addEventListener('blur', () => input.reset());
+};
+
+export default loadInputHandlers;

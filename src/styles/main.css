@@ -7,18 +7,25 @@ html, body {
 .gameboard {
     position: relative;
 }
-  
+
 canvas {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     background-color: rgba(0, 0, 0, 0);
+}
+
+body.playing canvas {
+    cursor: none;
 }
 
 .info {
     position: absolute;
     margin-top: 5px;
     margin-left: 5px;
+    z-index: 5;
+    pointer-events: none;
+    user-select: none;
 }
 
 .info p {
@@ -31,7 +38,10 @@ canvas {
     margin-left: auto;
     margin-right: auto;
     top: 25vh;
-    height: 250px;
+    min-height: 250px;
+    padding-bottom: 20px;
+    z-index: 10;
+    user-select: none;
     left: 0;
     right: 0;
     margin: 0 auto !important;
@@ -48,6 +58,11 @@ canvas {
 
 .menu h2 {
     margin: 0;
+}
+
+.menu-message {
+    margin: 0 0 10px;
+    min-height: 1em;
 }
 
 .menu h4 {

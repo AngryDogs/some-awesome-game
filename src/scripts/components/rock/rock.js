@@ -1,208 +1,141 @@
-import Particle from '../particle/particle';
+import { world, wrapPosition } from '../../physics/physics';
 
-const EXPLOSION_PARTICLE_COUNT = 30;
-const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
-const rockExplosionSound = new Audio('./assets/sounds/explosion2.mp3');
+const MIN_SPLIT_RADIUS = 14;      // smaller rocks crumble to dust instead of splitting
+const FRAGMENT_GRACE = 0.8;       // seconds a new fragment ignores rock-rock collisions
+const HEALTH_PER_RADIUS = 0.7;    // bullets needed ~ proportional to size
+
+let nextId = 1;
 
 class Rock {
 
-    constructor(ship) {
-        this.type = 'rock';
-        this.health = Math.floor((Math.random() * 40) + 20);
-        this.sizeX =  Math.floor((Math.random() * 40) + 30);
-        this.sizeY =  this.sizeX;
-        this.positionX = 500;
-        this.positionY = 90;
-        this.angle = 0;
-        this.canvas = document.createElement("canvas");
-        this.context = this.canvas.getContext('2d');
-        this.moveSpeed = Math.floor((Math.random() * 3) + 1);
-        this.gameboard = document.getElementById("gameboard");
-        this.rockParticles = [];
-        this.shotBullets = ship.shotBullets;
-        this.ship = ship;
-        this.allowHits = true;
-
-        this.initPositionCoordinates();
-        this.init();
+    constructor(options) {
+        this.id = nextId++;
+        this.x = options.x;
+        this.y = options.y;
+        this.vx = options.vx;
+        this.vy = options.vy;
+        this.radius = options.radius;
+        this.mass = this.radius * this.radius;
+        this.health = Math.max(1, Math.round(this.radius * HEALTH_PER_RADIUS));
+        this.angle = Math.random() * Math.PI * 2;
+        this.spin = (Math.random() - 0.5) * 2.5 * (20 / this.radius);
+        this.grace = options.grace || 0;
+        this.flash = 0;
+        this.dead = false;
+        this.shape = Rock.createShape(this.radius);
     }
 
-    initPositionCoordinates() {
-        const { sizeX, sizeY } = this;
-        const screenSide = Math.floor((Math.random() * 4) + 1);
-
-        switch(screenSide) {
-            // LEFT SCREEN SIDE
-            case 1:
-                this.positionX = 0 - sizeX;
-                this.positionY = Math.floor((Math.random() * window.innerHeight));
-                this.angle = Math.floor((Math.random() * 160) + 290);
-                break;
-            // TOP SCREEN SIDE
-            case 2:
-                this.positionX = Math.floor((Math.random() * window.innerWidth));
-                this.positionY = 0 - sizeY;
-                this.angle = Math.floor((Math.random() * 160) + 20);
-                break;
-            // RIGTH SCREEN SIDE
-            case 3:
-                this.positionX = window.innerWidth
-                this.positionY = Math.floor((Math.random() * window.innerHeight));
-                this.angle = Math.floor((Math.random() * 160) + 110);
-                break;
-            // BOTTOM SCREEN SIDE
-            case 4:
-                this.positionX = Math.floor((Math.random() * window.innerWidth));
-                this.positionY = innerHeight
-                this.angle = Math.floor((Math.random() * 160) + 200);
-                break;    
+    // Irregular polygon so broken pieces actually look like rubble.
+    static createShape(radius) {
+        const points = [];
+        const count = Math.max(7, Math.round(radius / 3.5));
+        for(let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2;
+            const r = radius * (0.75 + Math.random() * 0.3);
+            points.push([Math.cos(angle) * r, Math.sin(angle) * r]);
         }
+        return points;
     }
 
-    init() {
-        const { sizeX, sizeY, canvas, context, angle, positionX, positionY } = this;
-        
-        canvas.width = sizeX;
-        canvas.height = sizeY;
-        canvas.style.left = positionX + 'px';
-        canvas.style.top = positionY + 'px';
-        canvas.style.position = "absolute";
+    // A fresh big asteroid drifting in from just outside the screen.
+    static spawnAtEdge(level) {
+        const radius = 22 + Math.random() * 28;
+        const side = Math.floor(Math.random() * 4);
+        const offset = world.margin / 2;
+        let x;
+        let y;
 
-        context.beginPath();
-        context.arc(sizeX / 2, sizeY / 2, (sizeX / 2 - 6), 0, 2 * Math.PI, false);
-        context.fillStyle = '#fff';
-        context.shadowBlur = 10;
-        context.shadowColor = '#fff';
-        context.fill();
+        if(side === 0) { x = -offset; y = Math.random() * world.height; }
+        if(side === 1) { x = Math.random() * world.width; y = -offset; }
+        if(side === 2) { x = world.width + offset; y = Math.random() * world.height; }
+        if(side === 3) { x = Math.random() * world.width; y = world.height + offset; }
 
-        this.gameboard.appendChild(canvas);
-    }
+        // Aim roughly at the middle of the screen.
+        const toCenter = Math.atan2(world.height / 2 - y, world.width / 2 - x);
+        const angle = toCenter + (Math.random() - 0.5) * (Math.PI / 2);
+        const speed = 35 + Math.random() * 45 + level * 4;
 
-    outOfScreenMovement() {
-        const { canvas, positionX, positionY, sizeX, sizeY } = this;
-        if(positionX < 0 - sizeX) this.positionX = window.innerWidth;
-        if(positionY < 0 - sizeY) this.positionY = window.innerHeight;
-        if(positionX > window.innerWidth) this.positionX = 0 - sizeX;
-        if(positionY > window.innerHeight) this.positionY = 0 - sizeY;
-    }
-
-    bulletHit() {
-        rockHitSound.currentTime = 0;
-        rockHitSound.play();
-        this.rockParticles.push(new Particle(this));
-    }
-
-    explosion() {
-        for(let i = 0; i < EXPLOSION_PARTICLE_COUNT; i++) {
-            this.rockParticles.push(new Particle(this));
-        }
-        rockExplosionSound.currentTime = 0;
-        rockExplosionSound.play();
-    }
-
-    move() {
-        const { angle, positionX, positionY, moveSpeed, canvas, health } = this;
-
-        this.positionX = Math.round((Math.cos((angle) * Math.PI / 180) * moveSpeed + positionX) * 100) / 100;
-        this.positionY = Math.round((Math.sin((angle) * Math.PI / 180) * moveSpeed + positionY) * 100) / 100;
-
-        this.outOfScreenMovement();
-
-        this.render();
-    }
-
-    renderRockParticles() {
-        if(this.rockParticles) {
-            this.rockParticles.forEach((rockParticle, index) => rockParticle.move(index));
-        }
-    }
-
-    pointInterscetsWithCircle(pointX, pointY, centerX, centerY, radius) {
-        return Math.sqrt((pointX - centerX) * (pointX - centerX) + (pointY - centerY) * (pointY - centerY)) < radius - 3;
-    }
-
-    renderShipIntersection() {
-        const { ship, positionX, positionY, sizeX, sizeY, allowHits } = this;
-
-        const radius = sizeX / 2;
-        const centerX = positionX + (sizeX / 2);
-        const centerY = positionY + (sizeY / 2);
-
-        const shipNoseX = ship.positionX + ship.sizeX;
-        const shipNoseY = ship.positionY + (ship.sizeY / 2);
-
-        const shipSide1X = ship.positionX;
-        const shipSide1Y = ship.positionY;
-
-        const shipSide2X = ship.positionX;
-        const shipSide2Y = ship.positionY + ship.sizeY;
-
-        const noseIntersection = this.pointInterscetsWithCircle(shipNoseX, shipNoseY, centerX, centerY, radius);
-        const side1Intersection = this.pointInterscetsWithCircle(shipSide1X, shipSide1Y, centerX, centerY, radius);
-        const side2Intersection = this.pointInterscetsWithCircle(shipSide2X, shipSide2Y, centerX, centerY, radius);
-        
-        const hasIntersected = noseIntersection || side1Intersection || side2Intersection;
-
-        if(hasIntersected && ship.immunity == 0 && allowHits) {
-            ship.immunity = 200;
-            ship.lifeCount--;
-            ship.explosion();
-        }
-    }
-
-    renderIntersection() {
-        const { shotBullets, positionX, positionY, sizeX, sizeY, canvas, allowHits } = this;
-        if(!shotBullets && !allowHits) return;
-
-        const radius = sizeX / 2;
-        const centerX = positionX + (sizeX / 2);
-        const centerY = positionY + (sizeY / 2);
-        
-        shotBullets.forEach((bullet, index) => {
-            const hasIntersected = this.pointInterscetsWithCircle(bullet.positionX, bullet.positionY, centerX, centerY, radius);
-
-            if(hasIntersected && allowHits) {
-                shotBullets.splice(index, 1);
-                bullet.canvas.remove();
-                this.bulletHit();
-                this.health--;
-                return;
-            }
+        return new Rock({
+            x: x,
+            y: y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            radius: radius
         });
     }
 
-    render() {
-        const { canvas, positionX, positionY, angle, rockParticles, allowHits, health } = this;
+    // Break into smaller pieces. Total area never grows and the kicks are
+    // symmetric, so momentum is (roughly) conserved.
+    split() {
+        if(this.radius < MIN_SPLIT_RADIUS) return [];
 
-        if(this.health < 0 && allowHits) {
-            const scoreElement = document.getElementById('score');
+        const count = this.radius > 34 ? 3 : 2;
+        const fragments = [];
+        const baseAngle = Math.random() * Math.PI * 2;
 
-            const score = scoreElement.innerHTML.replace(/\D/g,'');
-            const newScore = parseInt(score) + 1;
+        for(let i = 0; i < count; i++) {
+            const angle = baseAngle + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+            const radius = this.radius * (count === 3 ? 0.5 : 0.62) * (0.9 + Math.random() * 0.2);
+            const kick = 40 + Math.random() * 50;
+            const dirX = Math.cos(angle);
+            const dirY = Math.sin(angle);
 
-            const currentHits = localStorage.getItem('currentHits');
-            localStorage.setItem('currentHits', parseInt(currentHits) + 1);
-
-            scoreElement.innerHTML = 'Score: ' + newScore;
-
-            this.allowHits = false;
-            canvas.style.visibility = "hidden";
-            this.explosion();
-            return;
+            fragments.push(new Rock({
+                x: this.x + dirX * this.radius * 0.5,
+                y: this.y + dirY * this.radius * 0.5,
+                vx: this.vx + dirX * kick,
+                vy: this.vy + dirY * kick,
+                radius: radius,
+                grace: FRAGMENT_GRACE
+            }));
         }
 
-        if(rockParticles.length == 0 && !allowHits) {
-            canvas.remove();
-            delete this;
-            return;
-        }
-        
-        canvas.style.left = positionX + 'px';
-        canvas.style.top = positionY + 'px';
+        return fragments;
+    }
 
-        this.renderIntersection();
-        this.renderShipIntersection();
-        this.renderRockParticles();
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.angle += this.spin * dt;
+        if(this.grace > 0) this.grace -= dt;
+        if(this.flash > 0) this.flash -= dt;
+        wrapPosition(this);
+    }
+
+    // Faint halo whose reach scales with mass, hinting at the gravity well.
+    drawGravityWell(ctx) {
+        const reach = this.radius * 3.5;
+        const gradient = ctx.createRadialGradient(this.x, this.y, this.radius * 0.8, this.x, this.y, reach);
+        gradient.addColorStop(0, 'rgba(140, 180, 255, 0.10)');
+        gradient.addColorStop(1, 'rgba(140, 180, 255, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, reach, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    draw(ctx) {
+        const { shape } = this;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        ctx.beginPath();
+        ctx.moveTo(shape[0][0], shape[0][1]);
+        for(let i = 1; i < shape.length; i++) ctx.lineTo(shape[i][0], shape[i][1]);
+        ctx.closePath();
+
+        ctx.fillStyle = this.flash > 0 ? '#fff' : 'rgba(225, 225, 235, 0.9)';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#fff';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = 'rgba(120, 120, 140, 0.9)';
+        ctx.stroke();
+
+        ctx.restore();
     }
 }
 
