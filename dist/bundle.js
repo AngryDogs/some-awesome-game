@@ -68,78 +68,6 @@
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-// What asteroids are made of. Prices are credits per unit of ore sold at the station.
-// `minSector` is how many sectors from base a material starts appearing;
-// `weight` and `growth` control how common it is (growing with distance).
-
-const MATERIALS = {
-    rock: { id: 'rock', name: 'Rock', color: '150,150,160', price: 1, minSector: 0, weight: 60, growth: 0 },
-    iron: { id: 'iron', name: 'Iron', color: '205,120,90', price: 6, minSector: 0, weight: 30, growth: 0 },
-    copper: { id: 'copper', name: 'Copper', color: '235,150,70', price: 10, minSector: 1, weight: 14, growth: 1.5 },
-    titanium: { id: 'titanium', name: 'Titanium', color: '170,205,240', price: 18, minSector: 2, weight: 8, growth: 2 },
-    gold: { id: 'gold', name: 'Gold', color: '255,215,80', price: 40, minSector: 4, weight: 3, growth: 1.2 },
-    naquadah: { id: 'naquadah', name: 'Naquadah', color: '110,255,170', price: 100, minSector: 7, weight: 1, growth: 0.6 }
-};
-
-const MATERIAL_ORDER = ['rock', 'iron', 'copper', 'titanium', 'gold', 'naquadah'];
-/* harmony export (immutable) */ __webpack_exports__["a"] = MATERIAL_ORDER;
-
-
-// Main material of an asteroid at a given distance (in sectors) from base.
-const rollMaterial = (rng, sectorDistance) => {
-    const options = MATERIAL_ORDER
-        .map(id => MATERIALS[id])
-        .filter(m => sectorDistance >= m.minSector)
-        .map(m => ({ id: m.id, weight: m.weight + m.growth * (sectorDistance - m.minSector) }));
-
-    const total = options.reduce((sum, o) => sum + o.weight, 0);
-    let roll = rng() * total;
-    for(let i = 0; i < options.length; i++) {
-        roll -= options[i].weight;
-        if(roll <= 0) return options[i].id;
-    }
-    return 'rock';
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = rollMaterial;
-
-
-// Pick a material id from a composition like { rock: 0.4, gold: 0.6 }.
-const pickFromComposition = (composition, random) => {
-    let roll = (random || Math.random)();
-    const keys = Object.keys(composition);
-    for(let i = 0; i < keys.length; i++) {
-        roll -= composition[keys[i]];
-        if(roll <= 0) return keys[i];
-    }
-    return keys[keys.length - 1];
-};
-/* unused harmony export pickFromComposition */
-
-
-const dominantMaterial = (composition) => {
-    let best = 'rock';
-    let bestShare = -1;
-    Object.keys(composition).forEach(id => {
-        // Prefer showing the metal over plain rock when it's a decent share.
-        const share = composition[id] * (id === 'rock' ? 0.6 : 1);
-        if(share > bestShare) {
-            bestShare = share;
-            best = id;
-        }
-    });
-    return best;
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = dominantMaterial;
-
-
-/* harmony default export */ __webpack_exports__["b"] = (MATERIALS);
-
-
-/***/ }),
-/* 1 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
 // Pre-rendered images. Glows, gradients and detailed line art are expensive to draw
 // on a canvas every frame, so anything that doesn't change is drawn once into an
 // offscreen canvas and then stamped with drawImage (a cheap bitmap copy).
@@ -221,6 +149,78 @@ const stamp = (ctx, sprite, x, y, width, height) => {
 };
 /* harmony export (immutable) */ __webpack_exports__["d"] = stamp;
 
+
+
+/***/ }),
+/* 1 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// What asteroids are made of. Prices are credits per unit of ore sold at the station.
+// `minSector` is how many sectors from base a material starts appearing;
+// `weight` and `growth` control how common it is (growing with distance).
+
+const MATERIALS = {
+    rock: { id: 'rock', name: 'Rock', color: '150,150,160', price: 1, minSector: 0, weight: 60, growth: 0 },
+    iron: { id: 'iron', name: 'Iron', color: '205,120,90', price: 6, minSector: 0, weight: 30, growth: 0 },
+    copper: { id: 'copper', name: 'Copper', color: '235,150,70', price: 10, minSector: 1, weight: 14, growth: 1.5 },
+    titanium: { id: 'titanium', name: 'Titanium', color: '170,205,240', price: 18, minSector: 2, weight: 8, growth: 2 },
+    gold: { id: 'gold', name: 'Gold', color: '255,215,80', price: 40, minSector: 4, weight: 3, growth: 1.2 },
+    naquadah: { id: 'naquadah', name: 'Naquadah', color: '110,255,170', price: 100, minSector: 7, weight: 1, growth: 0.6 }
+};
+
+const MATERIAL_ORDER = ['rock', 'iron', 'copper', 'titanium', 'gold', 'naquadah'];
+/* harmony export (immutable) */ __webpack_exports__["a"] = MATERIAL_ORDER;
+
+
+// Main material of an asteroid at a given distance (in sectors) from base.
+const rollMaterial = (rng, sectorDistance) => {
+    const options = MATERIAL_ORDER
+        .map(id => MATERIALS[id])
+        .filter(m => sectorDistance >= m.minSector)
+        .map(m => ({ id: m.id, weight: m.weight + m.growth * (sectorDistance - m.minSector) }));
+
+    const total = options.reduce((sum, o) => sum + o.weight, 0);
+    let roll = rng() * total;
+    for(let i = 0; i < options.length; i++) {
+        roll -= options[i].weight;
+        if(roll <= 0) return options[i].id;
+    }
+    return 'rock';
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = rollMaterial;
+
+
+// Pick a material id from a composition like { rock: 0.4, gold: 0.6 }.
+const pickFromComposition = (composition, random) => {
+    let roll = (random || Math.random)();
+    const keys = Object.keys(composition);
+    for(let i = 0; i < keys.length; i++) {
+        roll -= composition[keys[i]];
+        if(roll <= 0) return keys[i];
+    }
+    return keys[keys.length - 1];
+};
+/* unused harmony export pickFromComposition */
+
+
+const dominantMaterial = (composition) => {
+    let best = 'rock';
+    let bestShare = -1;
+    Object.keys(composition).forEach(id => {
+        // Prefer showing the metal over plain rock when it's a decent share.
+        const share = composition[id] * (id === 'rock' ? 0.6 : 1);
+        if(share > bestShare) {
+            bestShare = share;
+            best = id;
+        }
+    });
+    return best;
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = dominantMaterial;
+
+
+/* harmony default export */ __webpack_exports__["b"] = (MATERIALS);
 
 
 /***/ }),
@@ -706,40 +706,50 @@ const HULLS = {
         moduleScale: 1,
         radius: 92,
         art: [
-            // Crescent wings sweeping out from the rear body, tips curving forward.
-            { closed: true, pts: [[-23, -22], [-22.5, -40], [-23, -52], [-28, -68], [-37, -82.5], [-41, -79], [-46, -68],
-                [-52, -55], [-57, -42], [-61, -30], [-63, -20]] },
-            mirrorPart({ closed: true, pts: [[-23, -22], [-22.5, -40], [-23, -52], [-28, -68], [-37, -82.5], [-41, -79], [-46, -68],
-                [-52, -55], [-57, -42], [-61, -30], [-63, -20]] }),
-            ...mirrorLine(-27, -26, -36, -76), ...mirrorLine(-36, -76, -55, -30),
-            // Weapon pods and long cannons on the wings.
-            { closed: true, pts: [[-20, -37], [-34, -35.5], [-36, -38], [-22, -39.5]] },
-            mirrorPart({ closed: true, pts: [[-20, -37], [-34, -35.5], [-36, -38], [-22, -39.5]] }),
-            ...mirrorLine(-2, -58, -27, -58), ...mirrorLine(-2, -59.2, -2, -56.8),
-            // Rear body with its oval core.
-            ellipse(-44, 0, 31, 24, 24),
-            ellipse(-42, 0, 21, 17, 20),
-            ...mirrorRect(-30, -12, -50, -7),
-            line(-66, -10, -66, 10),
-            // Neck lined with modules.
-            rect(15.7, -14, -14, 14),
-            ...mirrorRect(13, -12, -11, -8),
-            line(13, -4, -11, -4), line(13, 4, -11, 4),
-            // Hexagonal head with its chevron detail and forward antennae.
-            { closed: true, pts: symmetric([[75, -5], [43, -28], [22.4, -28], [15.7, -14], [15.7, 0]]) },
-            { pts: [[64, 0], [44, -16], [30, -8], [44, 0], [30, 8], [44, 16], [64, 0]] },
-            ...mirrorLine(67, -18, 75, -18),
-            line(75, -2, 79, -2), line(75, 2, 79, 2)
+            // Crescent wings with curved ribs, sweeping out from the rear body.
+            { closed: true, pts: [[-20, -20], [-19.5, -32], [-20.5, -44], [-23.5, -56], [-28.5, -68], [-34, -78], [-37.5, -84],
+                [-40.5, -82], [-44, -74], [-48.5, -63], [-53, -51], [-57.5, -39], [-61.5, -28], [-64, -19]] },
+            mirrorPart({ closed: true, pts: [[-20, -20], [-19.5, -32], [-20.5, -44], [-23.5, -56], [-28.5, -68], [-34, -78], [-37.5, -84],
+                [-40.5, -82], [-44, -74], [-48.5, -63], [-53, -51], [-57.5, -39], [-61.5, -28], [-64, -19]] }),
+            { pts: [[-24, -24], [-24.5, -40], [-27, -54], [-32, -66], [-37, -76]] },
+            { pts: mirror([[-24, -24], [-24.5, -40], [-27, -54], [-32, -66], [-37, -76]]) },
+            { pts: [[-30, -28], [-34, -46], [-39, -62], [-41, -72]] },
+            { pts: mirror([[-30, -28], [-34, -46], [-39, -62], [-41, -72]]) },
+            { pts: [[-38, -26], [-45, -42], [-50, -56]] },
+            { pts: mirror([[-38, -26], [-45, -42], [-50, -56]]) },
+            // Engine pods and forward-pointing cannons on the wings.
+            { closed: true, pts: [[-17, -37], [-26, -35.5], [-36, -36.5], [-38, -38.5], [-27, -40.5], [-17, -39]] },
+            mirrorPart({ closed: true, pts: [[-17, -37], [-26, -35.5], [-36, -36.5], [-38, -38.5], [-27, -40.5], [-17, -39]] }),
+            ...mirrorRect(-26, -56.8, -3, -55.2),
+            { circle: [-2, -56, 1.4] }, { circle: [-2, 56, 1.4] },
+            // Rear body: outer hull, collar, inner bay with cells.
+            ellipse(-44, 0, 31, 24, 36),
+            ellipse(-46, 0, 26, 20, 32),
+            ellipse(-40, 0, 19, 14, 28),
+            ...grid(-55, -8.5, 4, 2, 5.5, 7.5, 1.5),
+            line(-60, 0, -21, 0),
+            // Neck lined with window rows and ribbing.
+            rect(17, -12, -15, 12),
+            ...grid(-12, -11, 7, 1, 3, 3, 1.4), ...grid(-12, 8, 7, 1, 3, 3, 1.4),
+            line(-14, -6, 16, -6), line(-14, 6, 16, 6),
+            ...[-11, -8, -5, -2, 1, 4, 7, 10, 13].map(x => line(x, -6, x, 6)),
+            // Head: hexagonal hull, inset deck, bat-wing chevrons and side vents.
+            { closed: true, pts: symmetric([[78, -3], [76, -6], [45, -28], [24, -28], [17, -13], [17, 0]]) },
+            { closed: true, pts: symmetric([[72, -2.5], [44, -23], [27, -23], [22, -12], [22, 0]]) },
+            { pts: [[28, -19], [44, -12], [38, 0], [44, 12], [28, 19]] },
+            { pts: [[64, -8], [53, 0], [64, 8]] },
+            ...mirrorRect(34, -25.5, 26, -21.5),
+            rect(78, -1.5, 80.5, 1.5)
         ],
         slots: [
             { id: 'nose', x: 58, y: 0 },
             { id: 'hl', x: 34, y: -18 },
             { id: 'hr', x: 34, y: 18 },
             { id: 'fwd', x: 2, y: 0 },
-            { id: 'core', x: -36, y: 0 },
-            { id: 'aft', x: -54, y: 0 },
-            { id: 'fl', x: -38, y: -60 },
-            { id: 'fr', x: -38, y: 60 },
+            { id: 'core', x: -33, y: 0 },
+            { id: 'aft', x: -50, y: 0 },
+            { id: 'fl', x: -36, y: -62 },
+            { id: 'fr', x: -36, y: 62 },
             { id: 'tail', x: -68, y: 0 }
         ],
         engines: [{ x: -75, y: -7, size: 1.2 }, { x: -75, y: 7, size: 1.2 }, { x: -63, y: -22, size: 0.8 }, { x: -63, y: 22, size: 0.8 }],
@@ -954,11 +964,21 @@ const MODULES = {
         id: 'drones',
         name: 'Drone launcher',
         short: 'Drones',
-        description: 'Ancient drone weapons (F / right click). Self-guided swarms that hunt targets.',
+        description: 'Ancient drone weapons (F / right click). Fires a salvo of five self-guided drones in a row; each detonates in a big energy blast.',
         cost: 2800,
         color: '255,225,130',
-        stats: { count: [3, 4, 5], damage: [14, 18, 24], cooldown: [4, 3.3, 2.6] },
-        describe: (s) => s.count + ' drones x ' + s.damage + ' dmg, reload ' + s.cooldown + 's'
+        stats: { count: [5, 5, 6], damage: [24, 32, 42], blast: [36, 44, 54], cooldown: [5, 4.2, 3.4] },
+        describe: (s) => s.count + '-drone salvo, ' + s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
+    },
+    scanner: {
+        id: 'scanner',
+        name: 'Ore scanner',
+        short: 'Scanner',
+        description: 'Scans asteroids for metals: colours the scanner map by ore, pings the area and guides you to the richest asteroid nearby.',
+        cost: 800,
+        color: '190,255,140',
+        stats: { range: [2000, 2700, 3400], interval: [5, 4, 3] },
+        describe: (s) => s.range + 'px scan range, ping every ' + s.interval + 's'
     },
     missile: {
         id: 'missile',
@@ -1032,7 +1052,7 @@ const MODULES = {
     }
 };
 
-const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
+const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'scanner', 'cargo', 'magnet', 'armor'];
 /* harmony export (immutable) */ __webpack_exports__["b"] = MODULE_ORDER;
 
 
@@ -1214,6 +1234,20 @@ const drawModule = (ctx, type, level, options) => {
         }
     }
 
+    if(type === 'scanner') {
+        // Radar dish with sweep arcs (one per level).
+        circle(3.4, true);
+        line(0, 0, 3, -3);
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 0; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4.8 + i * 1.5) * u, -Math.PI * 0.45, Math.PI * 0.05);
+            ctx.stroke();
+        }
+    }
+
     if(type === 'armor') {
         shape([[0, -4.5], [4.5, 0], [0, 4.5], [-4.5, 0]]);
         for(let i = 0; i < level; i++) {
@@ -1237,7 +1271,7 @@ const drawModule = (ctx, type, level, options) => {
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(1);
 // Persistent player profile: credits, owned hulls and the module loadout of each hull.
 
 
@@ -1396,6 +1430,7 @@ const computeShipStats = (hullId) => {
         magnetRange: BASE_MAGNET_RANGE,
         torqueForce: hull.torque * hull.mass,
         guidance: null,
+        scanner: null,
         modules: []
     };
 
@@ -1418,6 +1453,9 @@ const computeShipStats = (hullId) => {
             stats.mass += s.mass;
         }
         if(module.type === 'cargo') stats.cargo += s.capacity;
+        if(module.type === 'scanner') {
+            if(!stats.scanner || s.range > stats.scanner.range) stats.scanner = s;
+        }
         if(module.type === 'magnet') stats.magnetRange = Math.max(stats.magnetRange, s.range);
         if(module.type === 'guidance') {
             if(!stats.guidance || s.range > stats.guidance.range) stats.guidance = s;
@@ -1864,9 +1902,9 @@ const sounds = {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
 
@@ -2513,7 +2551,7 @@ class Rock {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(6);
 // Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
@@ -3244,11 +3282,13 @@ openShipyard.addEventListener('click', () => {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__render_sprites__ = __webpack_require__(0);
+
 
 
 
@@ -3317,6 +3357,7 @@ const createState = () => {
         particles: [],
         ores: [],
         beamHits: [],
+        shockwaves: [],
         mergeLinks: [],
         floatingTexts: [],
         sectors: new __WEBPACK_IMPORTED_MODULE_8__world_sectors__["a" /* SectorManager */](Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().seed),
@@ -3573,15 +3614,18 @@ const bulletCollisions = () => {
 
 const explodeMissile = (missile) => {
     const drone = missile.kind === 'drone';
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, drone ? 16 : 30, {
-        minSpeed: 40, maxSpeed: missile.blast * 3 + 60, minLife: 0.2, maxLife: 0.6, size: drone ? 2.5 : 3,
-        color: drone ? '255,230,150' : '255,160,80'
+    const color = drone ? '255,225,140' : '255,160,80';
+    // Hot sparks, a white flash, slow dust, and a shockwave ring sized to the blast.
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.15, missile.vy * 0.15, drone ? 34 : 30, {
+        minSpeed: 40, maxSpeed: missile.blast * 4 + 80, minLife: 0.25, maxLife: 0.8, size: drone ? 3 : 3, color: color
     });
-    if(!drone) {
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 6, {
-            minSpeed: 10, maxSpeed: 40, minLife: 1, maxLife: 1.8, size: 10, color: '150,140,130', dust: true, alpha: 0.2
-        });
-    }
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 8, {
+        minSpeed: 5, maxSpeed: 60, minLife: 0.12, maxLife: 0.3, size: drone ? 10 : 8, color: '255,250,225'
+    });
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 8 : 6, {
+        minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 11, color: '150,140,130', dust: true, alpha: 0.2
+    });
+    state.shockwaves.push({ x: missile.x, y: missile.y, radius: 4, maxRadius: missile.blast * 1.6, life: 1, color: drone ? '255,220,140' : '255,170,90' });
     if(drone) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].droneImpact();
     else __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].missileExplosion();
 
@@ -3912,6 +3956,11 @@ const step = (dt) => {
 
     state.rocks.forEach(rock => rock.update(dt));
     updateMerges(dt);
+    state.shockwaves.forEach(wave => {
+        wave.life -= dt * 2.2;
+        wave.radius += (wave.maxRadius - wave.radius) * Math.min(1, dt * 9);
+    });
+    state.shockwaves = state.shockwaves.filter(wave => wave.life > 0);
     cityShield(dt);
     bullets.forEach(bullet => {
         if(bullet.kind === 'plasma' && Math.random() < 0.6) {
@@ -4142,6 +4191,24 @@ const drawTractor = (time) => {
     ctx.restore();
 };
 
+const drawShockwaves = () => {
+    if(!state.shockwaves.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    state.shockwaves.forEach(wave => {
+        const glow = wave.maxRadius * 1.6 * wave.life;
+        ctx.globalAlpha = wave.life * 0.8;
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
+        ctx.globalAlpha = wave.life;
+        ctx.strokeStyle = 'rgb(' + wave.color + ')';
+        ctx.lineWidth = 1 + 4 * wave.life;
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+};
+
 const drawFloatingTexts = () => {
     ctx.save();
     ctx.font = '12px Bungee, sans-serif';
@@ -4359,6 +4426,7 @@ const render = () => {
     state.bullets.forEach(bullet => { if(bullet.kind !== 'bullet') bullet.draw(ctx); });
 
     state.missiles.forEach(missile => missile.draw(ctx));
+    drawShockwaves();
     state.ship.draw(ctx);
     drawFloatingTexts();
     ctx.restore();
@@ -4635,7 +4703,7 @@ const constructGameBoard = () => {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(7);
@@ -5303,6 +5371,7 @@ class Ship {
     updateLaunchers(dt, input, world) {
         this.launchers.forEach(launcher => {
             if(launcher.cooldown > 0) launcher.cooldown -= dt;
+            if(launcher.salvo) this.continueSalvo(launcher, input, world, dt);
         });
 
         if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
@@ -5343,32 +5412,49 @@ class Ship {
         __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].missileLaunch();
     }
 
-    // Ancient drones: a fan of self-guided drones that hunt asteroids on their own.
+    // Ancient drones: a salvo of drones launched one after another in a stream.
     fireDrones(launcher, input, world) {
         const stats = launcher.module.stats;
-        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 400);
-        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-        const base = Math.atan2(aimAt.y, aimAt.x);
-
-        for(let i = 0; i < stats.count; i++) {
-            const angle = base + (i - (stats.count - 1) / 2) * 0.45;
-            world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
-                kind: 'drone',
-                x: p.x,
-                y: p.y,
-                vx: this.vx + Math.cos(angle) * 160,
-                vy: this.vy + Math.sin(angle) * 160,
-                angle: angle,
-                damage: stats.damage,
-                blast: 14,
-                target: target,
-                homing: 7,
-                launchDelay: i * 0.06
-            }));
-        }
+        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
         launcher.cooldown = stats.cooldown;
+    }
+
+    continueSalvo(launcher, input, world, dt) {
+        const salvo = launcher.salvo;
+        salvo.timer -= dt;
+        if(salvo.timer > 0) return;
+        if(!this.alive || salvo.remaining <= 0) {
+            launcher.salvo = null;
+            return;
+        }
+
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = salvo.target && !salvo.target.dead ? salvo.target : null;
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        // Each drone leaves on a slightly different heading, weaving towards the target.
+        const weave = [0, -0.35, 0.35, -0.6, 0.6, 0][salvo.index % 6];
+        const angle = Math.atan2(aimAt.y, aimAt.x) + weave;
+
+        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
+            kind: 'drone',
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 220,
+            vy: this.vy + Math.sin(angle) * 220,
+            angle: angle,
+            damage: stats.damage,
+            blast: stats.blast,
+            target: target,
+            homing: 7
+        }));
         __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].droneLaunch();
+
+        salvo.remaining--;
+        salvo.index++;
+        salvo.timer = 0.11;
+        if(salvo.remaining <= 0) launcher.salvo = null;
     }
 
     // Readiness of each weapon group for the HUD: 1 = ready.
@@ -5635,7 +5721,7 @@ class Ship {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
 
 
 const LIFETIME = { bullet: 1.4, plasma: 2.2 };
@@ -5708,7 +5794,7 @@ class Bullet {
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
 
@@ -5863,7 +5949,7 @@ class Missile {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
 
 
 const ORE_LIFETIME = 90;
@@ -6064,7 +6150,7 @@ const loadInputHandlers = () => {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(1);
 // Endless asteroid fields. Space is divided into square sectors that are generated
 // deterministically from a seed the first time the ship comes near. Sectors that
 // fall out of range are put to sleep (their asteroids stored) and woken on return,
@@ -6227,7 +6313,7 @@ class SectorManager {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
 // Home base at the centre of the map: an Atlantis-style six-armed city-ship.
 // Fly inside the docking ring and press B to dock with the shipyard.
 //

@@ -132,6 +132,7 @@ export const computeShipStats = (hullId) => {
         magnetRange: BASE_MAGNET_RANGE,
         torqueForce: hull.torque * hull.mass,
         guidance: null,
+        scanner: null,
         modules: []
     };
 
@@ -154,6 +155,9 @@ export const computeShipStats = (hullId) => {
             stats.mass += s.mass;
         }
         if(module.type === 'cargo') stats.cargo += s.capacity;
+        if(module.type === 'scanner') {
+            if(!stats.scanner || s.range > stats.scanner.range) stats.scanner = s;
+        }
         if(module.type === 'magnet') stats.magnetRange = Math.max(stats.magnetRange, s.range);
         if(module.type === 'guidance') {
             if(!stats.guidance || s.range > stats.guidance.range) stats.guidance = s;

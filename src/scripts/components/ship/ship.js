@@ -662,6 +662,7 @@ class Ship {
     updateLaunchers(dt, input, world) {
         this.launchers.forEach(launcher => {
             if(launcher.cooldown > 0) launcher.cooldown -= dt;
+            if(launcher.salvo) this.continueSalvo(launcher, input, world, dt);
         });
 
         if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
@@ -702,32 +703,49 @@ class Ship {
         sounds.missileLaunch();
     }
 
-    // Ancient drones: a fan of self-guided drones that hunt asteroids on their own.
+    // Ancient drones: a salvo of drones launched one after another in a stream.
     fireDrones(launcher, input, world) {
         const stats = launcher.module.stats;
-        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 400);
-        const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-        const base = Math.atan2(aimAt.y, aimAt.x);
-
-        for(let i = 0; i < stats.count; i++) {
-            const angle = base + (i - (stats.count - 1) / 2) * 0.45;
-            world.missiles.push(new Missile({
-                kind: 'drone',
-                x: p.x,
-                y: p.y,
-                vx: this.vx + Math.cos(angle) * 160,
-                vy: this.vy + Math.sin(angle) * 160,
-                angle: angle,
-                damage: stats.damage,
-                blast: 14,
-                target: target,
-                homing: 7,
-                launchDelay: i * 0.06
-            }));
-        }
+        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
         launcher.cooldown = stats.cooldown;
+    }
+
+    continueSalvo(launcher, input, world, dt) {
+        const salvo = launcher.salvo;
+        salvo.timer -= dt;
+        if(salvo.timer > 0) return;
+        if(!this.alive || salvo.remaining <= 0) {
+            launcher.salvo = null;
+            return;
+        }
+
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = salvo.target && !salvo.target.dead ? salvo.target : null;
+        const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        // Each drone leaves on a slightly different heading, weaving towards the target.
+        const weave = [0, -0.35, 0.35, -0.6, 0.6, 0][salvo.index % 6];
+        const angle = Math.atan2(aimAt.y, aimAt.x) + weave;
+
+        world.missiles.push(new Missile({
+            kind: 'drone',
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 220,
+            vy: this.vy + Math.sin(angle) * 220,
+            angle: angle,
+            damage: stats.damage,
+            blast: stats.blast,
+            target: target,
+            homing: 7
+        }));
         sounds.droneLaunch();
+
+        salvo.remaining--;
+        salvo.index++;
+        salvo.timer = 0.11;
+        if(salvo.remaining <= 0) launcher.salvo = null;
     }
 
     // Readiness of each weapon group for the HUD: 1 = ready.

@@ -10,6 +10,7 @@ import { SectorManager, sectorOf } from '../world/sectors';
 import { STATION, drawStation } from '../world/station';
 import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo, removeCargo, onProfileChange } from '../shipyard/profile';
 import { getShipyard } from '../shipyard/shipyard';
+import { glowSprite, stamp } from '../render/sprites';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
@@ -66,6 +67,7 @@ const createState = () => {
         particles: [],
         ores: [],
         beamHits: [],
+        shockwaves: [],
         mergeLinks: [],
         floatingTexts: [],
         sectors: new SectorManager(getProfile().seed),
@@ -322,15 +324,18 @@ const bulletCollisions = () => {
 
 const explodeMissile = (missile) => {
     const drone = missile.kind === 'drone';
-    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, drone ? 16 : 30, {
-        minSpeed: 40, maxSpeed: missile.blast * 3 + 60, minLife: 0.2, maxLife: 0.6, size: drone ? 2.5 : 3,
-        color: drone ? '255,230,150' : '255,160,80'
+    const color = drone ? '255,225,140' : '255,160,80';
+    // Hot sparks, a white flash, slow dust, and a shockwave ring sized to the blast.
+    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.15, missile.vy * 0.15, drone ? 34 : 30, {
+        minSpeed: 40, maxSpeed: missile.blast * 4 + 80, minLife: 0.25, maxLife: 0.8, size: drone ? 3 : 3, color: color
     });
-    if(!drone) {
-        Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 6, {
-            minSpeed: 10, maxSpeed: 40, minLife: 1, maxLife: 1.8, size: 10, color: '150,140,130', dust: true, alpha: 0.2
-        });
-    }
+    Particle.burst(state.particles, missile.x, missile.y, 0, 0, 8, {
+        minSpeed: 5, maxSpeed: 60, minLife: 0.12, maxLife: 0.3, size: drone ? 10 : 8, color: '255,250,225'
+    });
+    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 8 : 6, {
+        minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 11, color: '150,140,130', dust: true, alpha: 0.2
+    });
+    state.shockwaves.push({ x: missile.x, y: missile.y, radius: 4, maxRadius: missile.blast * 1.6, life: 1, color: drone ? '255,220,140' : '255,170,90' });
     if(drone) sounds.droneImpact();
     else sounds.missileExplosion();
 
@@ -661,6 +666,11 @@ const step = (dt) => {
 
     state.rocks.forEach(rock => rock.update(dt));
     updateMerges(dt);
+    state.shockwaves.forEach(wave => {
+        wave.life -= dt * 2.2;
+        wave.radius += (wave.maxRadius - wave.radius) * Math.min(1, dt * 9);
+    });
+    state.shockwaves = state.shockwaves.filter(wave => wave.life > 0);
     cityShield(dt);
     bullets.forEach(bullet => {
         if(bullet.kind === 'plasma' && Math.random() < 0.6) {
@@ -891,6 +901,24 @@ const drawTractor = (time) => {
     ctx.restore();
 };
 
+const drawShockwaves = () => {
+    if(!state.shockwaves.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    state.shockwaves.forEach(wave => {
+        const glow = wave.maxRadius * 1.6 * wave.life;
+        ctx.globalAlpha = wave.life * 0.8;
+        stamp(ctx, glowSprite(wave.color), wave.x, wave.y, glow, glow);
+        ctx.globalAlpha = wave.life;
+        ctx.strokeStyle = 'rgb(' + wave.color + ')';
+        ctx.lineWidth = 1 + 4 * wave.life;
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+};
+
 const drawFloatingTexts = () => {
     ctx.save();
     ctx.font = '12px Bungee, sans-serif';
@@ -1108,6 +1136,7 @@ const render = () => {
     state.bullets.forEach(bullet => { if(bullet.kind !== 'bullet') bullet.draw(ctx); });
 
     state.missiles.forEach(missile => missile.draw(ctx));
+    drawShockwaves();
     state.ship.draw(ctx);
     drawFloatingTexts();
     ctx.restore();

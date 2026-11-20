@@ -37,11 +37,21 @@ const MODULES = {
         id: 'drones',
         name: 'Drone launcher',
         short: 'Drones',
-        description: 'Ancient drone weapons (F / right click). Self-guided swarms that hunt targets.',
+        description: 'Ancient drone weapons (F / right click). Fires a salvo of five self-guided drones in a row; each detonates in a big energy blast.',
         cost: 2800,
         color: '255,225,130',
-        stats: { count: [3, 4, 5], damage: [14, 18, 24], cooldown: [4, 3.3, 2.6] },
-        describe: (s) => s.count + ' drones x ' + s.damage + ' dmg, reload ' + s.cooldown + 's'
+        stats: { count: [5, 5, 6], damage: [24, 32, 42], blast: [36, 44, 54], cooldown: [5, 4.2, 3.4] },
+        describe: (s) => s.count + '-drone salvo, ' + s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
+    },
+    scanner: {
+        id: 'scanner',
+        name: 'Ore scanner',
+        short: 'Scanner',
+        description: 'Scans asteroids for metals: colours the scanner map by ore, pings the area and guides you to the richest asteroid nearby.',
+        cost: 800,
+        color: '190,255,140',
+        stats: { range: [2000, 2700, 3400], interval: [5, 4, 3] },
+        describe: (s) => s.range + 'px scan range, ping every ' + s.interval + 's'
     },
     missile: {
         id: 'missile',
@@ -115,7 +125,7 @@ const MODULES = {
     }
 };
 
-export const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
+export const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'scanner', 'cargo', 'magnet', 'armor'];
 
 export const moduleStats = (type, level) => {
     const def = MODULES[type];
@@ -283,6 +293,20 @@ export const drawModule = (ctx, type, level, options) => {
         for(let i = 0; i < level; i++) {
             ctx.beginPath();
             ctx.arc(3 * u, 0, (2 + i * 1.6) * u, -Math.PI / 3, Math.PI / 3);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'scanner') {
+        // Radar dish with sweep arcs (one per level).
+        circle(3.4, true);
+        line(0, 0, 3, -3);
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 0; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4.8 + i * 1.5) * u, -Math.PI * 0.45, Math.PI * 0.05);
             ctx.stroke();
         }
     }
