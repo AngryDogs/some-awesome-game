@@ -5,7 +5,7 @@
 const cache = {};
 
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
-export const spriteResolution = () => Math.min(2.5, (window.devicePixelRatio || 1) * 1.5);
+export const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
 
 // Draws `draw(ctx)` into a new offscreen canvas of `width` x `height` world pixels.
 export const createSprite = (width, height, draw, resolution) => {

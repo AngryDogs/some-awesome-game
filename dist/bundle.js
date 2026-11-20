@@ -75,7 +75,7 @@
 const cache = {};
 
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
-const spriteResolution = () => Math.min(2.5, (window.devicePixelRatio || 1) * 1.5);
+const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
 /* harmony export (immutable) */ __webpack_exports__["d"] = spriteResolution;
 
 
@@ -3585,10 +3585,15 @@ const createState = () => {
 let resolutionCap = 2;
 
 // Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
-// The mouse wheel adjusts it between MIN_ZOOM and MAX_ZOOM.
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 1.9;
-let zoom = 1.3;
+// Mouse wheel or +/- keys change it between MIN_ZOOM (wide tactical view) and
+// MAX_ZOOM (close-up); 0 resets. The view eases smoothly towards the target.
+const MIN_ZOOM = 0.45;
+const MAX_ZOOM = 2.6;
+const DEFAULT_ZOOM = 1.3;
+let zoom = DEFAULT_ZOOM;
+let targetZoom = DEFAULT_ZOOM;
+const zoomKeys = { in: false, out: false };
+const clampZoom = (value) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
 let slowTime = 0;
 
 const resize = () => {
@@ -4987,6 +4992,9 @@ const frame = (now) => {
     const elapsed = Math.min((now - lastFrameTime) / 1000, 0.25);
     lastFrameTime = now;
     if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
+    if(zoomKeys.in) targetZoom = clampZoom(targetZoom * Math.exp(elapsed * 1.6));
+    if(zoomKeys.out) targetZoom = clampZoom(targetZoom * Math.exp(-elapsed * 1.6));
+    zoom += (targetZoom - zoom) * Math.min(1, elapsed * 10);
     if(fps < 45 && resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
         slowTime += elapsed;
         if(slowTime > 2) {
@@ -5058,10 +5066,18 @@ const initialize = () => {
     };
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
 
+    const zoomKey = (event, down) => {
+        if(event.code === 'Equal' || event.code === 'NumpadAdd') zoomKeys.in = down;
+        if(event.code === 'Minus' || event.code === 'NumpadSubtract') zoomKeys.out = down;
+        if(down && (event.code === 'Digit0' || event.code === 'Numpad0') && state && !state.paused) targetZoom = DEFAULT_ZOOM;
+    };
+    window.addEventListener('keydown', (event) => zoomKey(event, true));
+    window.addEventListener('keyup', (event) => zoomKey(event, false));
+
     window.addEventListener('wheel', (event) => {
         if(!state || state.paused) return;
         event.preventDefault();
-        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * Math.exp(-event.deltaY * 0.0012)));
+        targetZoom = clampZoom(targetZoom * Math.exp(-event.deltaY * 0.0015));
     }, { passive: false });
 
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyC', () => {
