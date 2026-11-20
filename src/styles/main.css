@@ -74,3 +74,410 @@ body.playing canvas {
     color: #fff;
     cursor: pointer;
 }
+.menu-action {
+    display: inline-block;
+    padding: 2px 10px;
+}
+
+.menu h2.menu-action {
+    display: block;
+    margin: 4px 0;
+}
+
+.menu-credits {
+    margin: 0 0 10px;
+    min-height: 1em;
+}
+
+.pause-menu {
+    visibility: hidden;
+    min-height: 0;
+}
+
+.pause-menu h1 {
+    margin-top: 30px;
+}
+
+/* ---------------------------------------------------------------- HUD bars */
+
+.hud-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);
+    font-size: 13px;
+}
+
+.hud-bar-label {
+    width: 52px;
+}
+
+.hud-bar {
+    width: 140px;
+    height: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.hud-bar-fill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.15s linear;
+}
+
+.hud-bar.hull .hud-bar-fill {
+    background: #f4c46a;
+}
+
+.hud-bar.shield .hud-bar-fill {
+    background: #78d2ff;
+}
+
+.hud-bar-text {
+    font-size: 11px;
+}
+
+/* ---------------------------------------------------------------- Shipyard */
+
+.shipyard {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: none;
+    flex-direction: column;
+    color: #dfe9ff;
+    background: rgba(2, 6, 16, 0.96);
+    user-select: none;
+}
+
+.shipyard.open {
+    display: flex;
+}
+
+.shipyard canvas {
+    position: static;
+}
+
+.shipyard-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(140, 180, 255, 0.25);
+}
+
+.shipyard-header h1 {
+    margin: 0;
+    font-size: 26px;
+    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);
+}
+
+.shipyard-credits {
+    flex: 1;
+    font-size: 18px;
+    color: #ffe08a;
+    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);
+}
+
+.shipyard-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 260px 1fr 300px;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px;
+    min-height: 0;
+}
+
+.shipyard-panel {
+    border: 1px solid rgba(140, 180, 255, 0.25);
+    background: rgba(10, 20, 40, 0.55);
+    padding: 10px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.shipyard-panel h3 {
+    margin: 4px 0 8px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: #9fc0ff;
+}
+
+.hull-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hull-card {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px;
+    border: 1px solid rgba(140, 180, 255, 0.2);
+    opacity: 0.75;
+}
+
+.hull-card.owned {
+    opacity: 1;
+}
+
+.hull-card.active {
+    border-color: rgba(140, 255, 160, 0.8);
+    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);
+    opacity: 1;
+}
+
+.hull-thumb {
+    flex: none;
+}
+
+.hull-info {
+    font-family: sans-serif;
+    font-size: 11px;
+    min-width: 0;
+}
+
+.hull-name {
+    font-family: Bungee, sans-serif;
+    font-size: 15px;
+}
+
+.hull-class,
+.hull-meta {
+    color: #9fb2d8;
+    margin-bottom: 3px;
+}
+
+.hull-state {
+    color: #8cffa0;
+    font-family: Bungee, sans-serif;
+}
+
+.hull-view {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hull-title .title-name {
+    display: block;
+    font-size: 20px;
+}
+
+.hull-title .title-desc {
+    display: block;
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #9fb2d8;
+}
+
+.hull-canvas-wrap {
+    flex: 1;
+    min-height: 200px;
+    position: relative;
+    border: 1px solid rgba(140, 180, 255, 0.15);
+}
+
+.hull-canvas {
+    position: absolute !important;
+    top: 0;
+    left: 0;
+}
+
+.shipyard-hint {
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #9fb2d8;
+    text-align: center;
+}
+
+.ship-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+}
+
+.stat {
+    border: 1px solid rgba(140, 180, 255, 0.2);
+    padding: 4px 6px;
+}
+
+.stat-label {
+    display: block;
+    font-family: sans-serif;
+    font-size: 10px;
+    color: #9fb2d8;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 14px;
+}
+
+.module-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.module-item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 5px;
+    border: 1px solid rgba(140, 180, 255, 0.2);
+    cursor: grab;
+    touch-action: none;
+}
+
+.module-item:hover {
+    border-color: rgba(200, 220, 255, 0.6);
+}
+
+.module-item.armed {
+    border-color: rgba(140, 255, 160, 0.9);
+    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);
+}
+
+.module-item.unaffordable {
+    opacity: 0.45;
+}
+
+.module-icon {
+    flex: none;
+}
+
+.module-info {
+    font-family: sans-serif;
+    font-size: 11px;
+    color: #9fb2d8;
+    min-width: 0;
+}
+
+.module-name {
+    font-family: Bungee, sans-serif;
+    font-size: 12px;
+    color: #dfe9ff;
+}
+
+.module-price {
+    color: #ffe08a;
+    margin-top: 2px;
+}
+
+.inspector {
+    font-family: sans-serif;
+    font-size: 12px;
+}
+
+.inspector p {
+    margin: 4px 0;
+}
+
+.inspector .muted {
+    color: #9fb2d8;
+}
+
+.inspector-name {
+    font-family: Bungee, sans-serif;
+    font-size: 14px;
+}
+
+.inspector-stats {
+    margin: 4px 0;
+}
+
+.inspector-next {
+    color: #9fb2d8;
+    margin-bottom: 8px;
+}
+
+.inspector-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.sy-button {
+    font-family: Bungee, sans-serif;
+    font-size: 14px;
+    color: #dfe9ff;
+    background: rgba(40, 70, 130, 0.5);
+    border: 1px solid rgba(140, 180, 255, 0.6);
+    padding: 6px 14px;
+    cursor: pointer;
+}
+
+.sy-button:hover:not(:disabled) {
+    background: rgba(60, 100, 180, 0.7);
+    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);
+}
+
+.sy-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.sy-button.small {
+    font-size: 11px;
+    padding: 3px 8px;
+}
+
+.sy-button.primary {
+    border-color: rgba(140, 255, 160, 0.8);
+    background: rgba(40, 110, 60, 0.5);
+}
+
+.sy-button.buy {
+    border-color: rgba(255, 220, 130, 0.8);
+    background: rgba(110, 90, 30, 0.5);
+}
+
+.sy-button.danger {
+    border-color: rgba(255, 130, 110, 0.7);
+    background: rgba(110, 40, 30, 0.5);
+}
+
+.shipyard-message {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border: 1px solid rgba(140, 180, 255, 0.5);
+    background: rgba(10, 20, 40, 0.95);
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.shipyard-message.visible {
+    opacity: 1;
+}
+
+.drag-ghost {
+    position: fixed !important;
+    z-index: 30;
+    pointer-events: none;
+}
+
+@media (max-width: 900px) {
+    .shipyard-body {
+        grid-template-columns: 1fr;
+        grid-template-rows: none;
+        overflow-y: auto;
+    }
+
+    .hull-canvas-wrap {
+        min-height: 260px;
+    }
+
+    .ship-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

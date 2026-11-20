@@ -4,11 +4,12 @@ const BULLET_LIFE = 1.4;
 
 class Bullet {
 
-    constructor(x, y, vx, vy) {
+    constructor(x, y, vx, vy, damage) {
         this.x = x;
         this.y = y;
         this.vx = vx;
         this.vy = vy;
+        this.damage = damage || 1;
         this.mass = 4;
         this.life = BULLET_LIFE;
         this.dead = false;
