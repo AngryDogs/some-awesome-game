@@ -14,7 +14,7 @@ import { glowSprite, stamp } from '../render/sprites';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
-const MAX_PARTICLES = 1800;     // pixel particles are cheap (one small fillRect each)
+const MAX_PARTICLES = 1400;     // pixel particles are cheap (one small fillRect each)
 const MAX_DUST = 320;              // soft dust puffs are large; keep only the newest
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
@@ -886,8 +886,10 @@ const step = (dt) => {
         let excess = dustCount - MAX_DUST;
         state.particles = state.particles.filter(particle => !(particle.dust && excess-- > 0));
     }
-    if(state.particles.length > MAX_PARTICLES) {
-        state.particles = state.particles.slice(state.particles.length - MAX_PARTICLES);
+    // On slower computers the cap shrinks with the frame rate, thinning effects instead of stuttering.
+    const particleCap = fps < 30 ? 800 : fps < 45 ? 1100 : MAX_PARTICLES;
+    if(state.particles.length > particleCap) {
+        state.particles = state.particles.slice(state.particles.length - particleCap);
     }
 
     // Stream the endless map in and out around the ship.

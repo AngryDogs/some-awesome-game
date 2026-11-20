@@ -27,7 +27,7 @@ const load = () => {
         if(!raw) return defaultProfile();
         const data = JSON.parse(raw);
         const profile = Object.assign(defaultProfile(), data);
-        if(!HULLS[profile.hull] || profile.ownedHulls.indexOf(profile.hull) === -1) profile.hull = 'x302';
+        if(!HULLS[profile.hull] || (!profile.debug && profile.ownedHulls.indexOf(profile.hull) === -1)) profile.hull = 'x302';
         return profile;
     } catch(e) {
         return defaultProfile();

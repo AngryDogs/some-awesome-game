@@ -3,6 +3,19 @@ import { dustSprite } from '../../render/sprites';
 // Small glowing sparks, plus soft dust that can be drawn into an asteroid
 // (used when asteroids merge: the dust cloud spirals in and settles on the surface).
 
+// Colour strings are cached per colour and fade step, so drawing hundreds of particles
+// doesn't build (and garbage-collect) a new 'rgba(...)' string for each one every frame.
+const STEPS = 12;
+const styleCache = {};
+const style = (color, alpha) => {
+    let row = styleCache[color];
+    if(!row) {
+        row = styleCache[color] = [];
+        for(let i = 0; i <= STEPS; i++) row.push('rgba(' + color + ',' + (i / STEPS).toFixed(3) + ')');
+    }
+    return row[Math.max(0, Math.min(STEPS, Math.round(alpha * STEPS)))];
+};
+
 class Particle {
 
     constructor(options) {
@@ -114,17 +127,17 @@ class Particle {
             if(t < 0.35 && Math.random() < 0.35) return;
             const stepped = Math.ceil(t * 4) / 4;
             const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
-            ctx.fillStyle = 'rgba(' + this.color + ',' + (stepped * this.alpha).toFixed(2) + ')';
+            ctx.fillStyle = style(this.color, stepped * this.alpha);
             ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
             return;
         }
         if(this.solid) {
-            ctx.fillStyle = 'rgba(' + this.color + ',' + Math.min(1, t * 2).toFixed(2) + ')';
+            ctx.fillStyle = style(this.color, Math.min(1, t * 2));
             ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
             return;
         }
         const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
-        ctx.fillStyle = 'rgba(' + this.color + ',' + (t * this.alpha).toFixed(3) + ')';
+        ctx.fillStyle = style(this.color, t * this.alpha);
         ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
     }
 }

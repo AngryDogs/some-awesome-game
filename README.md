@@ -29,6 +29,12 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Zoom | Mouse wheel or + / - (0 resets) |
 | Pause | Esc |
 
+## Debug mode
+
+Click **Debug mode** on the main menu (or the **Debug** button in the shipyard header, or open
+`index.html?debug`) to unlock every hull and make all purchases, upgrades and repairs free.
+Turn it off the same way. Selling gives nothing back while it's on.
+
 ## Mining
 
 - Space is endless: sectors are generated as you fly. The scanner (bottom right) shows nearby asteroids
