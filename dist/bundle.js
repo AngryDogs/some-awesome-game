@@ -1697,6 +1697,45 @@ const boom = (c, size, wet) => {
     noise(c, 0.5, 'bandpass', 4500, 900, envelope(c, 0.12, 0.002, 0.45, wet), 1.5);
 };
 
+// Random pitch variation so rapid fire never sounds like the same sample repeating.
+const vary = (amount) => 1 + (Math.random() - 0.5) * 2 * amount;
+
+// Ring-modulated tone: a carrier multiplied by a modulator gives the buzzing,
+// electric timbre of energy weapons (instead of a clean "beep").
+const ringTone = (c, type, from, to, modFrequency, duration, output) => {
+    const carrier = c.createOscillator();
+    const modulator = c.createOscillator();
+    const ring = c.createGain();
+    const now = c.currentTime;
+    carrier.type = type;
+    carrier.frequency.setValueAtTime(from, now);
+    carrier.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    modulator.type = 'square';
+    modulator.frequency.value = modFrequency;
+    ring.gain.value = 0;
+    modulator.connect(ring.gain);
+    carrier.connect(ring);
+    ring.connect(output);
+    carrier.start(now);
+    modulator.start(now);
+    carrier.stop(now + duration + 0.05);
+    modulator.stop(now + duration + 0.05);
+};
+
+// Band-passed noise whose centre frequency sweeps: whooshes and "tsew" sounds.
+const sweep = (c, duration, from, to, q, output) => noise(c, duration, 'bandpass', from, to, output, q);
+
+// Short metallic "tang": two inharmonic partials through a resonant band-pass.
+const metal = (c, base, duration, output) => {
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = base * 1.3;
+    filter.Q.value = 9;
+    filter.connect(output);
+    tone(c, 'square', base, base * 0.97, duration, filter);
+    tone(c, 'square', base * 1.37, base * 1.33, duration, filter);
+};
+
 // ------------------------------------------------------------ sustained voices
 
 const createVoice = (build) => {
@@ -1739,16 +1778,16 @@ const beamVoice = createVoice(c => {
     filter.connect(gain);
     const lfo = c.createOscillator();
     const lfoGain = c.createGain();
-    lfo.frequency.value = 11;
-    lfoGain.gain.value = 380;
+    lfo.frequency.value = 7.5;
+    lfoGain.gain.value = 520;
     lfo.connect(lfoGain);
     lfoGain.connect(filter.frequency);
 
     const a = c.createOscillator();
     const b = c.createOscillator();
     a.type = b.type = 'sawtooth';
-    a.frequency.value = 196;
-    b.frequency.value = 199.5;
+    a.frequency.value = 146;
+    b.frequency.value = 148.6;
     a.connect(filter);
     b.connect(filter);
 
@@ -1835,6 +1874,8 @@ const tractorVoice = createVoice(c => {
 
 // ------------------------------------------------------------ public API
 
+let beamOn = false;
+
 const sounds = {
     // Must be called from a user gesture (e.g. the launch click) so audio can start.
     unlock() {
@@ -1845,75 +1886,105 @@ const sounds = {
     startEngine() { setLooping(engineSound, true); },
     setThrust(on) { setLooping(thrusterSound, on); },
     setFiring() { /* minigun rounds are synthesized per shot (minigunShot) */ },
-    setBeam(on) { if(on) beamVoice.start(); else beamVoice.stop(); },
+    setBeam(on) {
+        if(on && !beamOn) sounds.beamCharge();
+        beamOn = on;
+        if(on) beamVoice.start(); else beamVoice.stop();
+    },
+
+    // Asgard ion cannon spinning up as the beam fires: a fast rising whine and crack.
+    beamCharge() {
+        const c = throttle('beamCharge', 0.2);
+        if(!c) return;
+        ringTone(c, 'sawtooth', 180, 1400, 90, 0.18, envelope(c, 0.18, 0.01, 0.18, 0.4));
+        noise(c, 0.12, 'highpass', 6000, 3000, envelope(c, 0.14, 0.001, 0.12, 0.3));
+        tone(c, 'sine', 90, 50, 0.4, envelope(c, 0.4, 0.002, 0.4, 0.4));
+    },
     // `level` 0..1 grows with the number of ore pieces held.
     setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
 
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
 
-    // Heavy kinetic minigun: sharp crack, chest thump and a short metallic ring.
+    // Tau'ri railgun turret (like the X-304's point-defence guns): a hard electric
+    // crack, a metallic "tang" from the rails and a short concussive thump.
     minigunShot() {
         const c = throttle('minigun', 0.035);
         if(!c) return;
-        noise(c, 0.06, 'bandpass', 2600, 1200, envelope(c, 0.28, 0.001, 0.06, 0.12), 0.9);
-        tone(c, 'triangle', 170, 55, 0.08, envelope(c, 0.32, 0.001, 0.08));
-        tone(c, 'square', 1250 + Math.random() * 200, 700, 0.03, envelope(c, 0.03, 0.001, 0.03));
+        const v = vary(0.07);
+        noise(c, 0.035, 'highpass', 7000 * v, 2600, envelope(c, 0.3, 0.0008, 0.035, 0.12));
+        metal(c, 2300 * v, 0.07, envelope(c, 0.09, 0.001, 0.07, 0.2));
+        tone(c, 'sawtooth', 900 * v, 260, 0.045, envelope(c, 0.07, 0.001, 0.045));
+        tone(c, 'sine', 130 * v, 42, 0.1, envelope(c, 0.36, 0.001, 0.1));
     },
 
-    // Kinetic round striking rock: gritty crack with a low knock.
-    rockHit() {
+    // Round striking an asteroid: soft dusty thud on the outside, sharp clink on the core.
+    rockHit(hard) {
         const c = throttle('rockHit', 0.03);
         if(!c) return;
-        noise(c, 0.09, 'bandpass', 1800, 500, envelope(c, 0.16, 0.001, 0.09), 1.2);
-        tone(c, 'sine', 140, 60, 0.07, envelope(c, 0.12, 0.001, 0.07));
+        const v = vary(0.1);
+        if(hard) {
+            metal(c, 1700 * v, 0.06, envelope(c, 0.06, 0.001, 0.06, 0.2));
+            noise(c, 0.06, 'bandpass', 3500 * v, 1500, envelope(c, 0.14, 0.001, 0.06), 1.5);
+        } else {
+            noise(c, 0.12, 'lowpass', 1400 * v, 300, envelope(c, 0.2, 0.002, 0.12, 0.1));
+        }
+        tone(c, 'sine', 120 * v, 55, 0.08, envelope(c, 0.12, 0.001, 0.08));
     },
 
-    // Goa'uld staff cannon: a deep concussive "thoom" with a crackling plasma tail.
+    // Goa'uld staff weapon: the descending electric "tsew" - a ring-modulated buzz
+    // sweeping down, a crackling discharge and a deep concussion with a long tail.
     staffShot() {
         const c = throttle('staff', 0.08);
         if(!c) return;
-        tone(c, 'sine', 150, 34, 0.55, envelope(c, 0.6, 0.003, 0.55, 0.35));
-        tone(c, 'sawtooth', 420, 70, 0.35, envelope(c, 0.18, 0.003, 0.33, 0.35));
-        noise(c, 0.55, 'lowpass', 2400, 120, envelope(c, 0.4, 0.002, 0.55, 0.4));
-        noise(c, 0.4, 'bandpass', 4200, 1100, envelope(c, 0.08, 0.02, 0.38, 0.3), 3);
+        const v = vary(0.05);
+        ringTone(c, 'sawtooth', 1900 * v, 210, 63, 0.32, envelope(c, 0.3, 0.002, 0.32, 0.5));
+        sweep(c, 0.3, 5200 * v, 600, 4, envelope(c, 0.3, 0.001, 0.3, 0.45));
+        noise(c, 0.18, 'highpass', 6000, 3000, envelope(c, 0.1, 0.001, 0.18, 0.3));
+        tone(c, 'sine', 140 * v, 32, 0.6, envelope(c, 0.55, 0.002, 0.6, 0.4));
     },
 
+    // Staff blast hitting: crackling plasma burst over a deep boom.
     plasmaImpact() {
         const c = throttle('plasmaImpact', 0.06);
         if(!c) return;
-        boom(c, 0.6, 0.35);
+        boom(c, 0.65, 0.4);
+        ringTone(c, 'sawtooth', 900, 120, 47, 0.35, envelope(c, 0.15, 0.002, 0.35, 0.5));
     },
 
-    // Missile ignition: thump, then a roaring whoosh that climbs as it leaves.
+    // Tau'ri missile: ignition crack, then a tearing rocket roar that climbs away.
     missileLaunch() {
         const c = throttle('missile', 0.05);
         if(!c) return;
-        tone(c, 'sine', 110, 45, 0.25, envelope(c, 0.4, 0.002, 0.25, 0.2));
-        noise(c, 0.9, 'bandpass', 500, 2600, envelope(c, 0.3, 0.03, 0.85, 0.4), 1.2);
-        noise(c, 0.5, 'lowpass', 900, 300, envelope(c, 0.2, 0.01, 0.5, 0.3));
+        tone(c, 'sine', 120, 40, 0.3, envelope(c, 0.45, 0.002, 0.3, 0.25));
+        noise(c, 0.05, 'highpass', 5000, 2500, envelope(c, 0.18, 0.001, 0.05));
+        sweep(c, 1.1, 350, 2800, 0.9, envelope(c, 0.32, 0.04, 1.05, 0.45));
+        noise(c, 0.8, 'lowpass', 1200, 200, envelope(c, 0.22, 0.02, 0.75, 0.35));
     },
 
     missileExplosion() {
         const c = throttle('boom', 0.05);
         if(!c) return;
-        boom(c, 1, 0.55);
+        noise(c, 0.06, 'highpass', 4000, 2000, envelope(c, 0.2, 0.001, 0.06));
+        boom(c, 1.1, 0.6);
     },
 
-    // Ancient drone leaving its bay: a bright, rising energy whine with a soft pulse.
+    // Ancient drone: a hissing whoosh with the characteristic rising whistle.
     droneLaunch() {
         const c = throttle('drones', 0.07);
         if(!c) return;
-        tone(c, 'sine', 520, 1900, 0.4, envelope(c, 0.14, 0.01, 0.4, 0.45));
-        tone(c, 'triangle', 780, 2600, 0.35, envelope(c, 0.05, 0.01, 0.35, 0.45));
-        tone(c, 'sine', 180, 90, 0.18, envelope(c, 0.22, 0.002, 0.18, 0.2));
+        const v = vary(0.06);
+        sweep(c, 0.7, 700 * v, 3600, 3, envelope(c, 0.28, 0.02, 0.68, 0.5));
+        tone(c, 'sine', 820 * v, 1750, 0.6, envelope(c, 0.09, 0.03, 0.58, 0.6));
+        tone(c, 'sine', 1640 * v, 3400, 0.5, envelope(c, 0.03, 0.03, 0.48, 0.6));
     },
 
-    // Drone detonation: deep energy blast with a shimmering high tail.
+    // Drone detonation: a bright energy snap into a deep, rolling blast.
     droneImpact() {
         const c = throttle('droneImpact', 0.05);
         if(!c) return;
-        boom(c, 0.9, 0.55);
-        tone(c, 'sine', 2600, 700, 0.6, envelope(c, 0.08, 0.004, 0.6, 0.6));
+        ringTone(c, 'square', 3000, 400, 140, 0.25, envelope(c, 0.12, 0.001, 0.25, 0.6));
+        boom(c, 0.95, 0.6);
+        tone(c, 'sine', 2400, 700, 0.7, envelope(c, 0.07, 0.004, 0.7, 0.7));
     },
 
     beamImpact() {
