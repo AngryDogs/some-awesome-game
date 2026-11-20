@@ -5,10 +5,10 @@ import Ore from '../components/ore/ore';
 import loadInputHandlers, { input, onKeyPress } from '../components/ship/handlers';
 import sounds from '../audio/audio';
 import { world, delta, gravityAt } from '../physics/physics';
-import MATERIALS from '../world/materials';
+import MATERIALS, { MATERIAL_ORDER } from '../world/materials';
 import { SectorManager, sectorOf } from '../world/sectors';
 import { STATION, drawStation } from '../world/station';
-import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo } from '../shipyard/profile';
+import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo, removeCargo, onProfileChange } from '../shipyard/profile';
 import { getShipyard } from '../shipyard/shipyard';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
@@ -27,6 +27,8 @@ const menu = document.getElementById('menu');
 const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
 const shieldButton = document.getElementById('shieldButton');
+const cargoButton = document.getElementById('cargoButton');
+const cargoPanel = document.getElementById('cargoPanel');
 const hudElements = {
     credits: document.getElementById('credits'),
     location: document.getElementById('location'),
@@ -37,7 +39,8 @@ const hudElements = {
     shieldBar: document.getElementById('shieldBar'),
     shieldText: document.getElementById('shieldText'),
     cargoBar: document.getElementById('cargoBar'),
-    cargoText: document.getElementById('cargoText')
+    cargoText: document.getElementById('cargoText'),
+    cargoButton: document.getElementById('cargoButton')
 };
 
 const canvas = document.createElement('canvas');
@@ -131,6 +134,7 @@ const renderInfo = () => {
         }[shieldState];
     }
     setBar('cargoBar', used / ship.cargoCapacity);
+    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + ' (C)');
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
 
@@ -263,8 +267,14 @@ const bulletCollisions = () => {
 
             if(bullet.kind === 'plasma') {
                 // Staff blast: fiery splash that also scorches nearby rocks.
-                Particle.burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 14, {
-                    minSpeed: 30, maxSpeed: 160, minLife: 0.2, maxLife: 0.5, size: 3, color: '255,170,60'
+                Particle.burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 26, {
+                    minSpeed: 40, maxSpeed: 220, minLife: 0.25, maxLife: 0.7, size: 3.5, color: '255,170,60'
+                });
+                Particle.burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 10, {
+                    minSpeed: 10, maxSpeed: 80, minLife: 0.15, maxLife: 0.35, size: 7, color: '255,240,200'
+                });
+                Particle.burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 5, {
+                    minSpeed: 5, maxSpeed: 35, minLife: 1, maxLife: 2, size: 9, color: '120,100,90', dust: true, alpha: 0.25
                 });
                 rocks.forEach(other => {
                     if(other === rock || other.dead) return;
@@ -514,6 +524,41 @@ const shipCollisions = () => {
     });
 };
 
+// Atlantis city shield: asteroids bounce off it, ships, shots and ore pass through.
+const cityShield = (dt) => {
+    const R = STATION.shieldRadius;
+    state.rocks.forEach(rock => {
+        if(rock.dead) return;
+        const dx = rock.x - STATION.x;
+        const dy = rock.y - STATION.y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        const r = rock.radius * VISUAL_RADIUS;
+        if(distance > R + r || distance < R - r - 40) return;
+
+        const nx = dx / distance;
+        const ny = dy / distance;
+        rock.x = STATION.x + nx * (R + r);
+        rock.y = STATION.y + ny * (R + r);
+        const inward = rock.vx * nx + rock.vy * ny;
+        if(inward < 0) {
+            rock.vx -= 1.6 * inward * nx;
+            rock.vy -= 1.6 * inward * ny;
+            const strength = Math.min(1.5, 0.3 + -inward / 80 + r / 60);
+            STATION.impacts.push({ angle: Math.atan2(ny, nx), life: 1, strength: strength });
+            if(STATION.impacts.length > 10) STATION.impacts.shift();
+            Particle.burst(state.particles, STATION.x + nx * R, STATION.y + ny * R, rock.vx * 0.3, rock.vy * 0.3, 10, {
+                minSpeed: 30, maxSpeed: 140, minLife: 0.2, maxLife: 0.6, size: 2.5, color: '170,220,255'
+            });
+            const sdx = state.ship.x - STATION.x - nx * R;
+            const sdy = state.ship.y - STATION.y - ny * R;
+            const near = 1 - Math.min(1, Math.sqrt(sdx * sdx + sdy * sdy) / 1400);
+            if(near > 0) sounds.cityShield(0.25 * near * strength);
+        }
+    });
+    STATION.impacts.forEach(impact => { impact.life -= dt * 0.8; });
+    STATION.impacts = STATION.impacts.filter(impact => impact.life > 0);
+};
+
 const collectOre = (dt) => {
     const ship = state.ship;
     const cargoFull = cargoUsed() >= ship.cargoCapacity;
@@ -528,7 +573,7 @@ const collectOre = (dt) => {
         if(shielded) {
             // Raised shields block the tractor beam and vaporise ore that touches them.
             ore.update(dt, ship, false);
-            const contact = ship.shieldContact(ore.x, ore.y, ore.radius);
+            const contact = ore.ejectTimer <= 0 && ship.shieldContact(ore.x, ore.y, ore.radius);
             if(contact) {
                 ore.dead = true;
                 ship.absorbOre(contact.x, contact.y);
@@ -588,6 +633,16 @@ const step = (dt) => {
 
     state.rocks.forEach(rock => rock.update(dt));
     updateMerges(dt);
+    cityShield(dt);
+    bullets.forEach(bullet => {
+        if(bullet.kind === 'plasma' && Math.random() < 0.6) {
+            state.particles.push(new Particle({
+                x: bullet.x, y: bullet.y,
+                vx: bullet.vx * 0.15 + (Math.random() - 0.5) * 40, vy: bullet.vy * 0.15 + (Math.random() - 0.5) * 40,
+                life: 0.2 + Math.random() * 0.25, size: 3, color: Math.random() < 0.5 ? '255,140,40' : '255,210,110'
+            }));
+        }
+    });
     bullets.forEach(bullet => bullet.update(dt));
     missiles.forEach(missile => missile.update(dt, state.rocks, particles));
     particles.forEach(particle => particle.update(dt));
@@ -729,6 +784,82 @@ const drawTargeting = (time) => {
         ctx.closePath();
         ctx.stroke();
     }
+    ctx.restore();
+};
+
+// Tractor beam: tapered energy beams from the emitter to every ore piece it holds,
+// with pulses flowing towards the ship and a pulsing range ring.
+const drawTractor = (time) => {
+    const ship = state.ship;
+    const held = state.ores.filter(ore => ore.tractored && !ore.dead);
+    state.tractorActive = held.length > 0;
+    if(!held.length || !ship.alive) return;
+
+    const emitter = ship.tractorEmitter();
+    const color = '120,255,230';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Range ring.
+    const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+    ctx.setLineDash([6, 10]);
+    ctx.lineDashOffset = -time * 30;
+    ctx.strokeStyle = 'rgba(' + color + ', ' + (0.12 + 0.1 * pulse) + ')';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(ship.x, ship.y, ship.magnetRange, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    held.forEach(ore => {
+        const dx = ore.x - emitter.x;
+        const dy = ore.y - emitter.y;
+        const length = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / length;
+        const ny = dx / length;
+        const wide = 7;   // beam spreads out towards the ore
+
+        const cone = ctx.createLinearGradient(emitter.x, emitter.y, ore.x, ore.y);
+        cone.addColorStop(0, 'rgba(' + color + ', 0.45)');
+        cone.addColorStop(1, 'rgba(' + color + ', 0.08)');
+        ctx.fillStyle = cone;
+        ctx.beginPath();
+        ctx.moveTo(emitter.x + nx * 1.5, emitter.y + ny * 1.5);
+        ctx.lineTo(ore.x + nx * wide, ore.y + ny * wide);
+        ctx.lineTo(ore.x - nx * wide, ore.y - ny * wide);
+        ctx.lineTo(emitter.x - nx * 1.5, emitter.y - ny * 1.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Energy pulses travelling inwards.
+        ctx.setLineDash([3, 9]);
+        ctx.lineDashOffset = time * 70;
+        ctx.strokeStyle = 'rgba(210, 255, 245, 0.8)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(ore.x, ore.y);
+        ctx.lineTo(emitter.x, emitter.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Containment glow around the captured ore.
+        const glow = ctx.createRadialGradient(ore.x, ore.y, 0, ore.x, ore.y, 11);
+        glow.addColorStop(0, 'rgba(' + color + ', ' + (0.35 + 0.25 * pulse) + ')');
+        glow.addColorStop(1, 'rgba(' + color + ', 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(ore.x, ore.y, 11, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Emitter flare.
+    const flare = ctx.createRadialGradient(emitter.x, emitter.y, 0, emitter.x, emitter.y, 9);
+    flare.addColorStop(0, 'rgba(230, 255, 250, 0.9)');
+    flare.addColorStop(1, 'rgba(' + color + ', 0)');
+    ctx.fillStyle = flare;
+    ctx.beginPath();
+    ctx.arc(emitter.x, emitter.y, 9, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 };
 
@@ -922,6 +1053,7 @@ const render = () => {
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
     state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
+    drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
@@ -951,6 +1083,64 @@ const render = () => {
     drawBanner();
 };
 
+// ---------------------------------------------------------------- cargo hold panel
+
+const ejectOre = (material, count) => {
+    if(!state || !state.ship.alive) return;
+    const ship = state.ship;
+    const removed = removeCargo(material, count);
+    const cos = Math.cos(ship.angle);
+    const sin = Math.sin(ship.angle);
+    const stern = ship.localToWorld(-ship.radius * 0.7, 0);
+    for(let i = 0; i < removed; i++) {
+        const spread = (Math.random() - 0.5) * 1.4;
+        const speed = 60 + Math.random() * 60;
+        const ore = new Ore(stern.x + (Math.random() - 0.5) * 8, stern.y + (Math.random() - 0.5) * 8,
+            ship.vx - Math.cos(ship.angle + spread) * speed, ship.vy - Math.sin(ship.angle + spread) * speed, material);
+        ore.ejectTimer = 3;
+        state.ores.push(ore);
+    }
+    if(removed) {
+        sounds.pickup(1);
+        floatText(stern.x - cos * 10, stern.y - sin * 10, '-' + removed + ' ' + MATERIALS[material].name, '255,170,140');
+    }
+};
+
+const renderCargoPanel = () => {
+    if(!cargoPanel || cargoPanel.style.display === 'none') return;
+    const profile = getProfile();
+    const capacity = state ? state.ship.cargoCapacity : 0;
+    const used = cargoUsed();
+    let value = 0;
+
+    let html = '<div class="cargo-header"><span>Cargo hold</span><button data-close="1">×</button></div>' +
+        '<div class="cargo-capacity"><div class="cargo-capacity-fill" style="width:' +
+        Math.round(Math.min(1, used / Math.max(1, capacity)) * 100) + '%"></div></div>' +
+        '<div class="cargo-sub">' + used + ' / ' + capacity + ' units</div><table>';
+    MATERIAL_ORDER.forEach(id => {
+        const amount = profile.cargo[id] || 0;
+        if(!amount) return;
+        const material = MATERIALS[id];
+        value += amount * material.price;
+        html += '<tr><td><span class="swatch" style="background:rgb(' + material.color + ');box-shadow:0 0 6px rgb(' + material.color + ')"></span>' +
+            material.name + '</td><td>' + amount + '</td><td>' + (amount * material.price) + ' cr</td>' +
+            '<td><button data-eject="' + id + '" data-count="1">Eject 1</button>' +
+            '<button data-eject="' + id + '" data-count="all">All</button></td></tr>';
+    });
+    html += '</table>';
+    html += used ? '<div class="cargo-sub">Value at Atlantis: ' + value.toLocaleString('en-US') + ' cr</div>' +
+        '<button class="cargo-eject-all" data-eject="*">Eject everything</button>'
+        : '<div class="cargo-sub">The hold is empty. Lower shields (H) and fly near ore to collect it.</div>';
+    cargoPanel.innerHTML = html;
+};
+
+const toggleCargoPanel = (show) => {
+    if(!cargoPanel) return;
+    const visible = show === undefined ? cargoPanel.style.display === 'none' : show;
+    cargoPanel.style.display = visible ? '' : 'none';
+    renderCargoPanel();
+};
+
 // ---------------------------------------------------------------- loop & menus
 
 const freeze = (frozen) => {
@@ -958,6 +1148,8 @@ const freeze = (frozen) => {
     input.enabled = !frozen;
     document.body.classList.toggle('playing', !frozen);
     shieldButton.style.display = state && !frozen ? '' : 'none';
+    cargoButton.style.display = state && !frozen ? '' : 'none';
+    if(frozen) toggleCargoPanel(false);
     if(frozen) {
         sounds.stopAll();
     } else {
@@ -1035,6 +1227,7 @@ const frame = (now) => {
         sounds.setThrust(state.ship.alive && state.ship.thrusting);
         sounds.setFiring(state.ship.alive && state.ship.minigunFiring);
         sounds.setBeam(state.ship.alive && state.ship.beaming);
+        sounds.setTractor(state.ship.alive && !!state.tractorActive);
     }
 
     render();
@@ -1081,6 +1274,25 @@ const initialize = () => {
         return true;
     };
     onKeyPress('KeyH', toggleShields);
+
+    onKeyPress('KeyC', () => {
+        if(!state || state.paused) return false;
+        toggleCargoPanel();
+        return true;
+    });
+    cargoButton.addEventListener('click', () => { if(state && !state.paused) toggleCargoPanel(); });
+    cargoPanel.addEventListener('click', (event) => {
+        const button = event.target.closest('button');
+        if(!button) return;
+        if(button.dataset.close) toggleCargoPanel(false);
+        const material = button.dataset.eject;
+        if(material === '*') {
+            Object.keys(getProfile().cargo).forEach(id => ejectOre(id, Infinity));
+        } else if(material) {
+            ejectOre(material, button.dataset.count === 'all' ? Infinity : 1);
+        }
+    });
+    onProfileChange(() => renderCargoPanel());
     shieldButton.addEventListener('click', () => toggleShields());
 
     onKeyPress('KeyB', () => {

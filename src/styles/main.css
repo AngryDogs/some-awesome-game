@@ -610,3 +610,102 @@ body.playing canvas {
 .shield-button.none {
     opacity: 0.5;
 }
+
+/* ---------------------------------------------------------------- Cargo hold */
+
+.cargo-button {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    z-index: 6;
+    font-family: Bungee, sans-serif;
+    font-size: 13px;
+    padding: 6px 14px;
+    color: #eadcff;
+    background: rgba(30, 15, 60, 0.75);
+    border: 1px solid rgba(200, 170, 255, 0.8);
+    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);
+    cursor: pointer;
+}
+
+.cargo-panel {
+    position: fixed;
+    top: 52px;
+    right: 16px;
+    z-index: 7;
+    width: 320px;
+    max-width: calc(100vw - 32px);
+    padding: 10px 12px;
+    color: #dfe9ff;
+    font-family: sans-serif;
+    font-size: 12px;
+    background: rgba(5, 12, 26, 0.92);
+    border: 1px solid rgba(200, 170, 255, 0.6);
+    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);
+}
+
+.cargo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: Bungee, sans-serif;
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+.cargo-capacity {
+    height: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    margin-bottom: 4px;
+}
+
+.cargo-capacity-fill {
+    height: 100%;
+    background: #c8aaff;
+}
+
+.cargo-sub {
+    color: #9fb2d8;
+    margin: 4px 0;
+}
+
+.cargo-panel table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0;
+}
+
+.cargo-panel td {
+    padding: 4px 2px;
+    border-bottom: 1px solid rgba(140, 180, 255, 0.12);
+    white-space: nowrap;
+}
+
+.cargo-panel td:first-child {
+    font-family: Bungee, sans-serif;
+    font-size: 11px;
+}
+
+.cargo-panel button {
+    font-family: Bungee, sans-serif;
+    font-size: 10px;
+    margin-left: 3px;
+    padding: 2px 6px;
+    color: #ffd9cc;
+    background: rgba(110, 40, 30, 0.5);
+    border: 1px solid rgba(255, 140, 110, 0.6);
+    cursor: pointer;
+}
+
+.cargo-panel .cargo-header button {
+    font-size: 14px;
+    color: #dfe9ff;
+    background: transparent;
+    border: none;
+}
+
+.cargo-panel .cargo-eject-all {
+    width: 100%;
+    margin: 6px 0 0;
+    padding: 5px;
+}

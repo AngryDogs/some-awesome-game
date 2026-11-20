@@ -148,7 +148,57 @@ const stopBeam = () => {
     voice.oscillators.forEach(o => o.stop(now + 0.2));
 };
 
+// Soft warbling hum while the tractor beam holds ore.
+let tractorVoice = null;
+const startTractor = () => {
+    const c = context();
+    if(!c || tractorVoice) return;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.07, c.currentTime + 0.2);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    a.type = 'sine';
+    b.type = 'triangle';
+    a.frequency.value = 330;
+    b.frequency.value = 495;
+    lfo.frequency.value = 5;
+    lfoGain.gain.value = 18;
+    lfo.connect(lfoGain);
+    lfoGain.connect(a.frequency);
+    lfoGain.connect(b.frequency);
+    a.connect(gain);
+    b.connect(gain);
+    gain.connect(master);
+    [a, b, lfo].forEach(o => o.start());
+    tractorVoice = { gain: gain, oscillators: [a, b, lfo] };
+};
+
+const stopTractor = () => {
+    if(!tractorVoice || !ac) return;
+    const voice = tractorVoice;
+    tractorVoice = null;
+    const now = ac.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    voice.oscillators.forEach(o => o.stop(now + 0.3));
+};
+
 const sounds = {
+    setTractor(on) { if(on) startTractor(); else stopTractor(); },
+
+    // Asteroid glancing off the Atlantis city shield.
+    cityShield(volume) {
+        const c = throttle('cityShield', 0.12);
+        if(!c) return;
+        const v = Math.max(0.02, Math.min(0.25, volume));
+        tone(c, 'sine', 700, 180, 0.6, envelope(c, v, 0.005, 0.6));
+        tone(c, 'triangle', 1400, 500, 0.4, envelope(c, v * 0.4, 0.005, 0.4));
+    },
+
     // Must be called from a user gesture (e.g. the launch click) so audio can start.
     unlock() {
         const c = context();
@@ -163,19 +213,22 @@ const sounds = {
     rockHit() { playOneShot(rockHitSound, 0.35); },
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
 
+    // Goa'uld staff cannon: a deep concussive "thoom" with a crackling plasma tail.
     staffShot() {
-        const c = throttle('staff', 0.05);
+        const c = throttle('staff', 0.08);
         if(!c) return;
-        tone(c, 'sawtooth', 900, 140, 0.25, envelope(c, 0.22, 0.005, 0.25));
-        tone(c, 'square', 1400, 300, 0.12, envelope(c, 0.06, 0.002, 0.12));
-        noise(c, 0.2, 'bandpass', 3000, 600, envelope(c, 0.12, 0.002, 0.18), 2);
+        tone(c, 'sine', 140, 38, 0.45, envelope(c, 0.5, 0.004, 0.45));
+        tone(c, 'sawtooth', 380, 70, 0.32, envelope(c, 0.16, 0.004, 0.3));
+        noise(c, 0.5, 'lowpass', 2200, 140, envelope(c, 0.35, 0.003, 0.5));
+        noise(c, 0.35, 'bandpass', 4000, 1200, envelope(c, 0.07, 0.02, 0.33), 3);
     },
 
     plasmaImpact() {
-        const c = throttle('plasmaImpact', 0.05);
+        const c = throttle('plasmaImpact', 0.06);
         if(!c) return;
-        noise(c, 0.35, 'lowpass', 2500, 200, envelope(c, 0.3, 0.005, 0.35));
-        tone(c, 'sine', 300, 60, 0.3, envelope(c, 0.2, 0.005, 0.3));
+        tone(c, 'sine', 110, 30, 0.6, envelope(c, 0.45, 0.004, 0.6));
+        noise(c, 0.7, 'lowpass', 1800, 90, envelope(c, 0.45, 0.004, 0.7));
+        noise(c, 0.4, 'bandpass', 3000, 600, envelope(c, 0.1, 0.01, 0.4), 2);
     },
 
     missileLaunch() {
@@ -293,6 +346,7 @@ const sounds = {
         setLooping(thrusterSound, false);
         setLooping(minigunSound, false);
         stopBeam();
+        stopTractor();
     }
 };
 

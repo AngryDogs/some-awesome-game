@@ -15,6 +15,8 @@ class Ore {
         this.angle = Math.random() * Math.PI * 2;
         this.spin = (Math.random() - 0.5) * 4;
         this.radius = material === 'rock' ? 2.5 : 3.2;
+        this.ejectTimer = 0;      // freshly jettisoned ore can't be re-collected for a moment
+        this.tractored = false;   // currently held by the tractor beam (for the beam animation)
         this.dead = false;
     }
 
@@ -22,8 +24,10 @@ class Ore {
     update(dt, ship, canCollect) {
         this.life -= dt;
         if(this.life <= 0) this.dead = true;
+        if(this.ejectTimer > 0) this.ejectTimer -= dt;
+        this.tractored = false;
 
-        if(ship && ship.alive && canCollect) {
+        if(ship && ship.alive && canCollect && this.ejectTimer <= 0) {
             const dx = ship.x - this.x;
             const dy = ship.y - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
@@ -31,6 +35,7 @@ class Ore {
             if(distance < ship.collectRadius) return true;
 
             if(distance < ship.magnetRange) {
+                this.tractored = true;
                 // Steer towards the ship, matching its velocity as it closes in.
                 const pull = 900 * (1 - distance / ship.magnetRange) + 200;
                 this.vx += (dx / distance * pull + (ship.vx - this.vx) * 3) * dt;

@@ -223,6 +223,12 @@ class Ship {
         this.shieldImpact(worldX, worldY, 0.35);
     }
 
+    // Where the tractor beam comes from: the ore tractor module if fitted, else the hull centre.
+    tractorEmitter() {
+        const module = this.stats.modules.filter(m => m.type === 'magnet')[0];
+        return module ? this.localToWorld(module.slot.x, module.slot.y) : { x: this.x, y: this.y };
+    }
+
     get thrusting() {
         const t = this.thrusters;
         return t.main > 0.2 || t.retro > 0.2 || t.left > 0.2 || t.right > 0.2 ||
@@ -530,9 +536,19 @@ class Ship {
             dirX * speed, dirY * speed,
             stats.damage, 'plasma', stats.splash
         ));
-        this.vx -= dirX * RECOIL * 2 / this.stats.mass;
-        this.vy -= dirY * RECOIL * 2 / this.stats.mass;
-        turret.flash = 0.08;
+        this.vx -= dirX * RECOIL * 6 / this.stats.mass;
+        this.vy -= dirY * RECOIL * 6 / this.stats.mass;
+        turret.flash = 0.14;
+        // Plasma vented from the muzzle.
+        for(let i = 0; i < 8; i++) {
+            const a = turret.aim + (Math.random() - 0.5) * 1.2;
+            const v = 60 + Math.random() * 140;
+            world.particles.push(new Particle({
+                x: p.x + dirX * barrel, y: p.y + dirY * barrel,
+                vx: this.vx + Math.cos(a) * v, vy: this.vy + Math.sin(a) * v,
+                life: 0.15 + Math.random() * 0.2, size: 3, color: i % 2 ? '255,200,90' : '255,120,40'
+            }));
+        }
         sounds.staffShot();
     }
 
@@ -961,6 +977,20 @@ class Ship {
             if(turret.flash > 0) {
                 const tip = 9 * u;
                 const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
+                if(turret.kind === 'staff') {
+                    // Large plasma bloom at the cannon mouth.
+                    const fx = Math.cos(turret.aim - this.angle) * tip;
+                    const fy = Math.sin(turret.aim - this.angle) * tip;
+                    const bloom = ctx.createRadialGradient(fx, fy, 0, fx, fy, 14 * turret.flash / 0.14 + 4);
+                    bloom.addColorStop(0, 'rgba(255, 245, 210, 0.95)');
+                    bloom.addColorStop(0.4, 'rgba(255, 160, 60, 0.7)');
+                    bloom.addColorStop(1, 'rgba(255, 90, 20, 0)');
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.fillStyle = bloom;
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.fillStyle = 'rgba(' + color + ', 0.9)';
                 ctx.beginPath();

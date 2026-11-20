@@ -20,7 +20,7 @@ const MODULES = {
         description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
         cost: 900,
         color: '255,175,70',
-        stats: { fireRate: [2.2, 2.8, 3.5], damage: [5, 7, 9.5], splash: [18, 24, 30] },
+        stats: { fireRate: [1.5, 1.9, 2.4], damage: [8, 11, 15], splash: [28, 34, 42] },
         describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
     },
     beam: {

@@ -4,9 +4,11 @@
 export const STATION = {
     x: 0,
     y: 0,
-    dockRadius: 400,
+    dockRadius: 420,
     maxDockSpeed: 140,
-    spin: 0.012
+    spin: 0.012,
+    shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
+    impacts: []            // { angle, life, strength } ripples on the city shield
 };
 
 const LINE = 'rgba(200, 225, 255, 0.95)';
@@ -98,15 +100,52 @@ export const drawStation = (ctx, time, canDock) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Faint city shield dome.
-    const dome = ctx.createRadialGradient(0, 0, 200, 0, 0, 380);
+    // City shield dome with a slow shimmer and impact ripples.
+    const R = STATION.shieldRadius;
+    const shimmer = 0.85 + 0.15 * Math.sin(time * 1.7);
+    const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.9, 'rgba(120, 190, 255, 0.05)');
-    dome.addColorStop(1, 'rgba(120, 190, 255, 0.12)');
+    dome.addColorStop(0.85, 'rgba(120, 190, 255, ' + (0.05 * shimmer) + ')');
+    dome.addColorStop(1, 'rgba(140, 205, 255, ' + (0.16 * shimmer) + ')');
     ctx.fillStyle = dome;
     ctx.beginPath();
-    ctx.arc(0, 0, 380, 0, Math.PI * 2);
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(150, 210, 255, ' + (0.25 * shimmer) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    STATION.impacts.forEach(impact => {
+        const ix = Math.cos(impact.angle) * R;
+        const iy = Math.sin(impact.angle) * R;
+        const age = 1 - impact.life;
+        const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 30 + 50 * impact.strength);
+        flare.addColorStop(0, 'rgba(230, 245, 255, ' + (0.7 * impact.life) + ')');
+        flare.addColorStop(0.3, 'rgba(140, 200, 255, ' + (0.4 * impact.life) + ')');
+        flare.addColorStop(1, 'rgba(120, 190, 255, 0)');
+        ctx.fillStyle = flare;
+        ctx.fillRect(ix - 90, iy - 90, 180, 180);
+        ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+        ctx.lineWidth = 2.5 * impact.life + 0.5;
+        ctx.beginPath();
+        ctx.arc(ix, iy, 10 + age * 160, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+
+    // Bright arc along the rim where it was struck.
+    STATION.impacts.forEach(impact => {
+        ctx.strokeStyle = 'rgba(200, 235, 255, ' + (0.8 * impact.life) + ')';
+        ctx.lineWidth = 3 * impact.life;
+        ctx.beginPath();
+        ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength, impact.angle + 0.25 * impact.strength);
+        ctx.stroke();
+    });
 
     ctx.rotate(time * STATION.spin);
     ctx.lineJoin = 'miter';

@@ -195,6 +195,17 @@ export const sellCargo = (material) => {
     return earned;
 };
 
+// Jettison ore from the hold. Returns how many units were removed.
+export const removeCargo = (material, count) => {
+    const have = profile.cargo[material] || 0;
+    const removed = Math.min(have, count);
+    if(removed <= 0) return 0;
+    if(have - removed > 0) profile.cargo[material] = have - removed;
+    else delete profile.cargo[material];
+    save();
+    return removed;
+};
+
 export const loseCargo = () => {
     profile.cargo = {};
     save();

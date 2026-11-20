@@ -559,16 +559,16 @@ const HULLS = {
         radius: 72,
         art: [
             // Six legs: a forward pair, a side pair and a rear pair, each with an elbow.
-            leg([[12, -11], [40, -9], [64, -6]], 6), mirrorPart(leg([[12, -11], [40, -9], [64, -6]], 6)),
+            leg([[10, -17], [40, -13.5], [64, -8.5]], 4.5), mirrorPart(leg([[10, -17], [40, -13.5], [64, -8.5]], 4.5)),
             leg([[2, -22], [2, -44], [9, -63]], 7), mirrorPart(leg([[2, -22], [2, -44], [9, -63]], 7)),
             leg([[-12, -16], [-34, -30], [-58, -40]], 7), mirrorPart(leg([[-12, -16], [-34, -30], [-58, -40]], 7)),
             // Squared feet at the end of each leg.
-            ...mirrorRect(62, -11, 68, -1), ...mirrorRect(3, -60, 16, -66),
+            ...mirrorRect(62, -13.5, 68, -4), ...mirrorRect(3, -60, 16, -66),
             { closed: true, pts: [[-55, -46], [-62, -34], [-66, -36], [-59, -48]] },
             mirrorPart({ closed: true, pts: [[-55, -46], [-62, -34], [-66, -36], [-59, -48]] }),
             // Hangar rings at the elbows.
             { circle: [2, -44, 4] }, { circle: [2, 44, 4] }, { circle: [-34, -30, 4] }, { circle: [-34, 30, 4] },
-            { circle: [40, -9, 3] }, { circle: [40, 9, 3] },
+            { circle: [40, -13.5, 2.5] }, { circle: [40, 13.5, 2.5] },
             // Central pyramid: nested triangles pointing forward.
             { closed: true, pts: [[26, 0], [-16, -22], [-16, 22]] },
             { closed: true, pts: [[16, 0], [-10, -14], [-10, 14]] },
@@ -578,8 +578,8 @@ const HULLS = {
         ],
         slots: [
             { id: 'top', x: 3, y: 0 },
-            { id: 'fl', x: 50, y: -8 },
-            { id: 'fr', x: 50, y: 8 },
+            { id: 'fl', x: 52, y: -11 },
+            { id: 'fr', x: 52, y: 11 },
             { id: 'pl', x: 2, y: -33 },
             { id: 'pr', x: 2, y: 33 },
             { id: 'al', x: -46, y: -35 },
@@ -589,7 +589,7 @@ const HULLS = {
         ],
         engines: [{ x: -19, y: -8, size: 1.3 }, { x: -19, y: 8, size: 1.3 }, { x: -64, y: -41, size: 0.8 }, { x: -64, y: 41, size: 0.8 }],
         colliders: [[2, 0, 16], [16, 0, 9], [-12, -14, 7], [-12, 14, 7],
-            [28, -10, 7], [28, 10, 7], [44, -8, 7], [44, 8, 7], [62, -6, 7], [62, 6, 7],
+            [26, -15, 5], [26, 15, 5], [44, -13, 5], [44, 13, 5], [62, -8.5, 5], [62, 8.5, 5],
             [2, -28, 8], [2, 28, 8], [3, -44, 8], [3, 44, 8], [8, -60, 8], [8, 60, 8],
             [-22, -22, 8], [-22, 22, 8], [-36, -31, 8], [-36, 31, 8], [-52, -38, 8], [-52, 38, 8]],
         jets: { retro: [[66, 10]], side: [[9, 66]], bow: [62, 11], stern: [-60, 46] },
@@ -849,7 +849,7 @@ const MODULES = {
         description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
         cost: 900,
         color: '255,175,70',
-        stats: { fireRate: [2.2, 2.8, 3.5], damage: [5, 7, 9.5], splash: [18, 24, 30] },
+        stats: { fireRate: [1.5, 1.9, 2.4], damage: [8, 11, 15], splash: [28, 34, 42] },
         describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
     },
     beam: {
@@ -1241,7 +1241,7 @@ const selectHull = (hullId) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["l"] = selectHull;
+/* harmony export (immutable) */ __webpack_exports__["m"] = selectHull;
 
 
 const buyHull = (hullId) => {
@@ -1277,7 +1277,7 @@ const upgradeModule = (hullId, slotId) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["q"] = upgradeModule;
+/* harmony export (immutable) */ __webpack_exports__["r"] = upgradeModule;
 
 
 const sellModule = (hullId, slotId) => {
@@ -1289,7 +1289,7 @@ const sellModule = (hullId, slotId) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["n"] = sellModule;
+/* harmony export (immutable) */ __webpack_exports__["o"] = sellModule;
 
 
 // Combine hull + modules into the numbers the ship flies with.
@@ -1359,7 +1359,7 @@ const storeOre = (material, capacity) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["p"] = storeOre;
+/* harmony export (immutable) */ __webpack_exports__["q"] = storeOre;
 
 
 const cargoValue = () => Object.keys(profile.cargo)
@@ -1378,7 +1378,20 @@ const sellCargo = (material) => {
     save();
     return earned;
 };
-/* harmony export (immutable) */ __webpack_exports__["m"] = sellCargo;
+/* harmony export (immutable) */ __webpack_exports__["n"] = sellCargo;
+
+
+// Jettison ore from the hold. Returns how many units were removed.
+const removeCargo = (material, count) => {
+    const have = profile.cargo[material] || 0;
+    const removed = Math.min(have, count);
+    if(removed <= 0) return 0;
+    if(have - removed > 0) profile.cargo[material] = have - removed;
+    else delete profile.cargo[material];
+    save();
+    return removed;
+};
+/* harmony export (immutable) */ __webpack_exports__["l"] = removeCargo;
 
 
 const loseCargo = () => {
@@ -1394,7 +1407,7 @@ const spendCredits = (amount) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["o"] = spendCredits;
+/* harmony export (immutable) */ __webpack_exports__["p"] = spendCredits;
 
 
 
@@ -1553,7 +1566,57 @@ const stopBeam = () => {
     voice.oscillators.forEach(o => o.stop(now + 0.2));
 };
 
+// Soft warbling hum while the tractor beam holds ore.
+let tractorVoice = null;
+const startTractor = () => {
+    const c = context();
+    if(!c || tractorVoice) return;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.07, c.currentTime + 0.2);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    a.type = 'sine';
+    b.type = 'triangle';
+    a.frequency.value = 330;
+    b.frequency.value = 495;
+    lfo.frequency.value = 5;
+    lfoGain.gain.value = 18;
+    lfo.connect(lfoGain);
+    lfoGain.connect(a.frequency);
+    lfoGain.connect(b.frequency);
+    a.connect(gain);
+    b.connect(gain);
+    gain.connect(master);
+    [a, b, lfo].forEach(o => o.start());
+    tractorVoice = { gain: gain, oscillators: [a, b, lfo] };
+};
+
+const stopTractor = () => {
+    if(!tractorVoice || !ac) return;
+    const voice = tractorVoice;
+    tractorVoice = null;
+    const now = ac.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+    voice.oscillators.forEach(o => o.stop(now + 0.3));
+};
+
 const sounds = {
+    setTractor(on) { if(on) startTractor(); else stopTractor(); },
+
+    // Asteroid glancing off the Atlantis city shield.
+    cityShield(volume) {
+        const c = throttle('cityShield', 0.12);
+        if(!c) return;
+        const v = Math.max(0.02, Math.min(0.25, volume));
+        tone(c, 'sine', 700, 180, 0.6, envelope(c, v, 0.005, 0.6));
+        tone(c, 'triangle', 1400, 500, 0.4, envelope(c, v * 0.4, 0.005, 0.4));
+    },
+
     // Must be called from a user gesture (e.g. the launch click) so audio can start.
     unlock() {
         const c = context();
@@ -1568,19 +1631,22 @@ const sounds = {
     rockHit() { playOneShot(rockHitSound, 0.35); },
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
 
+    // Goa'uld staff cannon: a deep concussive "thoom" with a crackling plasma tail.
     staffShot() {
-        const c = throttle('staff', 0.05);
+        const c = throttle('staff', 0.08);
         if(!c) return;
-        tone(c, 'sawtooth', 900, 140, 0.25, envelope(c, 0.22, 0.005, 0.25));
-        tone(c, 'square', 1400, 300, 0.12, envelope(c, 0.06, 0.002, 0.12));
-        noise(c, 0.2, 'bandpass', 3000, 600, envelope(c, 0.12, 0.002, 0.18), 2);
+        tone(c, 'sine', 140, 38, 0.45, envelope(c, 0.5, 0.004, 0.45));
+        tone(c, 'sawtooth', 380, 70, 0.32, envelope(c, 0.16, 0.004, 0.3));
+        noise(c, 0.5, 'lowpass', 2200, 140, envelope(c, 0.35, 0.003, 0.5));
+        noise(c, 0.35, 'bandpass', 4000, 1200, envelope(c, 0.07, 0.02, 0.33), 3);
     },
 
     plasmaImpact() {
-        const c = throttle('plasmaImpact', 0.05);
+        const c = throttle('plasmaImpact', 0.06);
         if(!c) return;
-        noise(c, 0.35, 'lowpass', 2500, 200, envelope(c, 0.3, 0.005, 0.35));
-        tone(c, 'sine', 300, 60, 0.3, envelope(c, 0.2, 0.005, 0.3));
+        tone(c, 'sine', 110, 30, 0.6, envelope(c, 0.45, 0.004, 0.6));
+        noise(c, 0.7, 'lowpass', 1800, 90, envelope(c, 0.45, 0.004, 0.7));
+        noise(c, 0.4, 'bandpass', 3000, 600, envelope(c, 0.1, 0.01, 0.4), 2);
     },
 
     missileLaunch() {
@@ -1698,6 +1764,7 @@ const sounds = {
         setLooping(thrusterSound, false);
         setLooping(minigunSound, false);
         stopBeam();
+        stopTractor();
     }
 };
 
@@ -2432,7 +2499,7 @@ class Shipyard {
             const sell = el('button', 'sy-button small', 'Sell');
             sell.disabled = amount === 0 || !canTrade;
             sell.addEventListener('click', () => {
-                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* sellCargo */])(id);
+                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* sellCargo */])(id);
                 this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
                 this.refresh();
             });
@@ -2446,7 +2513,7 @@ class Shipyard {
         const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
         sellAll.disabled = total === 0 || !canTrade;
         sellAll.addEventListener('click', () => {
-            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* sellCargo */])();
+            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* sellCargo */])();
             this.flash('Cargo sold for ' + formatCredits(earned));
             this.refresh();
         });
@@ -2469,7 +2536,7 @@ class Shipyard {
                     : 'Full repair  ' + formatCredits(cost));
                 repair.disabled = affordable <= 0;
                 repair.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["o" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
                         this.options.repair(affordable);
                         this.flash('Hull repaired.');
                     }
@@ -2512,7 +2579,7 @@ class Shipyard {
             } else if(owned) {
                 action = el('button', 'sy-button small', 'Fly this');
                 action.addEventListener('click', () => {
-                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["l" /* selectHull */])(id);
+                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* selectHull */])(id);
                     this.selectedSlot = null;
                     this.refresh();
                 });
@@ -2631,7 +2698,7 @@ class Shipyard {
             const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatCredits(cost));
             upgrade.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < cost;
             upgrade.addEventListener('click', () => {
-                if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* upgradeModule */])(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
+                if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* upgradeModule */])(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
                 this.refresh();
             });
             actions.appendChild(upgrade);
@@ -2641,7 +2708,7 @@ class Shipyard {
 
         const sell = el('button', 'sy-button small danger', 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level)));
         sell.addEventListener('click', () => {
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* sellModule */])(hull.id, this.selectedSlot);
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["o" /* sellModule */])(hull.id, this.selectedSlot);
             this.refresh();
         });
         actions.appendChild(sell);
@@ -2963,6 +3030,8 @@ const menu = document.getElementById('menu');
 const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
 const shieldButton = document.getElementById('shieldButton');
+const cargoButton = document.getElementById('cargoButton');
+const cargoPanel = document.getElementById('cargoPanel');
 const hudElements = {
     credits: document.getElementById('credits'),
     location: document.getElementById('location'),
@@ -2973,7 +3042,8 @@ const hudElements = {
     shieldBar: document.getElementById('shieldBar'),
     shieldText: document.getElementById('shieldText'),
     cargoBar: document.getElementById('cargoBar'),
-    cargoText: document.getElementById('cargoText')
+    cargoText: document.getElementById('cargoText'),
+    cargoButton: document.getElementById('cargoButton')
 };
 
 const canvas = document.createElement('canvas');
@@ -3067,6 +3137,7 @@ const renderInfo = () => {
         }[shieldState];
     }
     setBar('cargoBar', used / ship.cargoCapacity);
+    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + ' (C)');
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
 
@@ -3199,8 +3270,14 @@ const bulletCollisions = () => {
 
             if(bullet.kind === 'plasma') {
                 // Staff blast: fiery splash that also scorches nearby rocks.
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 14, {
-                    minSpeed: 30, maxSpeed: 160, minLife: 0.2, maxLife: 0.5, size: 3, color: '255,170,60'
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 26, {
+                    minSpeed: 40, maxSpeed: 220, minLife: 0.25, maxLife: 0.7, size: 3.5, color: '255,170,60'
+                });
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 10, {
+                    minSpeed: 10, maxSpeed: 80, minLife: 0.15, maxLife: 0.35, size: 7, color: '255,240,200'
+                });
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 5, {
+                    minSpeed: 5, maxSpeed: 35, minLife: 1, maxLife: 2, size: 9, color: '120,100,90', dust: true, alpha: 0.25
                 });
                 rocks.forEach(other => {
                     if(other === rock || other.dead) return;
@@ -3450,6 +3527,41 @@ const shipCollisions = () => {
     });
 };
 
+// Atlantis city shield: asteroids bounce off it, ships, shots and ore pass through.
+const cityShield = (dt) => {
+    const R = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].shieldRadius;
+    state.rocks.forEach(rock => {
+        if(rock.dead) return;
+        const dx = rock.x - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x;
+        const dy = rock.y - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        const r = rock.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+        if(distance > R + r || distance < R - r - 40) return;
+
+        const nx = dx / distance;
+        const ny = dy / distance;
+        rock.x = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + nx * (R + r);
+        rock.y = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y + ny * (R + r);
+        const inward = rock.vx * nx + rock.vy * ny;
+        if(inward < 0) {
+            rock.vx -= 1.6 * inward * nx;
+            rock.vy -= 1.6 * inward * ny;
+            const strength = Math.min(1.5, 0.3 + -inward / 80 + r / 60);
+            __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.push({ angle: Math.atan2(ny, nx), life: 1, strength: strength });
+            if(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.length > 10) __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.shift();
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + nx * R, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y + ny * R, rock.vx * 0.3, rock.vy * 0.3, 10, {
+                minSpeed: 30, maxSpeed: 140, minLife: 0.2, maxLife: 0.6, size: 2.5, color: '170,220,255'
+            });
+            const sdx = state.ship.x - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - nx * R;
+            const sdy = state.ship.y - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - ny * R;
+            const near = 1 - Math.min(1, Math.sqrt(sdx * sdx + sdy * sdy) / 1400);
+            if(near > 0) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].cityShield(0.25 * near * strength);
+        }
+    });
+    __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.forEach(impact => { impact.life -= dt * 0.8; });
+    __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.filter(impact => impact.life > 0);
+};
+
 const collectOre = (dt) => {
     const ship = state.ship;
     const cargoFull = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])() >= ship.cargoCapacity;
@@ -3464,7 +3576,7 @@ const collectOre = (dt) => {
         if(shielded) {
             // Raised shields block the tractor beam and vaporise ore that touches them.
             ore.update(dt, ship, false);
-            const contact = ship.shieldContact(ore.x, ore.y, ore.radius);
+            const contact = ore.ejectTimer <= 0 && ship.shieldContact(ore.x, ore.y, ore.radius);
             if(contact) {
                 ore.dead = true;
                 ship.absorbOre(contact.x, contact.y);
@@ -3482,7 +3594,7 @@ const collectOre = (dt) => {
 
         if(!ore.update(dt, ship, !cargoFull)) return;
 
-        if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["p" /* storeOre */])(ore.material, ship.cargoCapacity)) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["q" /* storeOre */])(ore.material, ship.cargoCapacity)) {
             ore.dead = true;
             const material = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material];
             __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].pickup(material.price);
@@ -3524,6 +3636,16 @@ const step = (dt) => {
 
     state.rocks.forEach(rock => rock.update(dt));
     updateMerges(dt);
+    cityShield(dt);
+    bullets.forEach(bullet => {
+        if(bullet.kind === 'plasma' && Math.random() < 0.6) {
+            state.particles.push(new __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */]({
+                x: bullet.x, y: bullet.y,
+                vx: bullet.vx * 0.15 + (Math.random() - 0.5) * 40, vy: bullet.vy * 0.15 + (Math.random() - 0.5) * 40,
+                life: 0.2 + Math.random() * 0.25, size: 3, color: Math.random() < 0.5 ? '255,140,40' : '255,210,110'
+            }));
+        }
+    });
     bullets.forEach(bullet => bullet.update(dt));
     missiles.forEach(missile => missile.update(dt, state.rocks, particles));
     particles.forEach(particle => particle.update(dt));
@@ -3665,6 +3787,82 @@ const drawTargeting = (time) => {
         ctx.closePath();
         ctx.stroke();
     }
+    ctx.restore();
+};
+
+// Tractor beam: tapered energy beams from the emitter to every ore piece it holds,
+// with pulses flowing towards the ship and a pulsing range ring.
+const drawTractor = (time) => {
+    const ship = state.ship;
+    const held = state.ores.filter(ore => ore.tractored && !ore.dead);
+    state.tractorActive = held.length > 0;
+    if(!held.length || !ship.alive) return;
+
+    const emitter = ship.tractorEmitter();
+    const color = '120,255,230';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Range ring.
+    const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+    ctx.setLineDash([6, 10]);
+    ctx.lineDashOffset = -time * 30;
+    ctx.strokeStyle = 'rgba(' + color + ', ' + (0.12 + 0.1 * pulse) + ')';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(ship.x, ship.y, ship.magnetRange, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    held.forEach(ore => {
+        const dx = ore.x - emitter.x;
+        const dy = ore.y - emitter.y;
+        const length = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / length;
+        const ny = dx / length;
+        const wide = 7;   // beam spreads out towards the ore
+
+        const cone = ctx.createLinearGradient(emitter.x, emitter.y, ore.x, ore.y);
+        cone.addColorStop(0, 'rgba(' + color + ', 0.45)');
+        cone.addColorStop(1, 'rgba(' + color + ', 0.08)');
+        ctx.fillStyle = cone;
+        ctx.beginPath();
+        ctx.moveTo(emitter.x + nx * 1.5, emitter.y + ny * 1.5);
+        ctx.lineTo(ore.x + nx * wide, ore.y + ny * wide);
+        ctx.lineTo(ore.x - nx * wide, ore.y - ny * wide);
+        ctx.lineTo(emitter.x - nx * 1.5, emitter.y - ny * 1.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // Energy pulses travelling inwards.
+        ctx.setLineDash([3, 9]);
+        ctx.lineDashOffset = time * 70;
+        ctx.strokeStyle = 'rgba(210, 255, 245, 0.8)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(ore.x, ore.y);
+        ctx.lineTo(emitter.x, emitter.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Containment glow around the captured ore.
+        const glow = ctx.createRadialGradient(ore.x, ore.y, 0, ore.x, ore.y, 11);
+        glow.addColorStop(0, 'rgba(' + color + ', ' + (0.35 + 0.25 * pulse) + ')');
+        glow.addColorStop(1, 'rgba(' + color + ', 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(ore.x, ore.y, 11, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Emitter flare.
+    const flare = ctx.createRadialGradient(emitter.x, emitter.y, 0, emitter.x, emitter.y, 9);
+    flare.addColorStop(0, 'rgba(230, 255, 250, 0.9)');
+    flare.addColorStop(1, 'rgba(' + color + ', 0)');
+    ctx.fillStyle = flare;
+    ctx.beginPath();
+    ctx.arc(emitter.x, emitter.y, 9, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
 };
 
@@ -3858,6 +4056,7 @@ const render = () => {
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
     state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
+    drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
@@ -3887,6 +4086,64 @@ const render = () => {
     drawBanner();
 };
 
+// ---------------------------------------------------------------- cargo hold panel
+
+const ejectOre = (material, count) => {
+    if(!state || !state.ship.alive) return;
+    const ship = state.ship;
+    const removed = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["l" /* removeCargo */])(material, count);
+    const cos = Math.cos(ship.angle);
+    const sin = Math.sin(ship.angle);
+    const stern = ship.localToWorld(-ship.radius * 0.7, 0);
+    for(let i = 0; i < removed; i++) {
+        const spread = (Math.random() - 0.5) * 1.4;
+        const speed = 60 + Math.random() * 60;
+        const ore = new __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__["a" /* default */](stern.x + (Math.random() - 0.5) * 8, stern.y + (Math.random() - 0.5) * 8,
+            ship.vx - Math.cos(ship.angle + spread) * speed, ship.vy - Math.sin(ship.angle + spread) * speed, material);
+        ore.ejectTimer = 3;
+        state.ores.push(ore);
+    }
+    if(removed) {
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].pickup(1);
+        floatText(stern.x - cos * 10, stern.y - sin * 10, '-' + removed + ' ' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][material].name, '255,170,140');
+    }
+};
+
+const renderCargoPanel = () => {
+    if(!cargoPanel || cargoPanel.style.display === 'none') return;
+    const profile = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])();
+    const capacity = state ? state.ship.cargoCapacity : 0;
+    const used = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])();
+    let value = 0;
+
+    let html = '<div class="cargo-header"><span>Cargo hold</span><button data-close="1">×</button></div>' +
+        '<div class="cargo-capacity"><div class="cargo-capacity-fill" style="width:' +
+        Math.round(Math.min(1, used / Math.max(1, capacity)) * 100) + '%"></div></div>' +
+        '<div class="cargo-sub">' + used + ' / ' + capacity + ' units</div><table>';
+    __WEBPACK_IMPORTED_MODULE_7__world_materials__["a" /* MATERIAL_ORDER */].forEach(id => {
+        const amount = profile.cargo[id] || 0;
+        if(!amount) return;
+        const material = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][id];
+        value += amount * material.price;
+        html += '<tr><td><span class="swatch" style="background:rgb(' + material.color + ');box-shadow:0 0 6px rgb(' + material.color + ')"></span>' +
+            material.name + '</td><td>' + amount + '</td><td>' + (amount * material.price) + ' cr</td>' +
+            '<td><button data-eject="' + id + '" data-count="1">Eject 1</button>' +
+            '<button data-eject="' + id + '" data-count="all">All</button></td></tr>';
+    });
+    html += '</table>';
+    html += used ? '<div class="cargo-sub">Value at Atlantis: ' + value.toLocaleString('en-US') + ' cr</div>' +
+        '<button class="cargo-eject-all" data-eject="*">Eject everything</button>'
+        : '<div class="cargo-sub">The hold is empty. Lower shields (H) and fly near ore to collect it.</div>';
+    cargoPanel.innerHTML = html;
+};
+
+const toggleCargoPanel = (show) => {
+    if(!cargoPanel) return;
+    const visible = show === undefined ? cargoPanel.style.display === 'none' : show;
+    cargoPanel.style.display = visible ? '' : 'none';
+    renderCargoPanel();
+};
+
 // ---------------------------------------------------------------- loop & menus
 
 const freeze = (frozen) => {
@@ -3894,6 +4151,8 @@ const freeze = (frozen) => {
     __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = !frozen;
     document.body.classList.toggle('playing', !frozen);
     shieldButton.style.display = state && !frozen ? '' : 'none';
+    cargoButton.style.display = state && !frozen ? '' : 'none';
+    if(frozen) toggleCargoPanel(false);
     if(frozen) {
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
     } else {
@@ -3971,6 +4230,7 @@ const frame = (now) => {
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setThrust(state.ship.alive && state.ship.thrusting);
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setFiring(state.ship.alive && state.ship.minigunFiring);
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setBeam(state.ship.alive && state.ship.beaming);
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setTractor(state.ship.alive && !!state.tractorActive);
     }
 
     render();
@@ -4017,6 +4277,25 @@ const initialize = () => {
         return true;
     };
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
+
+    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyC', () => {
+        if(!state || state.paused) return false;
+        toggleCargoPanel();
+        return true;
+    });
+    cargoButton.addEventListener('click', () => { if(state && !state.paused) toggleCargoPanel(); });
+    cargoPanel.addEventListener('click', (event) => {
+        const button = event.target.closest('button');
+        if(!button) return;
+        if(button.dataset.close) toggleCargoPanel(false);
+        const material = button.dataset.eject;
+        if(material === '*') {
+            Object.keys(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().cargo).forEach(id => ejectOre(id, Infinity));
+        } else if(material) {
+            ejectOre(material, button.dataset.count === 'all' ? Infinity : 1);
+        }
+    });
+    Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["j" /* onProfileChange */])(() => renderCargoPanel());
     shieldButton.addEventListener('click', () => toggleShields());
 
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyB', () => {
@@ -4288,6 +4567,12 @@ class Ship {
     absorbOre(worldX, worldY) {
         this.shield = Math.max(0, this.shield - 0.25);
         this.shieldImpact(worldX, worldY, 0.35);
+    }
+
+    // Where the tractor beam comes from: the ore tractor module if fitted, else the hull centre.
+    tractorEmitter() {
+        const module = this.stats.modules.filter(m => m.type === 'magnet')[0];
+        return module ? this.localToWorld(module.slot.x, module.slot.y) : { x: this.x, y: this.y };
     }
 
     get thrusting() {
@@ -4597,9 +4882,19 @@ class Ship {
             dirX * speed, dirY * speed,
             stats.damage, 'plasma', stats.splash
         ));
-        this.vx -= dirX * RECOIL * 2 / this.stats.mass;
-        this.vy -= dirY * RECOIL * 2 / this.stats.mass;
-        turret.flash = 0.08;
+        this.vx -= dirX * RECOIL * 6 / this.stats.mass;
+        this.vy -= dirY * RECOIL * 6 / this.stats.mass;
+        turret.flash = 0.14;
+        // Plasma vented from the muzzle.
+        for(let i = 0; i < 8; i++) {
+            const a = turret.aim + (Math.random() - 0.5) * 1.2;
+            const v = 60 + Math.random() * 140;
+            world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: p.x + dirX * barrel, y: p.y + dirY * barrel,
+                vx: this.vx + Math.cos(a) * v, vy: this.vy + Math.sin(a) * v,
+                life: 0.15 + Math.random() * 0.2, size: 3, color: i % 2 ? '255,200,90' : '255,120,40'
+            }));
+        }
         __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].staffShot();
     }
 
@@ -5028,6 +5323,20 @@ class Ship {
             if(turret.flash > 0) {
                 const tip = 9 * u;
                 const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
+                if(turret.kind === 'staff') {
+                    // Large plasma bloom at the cannon mouth.
+                    const fx = Math.cos(turret.aim - this.angle) * tip;
+                    const fy = Math.sin(turret.aim - this.angle) * tip;
+                    const bloom = ctx.createRadialGradient(fx, fy, 0, fx, fy, 14 * turret.flash / 0.14 + 4);
+                    bloom.addColorStop(0, 'rgba(255, 245, 210, 0.95)');
+                    bloom.addColorStop(0.4, 'rgba(255, 160, 60, 0.7)');
+                    bloom.addColorStop(1, 'rgba(255, 90, 20, 0)');
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.fillStyle = bloom;
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, 18, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.fillStyle = 'rgba(' + color + ', 0.9)';
                 ctx.beginPath();
@@ -5066,7 +5375,7 @@ class Bullet {
         this.damage = damage || 1;
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
-        this.mass = this.kind === 'plasma' ? 30 : 4;
+        this.mass = this.kind === 'plasma' ? 60 : 4;
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }
@@ -5080,22 +5389,33 @@ class Bullet {
 
     draw(ctx) {
         if(this.kind === 'plasma') {
-            // Elongated glowing bolt with a hot core.
+            // Big staff-weapon bolt: a white-hot head inside an orange plasma envelope,
+            // stretched along its flight path and flickering.
             const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy) || 1;
             const dx = this.vx / speed;
             const dy = this.vy / speed;
+            const flicker = 0.85 + Math.random() * 0.3;
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.lineCap = 'round';
             ctx.shadowBlur = 0;
-            [[9, 'rgba(255, 120, 30, 0.25)', 16], [5, 'rgba(255, 170, 60, 0.7)', 12], [2.2, 'rgba(255, 245, 210, 0.95)', 8]].forEach(layer => {
-                ctx.lineWidth = layer[0];
+            [[16, 'rgba(255, 90, 20, 0.22)', 30], [10, 'rgba(255, 140, 40, 0.55)', 22], [5, 'rgba(255, 210, 120, 0.9)', 14],
+                [2.4, 'rgba(255, 255, 235, 1)', 8]].forEach(layer => {
+                ctx.lineWidth = layer[0] * flicker;
                 ctx.strokeStyle = layer[1];
                 ctx.beginPath();
                 ctx.moveTo(this.x - dx * layer[2], this.y - dy * layer[2]);
                 ctx.lineTo(this.x, this.y);
                 ctx.stroke();
             });
+            const head = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 14 * flicker);
+            head.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
+            head.addColorStop(0.35, 'rgba(255, 170, 60, 0.6)');
+            head.addColorStop(1, 'rgba(255, 90, 20, 0)');
+            ctx.fillStyle = head;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 14 * flicker, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
             return;
         }
@@ -5295,6 +5615,8 @@ class Ore {
         this.angle = Math.random() * Math.PI * 2;
         this.spin = (Math.random() - 0.5) * 4;
         this.radius = material === 'rock' ? 2.5 : 3.2;
+        this.ejectTimer = 0;      // freshly jettisoned ore can't be re-collected for a moment
+        this.tractored = false;   // currently held by the tractor beam (for the beam animation)
         this.dead = false;
     }
 
@@ -5302,8 +5624,10 @@ class Ore {
     update(dt, ship, canCollect) {
         this.life -= dt;
         if(this.life <= 0) this.dead = true;
+        if(this.ejectTimer > 0) this.ejectTimer -= dt;
+        this.tractored = false;
 
-        if(ship && ship.alive && canCollect) {
+        if(ship && ship.alive && canCollect && this.ejectTimer <= 0) {
             const dx = ship.x - this.x;
             const dy = ship.y - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
@@ -5311,6 +5635,7 @@ class Ore {
             if(distance < ship.collectRadius) return true;
 
             if(distance < ship.magnetRange) {
+                this.tractored = true;
                 // Steer towards the ship, matching its velocity as it closes in.
                 const pull = 900 * (1 - distance / ship.magnetRange) + 200;
                 this.vx += (dx / distance * pull + (ship.vx - this.vx) * 3) * dt;
@@ -5443,7 +5768,7 @@ const loadInputHandlers = () => {
     window.addEventListener('mousedown', (event) => {
         if(!input.enabled) return;
         // Clicking HUD buttons shouldn't fire the guns.
-        if(event.target && event.target.closest && event.target.closest('button')) return;
+        if(event.target && event.target.closest && event.target.closest('button, .cargo-panel')) return;
         if(event.button === 0) input.mouseDown = true;
         if(event.button === 2) input.rightMouseDown = true;
     });
@@ -5638,9 +5963,11 @@ class SectorManager {
 const STATION = {
     x: 0,
     y: 0,
-    dockRadius: 400,
+    dockRadius: 420,
     maxDockSpeed: 140,
-    spin: 0.012
+    spin: 0.012,
+    shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
+    impacts: []            // { angle, life, strength } ripples on the city shield
 };
 /* harmony export (immutable) */ __webpack_exports__["a"] = STATION;
 
@@ -5734,15 +6061,52 @@ const drawStation = (ctx, time, canDock) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Faint city shield dome.
-    const dome = ctx.createRadialGradient(0, 0, 200, 0, 0, 380);
+    // City shield dome with a slow shimmer and impact ripples.
+    const R = STATION.shieldRadius;
+    const shimmer = 0.85 + 0.15 * Math.sin(time * 1.7);
+    const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.9, 'rgba(120, 190, 255, 0.05)');
-    dome.addColorStop(1, 'rgba(120, 190, 255, 0.12)');
+    dome.addColorStop(0.85, 'rgba(120, 190, 255, ' + (0.05 * shimmer) + ')');
+    dome.addColorStop(1, 'rgba(140, 205, 255, ' + (0.16 * shimmer) + ')');
     ctx.fillStyle = dome;
     ctx.beginPath();
-    ctx.arc(0, 0, 380, 0, Math.PI * 2);
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(150, 210, 255, ' + (0.25 * shimmer) + ')';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    STATION.impacts.forEach(impact => {
+        const ix = Math.cos(impact.angle) * R;
+        const iy = Math.sin(impact.angle) * R;
+        const age = 1 - impact.life;
+        const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 30 + 50 * impact.strength);
+        flare.addColorStop(0, 'rgba(230, 245, 255, ' + (0.7 * impact.life) + ')');
+        flare.addColorStop(0.3, 'rgba(140, 200, 255, ' + (0.4 * impact.life) + ')');
+        flare.addColorStop(1, 'rgba(120, 190, 255, 0)');
+        ctx.fillStyle = flare;
+        ctx.fillRect(ix - 90, iy - 90, 180, 180);
+        ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+        ctx.lineWidth = 2.5 * impact.life + 0.5;
+        ctx.beginPath();
+        ctx.arc(ix, iy, 10 + age * 160, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.restore();
+
+    // Bright arc along the rim where it was struck.
+    STATION.impacts.forEach(impact => {
+        ctx.strokeStyle = 'rgba(200, 235, 255, ' + (0.8 * impact.life) + ')';
+        ctx.lineWidth = 3 * impact.life;
+        ctx.beginPath();
+        ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength, impact.angle + 0.25 * impact.strength);
+        ctx.stroke();
+    });
 
     ctx.rotate(time * STATION.spin);
     ctx.lineJoin = 'miter';
@@ -5857,7 +6221,7 @@ exports = module.exports = __webpack_require__(20)(undefined);
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n", ""]);
 
 // exports
 

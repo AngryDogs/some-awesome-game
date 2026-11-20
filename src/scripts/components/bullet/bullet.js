@@ -11,7 +11,7 @@ class Bullet {
         this.damage = damage || 1;
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
-        this.mass = this.kind === 'plasma' ? 30 : 4;
+        this.mass = this.kind === 'plasma' ? 60 : 4;
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }
@@ -25,22 +25,33 @@ class Bullet {
 
     draw(ctx) {
         if(this.kind === 'plasma') {
-            // Elongated glowing bolt with a hot core.
+            // Big staff-weapon bolt: a white-hot head inside an orange plasma envelope,
+            // stretched along its flight path and flickering.
             const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy) || 1;
             const dx = this.vx / speed;
             const dy = this.vy / speed;
+            const flicker = 0.85 + Math.random() * 0.3;
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.lineCap = 'round';
             ctx.shadowBlur = 0;
-            [[9, 'rgba(255, 120, 30, 0.25)', 16], [5, 'rgba(255, 170, 60, 0.7)', 12], [2.2, 'rgba(255, 245, 210, 0.95)', 8]].forEach(layer => {
-                ctx.lineWidth = layer[0];
+            [[16, 'rgba(255, 90, 20, 0.22)', 30], [10, 'rgba(255, 140, 40, 0.55)', 22], [5, 'rgba(255, 210, 120, 0.9)', 14],
+                [2.4, 'rgba(255, 255, 235, 1)', 8]].forEach(layer => {
+                ctx.lineWidth = layer[0] * flicker;
                 ctx.strokeStyle = layer[1];
                 ctx.beginPath();
                 ctx.moveTo(this.x - dx * layer[2], this.y - dy * layer[2]);
                 ctx.lineTo(this.x, this.y);
                 ctx.stroke();
             });
+            const head = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 14 * flicker);
+            head.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
+            head.addColorStop(0.35, 'rgba(255, 170, 60, 0.6)');
+            head.addColorStop(1, 'rgba(255, 90, 20, 0)');
+            ctx.fillStyle = head;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, 14 * flicker, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
             return;
         }
