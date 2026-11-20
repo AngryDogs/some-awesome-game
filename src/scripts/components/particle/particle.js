@@ -14,6 +14,7 @@ class Particle {
         this.color = options.color || '255,255,255';
         this.shrink = options.shrink !== false;
         this.dust = !!options.dust;
+        this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
         this.alpha = options.alpha === undefined ? 1 : options.alpha;
         this.attractor = options.attractor || null;
         this.swirl = options.swirl || 0;
@@ -33,6 +34,7 @@ class Particle {
                 size: options.size * (0.6 + Math.random() * 0.8),
                 color: options.color,
                 dust: options.dust,
+                solid: options.solid,
                 alpha: options.alpha
             }));
         }
@@ -92,6 +94,11 @@ class Particle {
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.size * (0.6 + 0.4 * (1 - t)), 0, Math.PI * 2);
             ctx.fill();
+            return;
+        }
+        if(this.solid) {
+            ctx.fillStyle = 'rgba(' + this.color + ',' + Math.min(1, t * 2).toFixed(2) + ')';
+            ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
             return;
         }
         const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;

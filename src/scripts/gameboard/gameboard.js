@@ -68,6 +68,7 @@ const createState = () => {
         ores: [],
         beamHits: [],
         shockwaves: [],
+        flashes: [],
         scan: { timer: 1, target: null, value: 0, pings: [] },
         mergeLinks: [],
         floatingTexts: [],
@@ -198,35 +199,95 @@ const applyGravity = (dt) => {
 };
 
 // Weapon damage chips the asteroid: area turns into ore, stress cracks chunks off.
-const hitRock = (rock, damage, hitX, hitY) => {
-    if(rock.dead) return;
-    const result = rock.chip(damage, hitX, hitY);
+const colorString = (c) => c.map(v => Math.round(v)).join(',');
 
-    const out = delta(rock, { x: hitX, y: hitY });
-    const outLength = Math.sqrt(out.x * out.x + out.y * out.y) || 1;
-    const outX = out.x / outLength;
-    const outY = out.y / outLength;
-
-    result.ore.forEach(material => {
-        const angle = Math.atan2(outY, outX) + (Math.random() - 0.5) * 1.6;
-        const speed = 30 + Math.random() * 60;
-        state.ores.push(new Ore(
-            rock.x + outX * rock.radius * 0.9,
-            rock.y + outY * rock.radius * 0.9,
-            rock.vx + Math.cos(angle) * speed,
-            rock.vy + Math.sin(angle) * speed,
-            material
-        ));
-    });
-
-    Particle.burst(state.particles, hitX, hitY, rock.vx + outX * 40, rock.vy + outY * 40, 2, {
-        minSpeed: 20, maxSpeed: 90, minLife: 0.2, maxLife: 0.5, size: 2, color: MATERIALS[rock.material].color
-    });
-    if(Math.random() < Math.min(1, damage * 0.6)) {
-        Particle.burst(state.particles, hitX, hitY, rock.vx + outX * 25, rock.vy + outY * 25, 1, {
-            minSpeed: 5, maxSpeed: 30, minLife: 0.8, maxLife: 1.6, size: 6, color: '170,160,150', dust: true, alpha: 0.25
-        });
+// Spawn particles in a cone around (dirX, dirY).
+const spray = (x, y, baseVx, baseVy, dirX, dirY, cone, count, options) => {
+    const angle = Math.atan2(dirY, dirX);
+    for(let i = 0; i < count; i++) {
+        const a = angle + (Math.random() - 0.5) * 2 * cone;
+        const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
+        state.particles.push(new Particle({
+            x: x, y: y,
+            vx: baseVx + Math.cos(a) * speed,
+            vy: baseVy + Math.sin(a) * speed,
+            life: options.minLife + Math.random() * (options.maxLife - options.minLife),
+            size: options.size * (0.6 + Math.random() * 0.8),
+            color: options.color,
+            dust: options.dust,
+            solid: options.solid,
+            alpha: options.alpha
+        }));
     }
+};
+
+const flash = (x, y, size, color, life) => {
+    state.flashes.push({ x: x, y: y, size: size, color: color, life: life || 0.12, maxLife: life || 0.12 });
+};
+
+// Weapon damage on an asteroid. The impact looks different on the soft dusty outside
+// (dust plume, grit, debris) and on the hard core (ricocheting sparks, hot fragments).
+// `inX, inY` is the incoming direction of the shot, `kind` the weapon type.
+const hitRock = (rock, damage, hitX, hitY, inX, inY, kind) => {
+    if(rock.dead) return;
+    const localAngle = Math.atan2(hitY - rock.y, hitX - rock.x) - rock.angle;
+    const normal = rock.normalAt(localAngle);
+    const result = rock.chip(damage, hitX, hitY);
+    const dust = colorString(rock.dustColor);
+    const intensity = Math.min(1.5, 0.4 + damage * 0.25);
+
+    // Incoming direction (default: straight into the surface) and its reflection.
+    let dx = inX === undefined ? -normal.x : inX;
+    let dy = inY === undefined ? -normal.y : inY;
+    const dl = Math.sqrt(dx * dx + dy * dy) || 1;
+    dx /= dl;
+    dy /= dl;
+    const dot = dx * normal.x + dy * normal.y;
+    const rx = dx - 2 * dot * normal.x;
+    const ry = dy - 2 * dot * normal.y;
+    const continuous = kind === 'beam';
+
+    if(result.hard) {
+        // Hard core: sparks skipping off the surface, a few glowing fragments, a bright flash.
+        if(!continuous || Math.random() < 0.5) {
+            spray(hitX, hitY, rock.vx, rock.vy, rx, ry, 0.6, continuous ? 2 : Math.round(5 + 4 * intensity), {
+                minSpeed: 140, maxSpeed: 360, minLife: 0.12, maxLife: 0.35, size: 1.8, color: '255,235,180'
+            });
+            spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.9, continuous ? 1 : 2, {
+                minSpeed: 40, maxSpeed: 120, minLife: 0.3, maxLife: 0.7, size: 2.4, color: '255,150,60'
+            });
+            flash(hitX, hitY, continuous ? 14 : 16 + 10 * intensity, '255,220,160', 0.08);
+        }
+    } else if(!continuous || Math.random() < 0.6) {
+        // Soft regolith: a puff of dust and grit kicked up off the surface, plus debris.
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.7, continuous ? 1 : Math.round(1 + intensity * 2), {
+            minSpeed: 15, maxSpeed: 60, minLife: 0.8, maxLife: 1.8, size: 7, color: dust, dust: true, alpha: 0.28
+        });
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 1, continuous ? 2 : Math.round(3 + 3 * intensity), {
+            minSpeed: 40, maxSpeed: 150, minLife: 0.3, maxLife: 0.8, size: 1.6, color: dust, solid: true
+        });
+        flash(hitX, hitY, continuous ? 8 : 10 + 6 * intensity, '255,230,200', 0.06);
+    }
+
+    // Ore pops out of the hole, flashing in its metal colour and trailing a glow.
+    result.ore.forEach(material => {
+        const color = MATERIALS[material].color;
+        const a = Math.atan2(normal.y, normal.x) + (Math.random() - 0.5) * 1.1;
+        const speed = 50 + Math.random() * 70;
+        const ore = new Ore(
+            hitX + normal.x * 3,
+            hitY + normal.y * 3,
+            rock.vx + Math.cos(a) * speed,
+            rock.vy + Math.sin(a) * speed,
+            material
+        );
+        ore.trail = 0.7;
+        state.ores.push(ore);
+        flash(hitX, hitY, 26, color, 0.2);
+        spray(hitX, hitY, rock.vx, rock.vy, Math.cos(a), Math.sin(a), 0.5, 4, {
+            minSpeed: 60, maxSpeed: 160, minLife: 0.2, maxLife: 0.45, size: 2, color: color
+        });
+    });
 
     if(result.pieces) {
         // Cut clean through: the two halves replace the asteroid, with dust along the cut.
@@ -305,7 +366,7 @@ const bulletCollisions = () => {
             const kick = Math.min(30, speed * bullet.mass / rock.mass);
             rock.vx += dirX * kick;
             rock.vy += dirY * kick;
-            hitRock(rock, bullet.damage, bullet.x, bullet.y);
+            hitRock(rock, bullet.damage, bullet.x, bullet.y, dirX, dirY, bullet.kind);
 
             if(bullet.kind === 'plasma') {
                 // Staff blast: fiery splash that also scorches nearby rocks.
@@ -323,11 +384,11 @@ const bulletCollisions = () => {
                     const ox = other.x - bullet.x;
                     const oy = other.y - bullet.y;
                     const reach = bullet.splash + other.radius;
-                    if(ox * ox + oy * oy < reach * reach) hitRock(other, bullet.damage * 0.5, bullet.x, bullet.y);
+                    if(ox * ox + oy * oy < reach * reach) hitRock(other, bullet.damage * 0.5, bullet.x, bullet.y, undefined, undefined, 'plasma');
                 });
                 sounds.plasmaImpact();
             } else {
-                sounds.rockHit();
+                sounds.rockHit(rock.isCoreExposed(Math.atan2(bullet.y - rock.y, bullet.x - rock.x) - rock.angle));
             }
             return;
         }
@@ -421,7 +482,16 @@ const startMerge = (a, b) => {
     const contactX = host.x + link.offsetX / distance * host.radius * VISUAL_RADIUS;
     const contactY = host.y + link.offsetY / distance * host.radius * VISUAL_RADIUS;
     Particle.mergeCloud(state.particles, contactX, contactY, host,
-        Math.round(12 + guest.radius), guest.radius * 1.1, '175,165,150');
+        Math.round(12 + guest.radius), guest.radius * 1.1, colorString(host.dustColor));
+    flash(contactX, contactY, 30 + guest.radius, '255,220,180', 0.25);
+    const nx = link.offsetX / distance;
+    const ny = link.offsetY / distance;
+    spray(contactX, contactY, host.vx, host.vy, -ny, nx, 0.6, 8, {
+        minSpeed: 20, maxSpeed: 90, minLife: 0.4, maxLife: 1, size: 2, color: colorString(host.dustColor), solid: true
+    });
+    spray(contactX, contactY, host.vx, host.vy, ny, -nx, 0.6, 8, {
+        minSpeed: 20, maxSpeed: 90, minLife: 0.4, maxLife: 1, size: 2, color: colorString(host.dustColor), solid: true
+    });
     sounds.merge(Math.sqrt(host.area + guest.area));
 };
 
@@ -508,7 +578,23 @@ const rockCollisions = () => {
 
             // Fresh fragments, busy pairs and oversized bodies just rest against each other.
             if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > MAX_MERGE_RADIUS) {
-                resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
+                const impact = resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
+                if(impact > 18) {
+                    // Grinding knock: grit and dust thrown out sideways from the contact.
+                    const cx = a.x + normalX * a.radius * VISUAL_RADIUS;
+                    const cy = a.y + normalY * a.radius * VISUAL_RADIUS;
+                    const dust = colorString(a.dustColor);
+                    spray(cx, cy, (a.vx + b.vx) / 2, (a.vy + b.vy) / 2, -normalY, normalX, 0.5, 4, {
+                        minSpeed: 20, maxSpeed: 40 + impact, minLife: 0.3, maxLife: 0.8, size: 1.8, color: dust, solid: true
+                    });
+                    spray(cx, cy, (a.vx + b.vx) / 2, (a.vy + b.vy) / 2, normalY, -normalX, 0.5, 4, {
+                        minSpeed: 20, maxSpeed: 40 + impact, minLife: 0.3, maxLife: 0.8, size: 1.8, color: dust, solid: true
+                    });
+                    spray(cx, cy, (a.vx + b.vx) / 2, (a.vy + b.vy) / 2, -normalY, normalX, Math.PI, 3, {
+                        minSpeed: 5, maxSpeed: 25, minLife: 1, maxLife: 2, size: 9, color: dust, dust: true, alpha: 0.22
+                    });
+                    flash(cx, cy, 20 + impact * 0.3, '255,225,190', 0.12);
+                }
                 continue;
             }
 
@@ -672,7 +758,7 @@ const step = (dt) => {
         const push = Math.min(0.6, 900 * hit.damage / hit.rock.mass);
         hit.rock.vx += hit.dirX * push;
         hit.rock.vy += hit.dirY * push;
-        hitRock(hit.rock, hit.damage, hit.x, hit.y);
+        hitRock(hit.rock, hit.damage, hit.x, hit.y, hit.dirX, hit.dirY, 'beam');
         if(Math.random() < 0.35) {
             Particle.burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
                 minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
@@ -690,6 +776,19 @@ const step = (dt) => {
         wave.radius += (wave.maxRadius - wave.radius) * Math.min(1, dt * 9);
     });
     state.shockwaves = state.shockwaves.filter(wave => wave.life > 0);
+    state.flashes.forEach(f => { f.life -= dt; });
+    state.flashes = state.flashes.filter(f => f.life > 0);
+    state.ores.forEach(ore => {
+        if(ore.trail > 0) {
+            ore.trail -= dt;
+            if(Math.random() < 0.7) {
+                state.particles.push(new Particle({
+                    x: ore.x, y: ore.y, vx: ore.vx * 0.2, vy: ore.vy * 0.2,
+                    life: 0.25 + Math.random() * 0.2, size: 2, color: MATERIALS[ore.material].color
+                }));
+            }
+        }
+    });
     updateScanner(dt);
     cityShield(dt);
     bullets.forEach(bullet => {
@@ -1096,6 +1195,18 @@ const drawScannerPointer = () => {
     ctx.restore();
 };
 
+const drawFlashes = () => {
+    if(!state.flashes.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    state.flashes.forEach(f => {
+        const t = f.life / f.maxLife;
+        ctx.globalAlpha = t;
+        stamp(ctx, glowSprite(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
+    });
+    ctx.restore();
+};
+
 const drawShockwaves = () => {
     if(!state.shockwaves.length) return;
     ctx.save();
@@ -1328,37 +1439,39 @@ const render = () => {
     // Merging guests are drawn first so they sink beneath their host.
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
-    state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if((particle.dust || particle.solid) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    state.particles.forEach(particle => { if(!particle.dust && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if(!particle.dust && !particle.solid && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
-    // Kinetic rounds are batched into one path and stroked twice (soft halo + bright core)
-    // instead of using an expensive blur per bullet.
+    // Kinetic tracers: a long faint orange tail, a yellow body and a short white-hot
+    // head, each batched into one path (cheap even with hundreds of rounds in flight).
     ctx.save();
     ctx.lineCap = 'round';
-    ctx.beginPath();
-    state.bullets.forEach(bullet => {
-        if(bullet.kind !== 'bullet') return;
-        ctx.moveTo(bullet.x - bullet.vx * 0.012, bullet.y - bullet.vy * 0.012);
-        ctx.lineTo(bullet.x, bullet.y);
+    ctx.globalCompositeOperation = 'lighter';
+    [[0.034, 3.4, 'rgba(255, 140, 50, 0.22)'], [0.018, 2.2, 'rgba(255, 210, 120, 0.6)'], [0.007, 1.5, 'rgba(255, 255, 240, 1)']].forEach(layer => {
+        ctx.beginPath();
+        state.bullets.forEach(bullet => {
+            if(bullet.kind !== 'bullet') return;
+            const age = Math.min(1, (1.4 - bullet.life) * 12);   // tracer grows out of the muzzle
+            ctx.moveTo(bullet.x - bullet.vx * layer[0] * age, bullet.y - bullet.vy * layer[0] * age);
+            ctx.lineTo(bullet.x, bullet.y);
+        });
+        ctx.lineWidth = layer[1];
+        ctx.strokeStyle = layer[2];
+        ctx.stroke();
     });
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.lineWidth = 5;
-    ctx.stroke();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.8;
-    ctx.stroke();
     ctx.restore();
     state.bullets.forEach(bullet => { if(bullet.kind !== 'bullet') bullet.draw(ctx); });
 
     state.missiles.forEach(missile => missile.draw(ctx));
     drawShockwaves();
+    drawFlashes();
     drawScanner(time);
     state.ship.draw(ctx);
     drawFloatingTexts();

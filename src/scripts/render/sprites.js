@@ -66,6 +66,35 @@ export const flameSprite = (color, core) => {
     return cache[key];
 };
 
+// Muzzle flash: a hot core with a long forward spike and short side spikes (pointing +x).
+export const muzzleSprite = (color) => {
+    const key = 'muzzle:' + color;
+    if(!cache[key]) {
+        cache[key] = createSprite(64, 32, ctx => {
+            ctx.translate(16, 16);
+            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 14);
+            glow.addColorStop(0, 'rgba(255, 255, 240, 1)');
+            glow.addColorStop(0.4, 'rgba(' + color + ', 0.7)');
+            glow.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(-16, -16, 32, 32);
+            ctx.fillStyle = 'rgba(255, 250, 230, 0.95)';
+            ctx.beginPath();
+            ctx.moveTo(-2, -2.5); ctx.lineTo(46, 0); ctx.lineTo(-2, 2.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = 'rgba(' + color + ', 0.8)';
+            [[0, -14], [0, 14], [10, -9], [10, 9]].forEach(p => {
+                ctx.beginPath();
+                ctx.moveTo(-1, 0); ctx.lineTo(p[0], p[1]); ctx.lineTo(3, 0);
+                ctx.closePath();
+                ctx.fill();
+            });
+        }, 1);
+    }
+    return cache[key];
+};
+
 // Stamp a sprite centred at (x, y) with the given size.
 export const stamp = (ctx, sprite, x, y, width, height) => {
     ctx.drawImage(sprite.canvas, x - width / 2, y - height / 2, width, height);

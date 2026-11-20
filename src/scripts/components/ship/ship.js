@@ -2,7 +2,7 @@ import Bullet from '../bullet/bullet';
 import Missile from '../missile/missile';
 import Particle from '../particle/particle';
 import { drawHullArt, shieldFor, hullBounds } from '../../shipyard/hulls';
-import { createSprite, glowSprite, flameSprite, stamp } from '../../render/sprites';
+import { createSprite, glowSprite, flameSprite, muzzleSprite, stamp } from '../../render/sprites';
 import MODULES, { drawModule } from '../../shipyard/modules';
 import { delta } from '../../physics/physics';
 import sounds from '../../audio/audio';
@@ -13,8 +13,8 @@ const SECONDARY_THRUST = 0.55;    // retro / strafe thrust relative to main engi
 const MAX_SPEED = 600;            // px/s, safety cap only
 const MASS_UNIT = 300;            // physics mass per hull mass point
 
-const BULLET_SPEED = 850;
-const BULLET_SPREAD = 0.035;
+const BULLET_SPEED = 1100;
+const BULLET_SPREAD = 0.022;
 const PLASMA_SPEED = 520;
 const RECOIL = 3.5;               // px/s per bullet for a mass-1 hull
 const TURRET_TURN_RATE = 14;      // rad/s
@@ -583,6 +583,13 @@ class Ship {
         this.vy -= dirY * recoil;
         turret.flash = 0.04;
         sounds.minigunShot();
+        if(Math.random() < 0.35) {
+            world.particles.push(new Particle({
+                x: p.x + Math.cos(turret.aim) * barrel, y: p.y + Math.sin(turret.aim) * barrel,
+                vx: this.vx + dirX * 30 + (Math.random() - 0.5) * 20, vy: this.vy + dirY * 30 + (Math.random() - 0.5) * 20,
+                life: 0.5 + Math.random() * 0.4, size: 4, color: '190,190,200', dust: true, alpha: 0.18
+            }));
+        }
 
         // Each round adds enough heat to outpace cooling, so sustained fire
         // overheats after `heatShots` rounds.
@@ -943,7 +950,22 @@ class Ship {
                 ctx.lineTo(beam.x2, beam.y2);
                 ctx.stroke();
             });
-            if(beam.hit) stamp(ctx, glowSprite('120,190,255'), beam.x2, beam.y2, 34, 34);
+            // Energy pulses racing down the beam.
+            ctx.setLineDash([6, 14]);
+            ctx.lineDashOffset = -this.time * 900;
+            ctx.lineWidth = 3 * this.hullDef.moduleScale;
+            ctx.strokeStyle = 'rgba(220, 245, 255, 0.6)';
+            ctx.beginPath();
+            ctx.moveTo(beam.x1, beam.y1);
+            ctx.lineTo(beam.x2, beam.y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            stamp(ctx, glowSprite('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
+            if(beam.hit) {
+                // Molten contact point.
+                stamp(ctx, glowSprite('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
+                stamp(ctx, glowSprite('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
+            }
             ctx.restore();
         });
     }
@@ -991,12 +1013,11 @@ class Ship {
                     const bloom = 16 + 20 * turret.flash / 0.14;
                     stamp(ctx, glowSprite('255,150,50'), fx, fy, bloom, bloom);
                 }
+                // Star-shaped muzzle flash pointing down the barrel, flickering in size.
                 ctx.globalCompositeOperation = 'lighter';
-                ctx.fillStyle = 'rgba(' + color + ', 0.9)';
-                ctx.beginPath();
-                ctx.arc(Math.cos(turret.aim - this.angle) * tip, Math.sin(turret.aim - this.angle) * tip,
-                    (2 + Math.random() * 3) * Math.max(1, u), 0, Math.PI * 2);
-                ctx.fill();
+                ctx.rotate(turret.aim - this.angle);
+                const flashSize = (turret.kind === 'staff' ? 30 : 18 + Math.random() * 10) * Math.max(0.8, u);
+                ctx.drawImage(muzzleSprite(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
             }
             ctx.restore();
         });

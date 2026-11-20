@@ -14,7 +14,12 @@ class Ore {
         this.life = ORE_LIFETIME;
         this.angle = Math.random() * Math.PI * 2;
         this.spin = (Math.random() - 0.5) * 4;
-        this.radius = material === 'rock' ? 2.5 : 3.2;
+        this.radius = material === 'rock' ? 2.8 : 3.4;
+        this.trail = 0;
+        this.phase = Math.random() * Math.PI * 2;
+        // Irregular faceted nugget outline.
+        this.facets = [];
+        for(let i = 0; i < 6; i++) this.facets.push(0.7 + Math.random() * 0.45);
         this.ejectTimer = 0;      // freshly jettisoned ore can't be re-collected for a moment
         this.tractored = false;   // currently held by the tractor beam (for the beam animation)
         this.dead = false;
@@ -51,25 +56,50 @@ class Ore {
 
     draw(ctx, time) {
         const color = MATERIALS[this.material].color;
+        const rgb = color.split(',').map(Number);
         const r = this.radius;
-        const pulse = 0.7 + 0.3 * Math.sin(time * 5 + this.angle * 3);
+        const sparkle = Math.sin(time * 3 + this.phase);
 
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-        // Soft halo then the crystal itself (cheaper than a canvas blur).
-        ctx.fillStyle = 'rgba(' + color + ',' + (0.22 * pulse).toFixed(2) + ')';
+
+        // Soft halo in the metal colour.
+        ctx.fillStyle = 'rgba(' + color + ', ' + (0.16 + 0.08 * sparkle).toFixed(2) + ')';
         ctx.beginPath();
-        ctx.arc(0, 0, r * 2.2, 0, Math.PI * 2);
+        ctx.arc(0, 0, r * 2.4, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = 'rgba(' + color + ',' + pulse.toFixed(2) + ')';
+
+        // Faceted nugget: dark body, lit facet, bright edge.
+        ctx.rotate(this.angle);
         ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(0, r * 0.8);
-        ctx.lineTo(-r, 0);
-        ctx.lineTo(0, -r * 0.8);
+        this.facets.forEach((f, i) => {
+            const a = i / 6 * Math.PI * 2;
+            if(i === 0) ctx.moveTo(Math.cos(a) * r * f, Math.sin(a) * r * f);
+            else ctx.lineTo(Math.cos(a) * r * f, Math.sin(a) * r * f);
+        });
+        ctx.closePath();
+        ctx.fillStyle = 'rgb(' + rgb.map(v => Math.round(v * 0.55)).join(',') + ')';
+        ctx.fill();
+        ctx.fillStyle = 'rgb(' + color + ')';
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(0) * r * this.facets[0], 0);
+        ctx.lineTo(Math.cos(Math.PI / 3) * r * this.facets[1], Math.sin(Math.PI / 3) * r * this.facets[1]);
+        ctx.lineTo(0, 0);
+        ctx.lineTo(Math.cos(-Math.PI / 3) * r * this.facets[5], Math.sin(-Math.PI / 3) * r * this.facets[5]);
         ctx.closePath();
         ctx.fill();
+
+        // Occasional glint.
+        if(sparkle > 0.85) {
+            const s = (sparkle - 0.85) / 0.15 * r * 2.2;
+            ctx.rotate(-this.angle);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(-s, 0); ctx.lineTo(s, 0);
+            ctx.moveTo(0, -s); ctx.lineTo(0, s);
+            ctx.stroke();
+        }
         ctx.restore();
     }
 }
