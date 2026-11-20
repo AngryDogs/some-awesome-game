@@ -576,3 +576,37 @@ body.playing canvas {
     margin-right: 8px;
     transform: rotate(45deg);
 }
+
+/* ---------------------------------------------------------------- Shield toggle */
+
+.shield-button {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    font-family: Bungee, sans-serif;
+    font-size: 13px;
+    padding: 6px 16px;
+    color: #dff4ff;
+    background: rgba(10, 30, 60, 0.75);
+    border: 1px solid rgba(120, 210, 255, 0.8);
+    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);
+    cursor: pointer;
+}
+
+.shield-button.down {
+    color: #ffd9a0;
+    border-color: rgba(255, 190, 110, 0.8);
+    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);
+}
+
+.shield-button.depleted {
+    color: #ff9c8a;
+    border-color: rgba(255, 110, 90, 0.8);
+    box-shadow: none;
+}
+
+.shield-button.none {
+    opacity: 0.5;
+}

@@ -229,6 +229,28 @@ const sounds = {
         tone(c, 'triangle', 2400, 600, 0.2, envelope(c, 0.08, 0.002, 0.2));
     },
 
+    shieldUp() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        tone(c, 'sine', 180, 900, 0.5, envelope(c, 0.16, 0.02, 0.5));
+        tone(c, 'triangle', 360, 1800, 0.45, envelope(c, 0.06, 0.02, 0.45));
+    },
+
+    shieldDown() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        tone(c, 'sine', 900, 120, 0.45, envelope(c, 0.14, 0.01, 0.45));
+        noise(c, 0.4, 'bandpass', 2000, 300, envelope(c, 0.05, 0.01, 0.4), 2);
+    },
+
+    // Ore burning up against raised shields.
+    oreZap() {
+        const c = throttle('oreZap', 0.05);
+        if(!c) return;
+        tone(c, 'square', 2400, 900, 0.07, envelope(c, 0.035, 0.001, 0.07));
+        noise(c, 0.08, 'highpass', 5000, 3000, envelope(c, 0.04, 0.001, 0.08));
+    },
+
     hullHit() {
         const c = throttle('hull', 0.1);
         if(!c) return;

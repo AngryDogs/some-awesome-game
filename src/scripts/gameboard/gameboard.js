@@ -1,5 +1,5 @@
 import Ship from '../components/ship/ship';
-import { MAX_MERGE_RADIUS } from '../components/rock/rock';
+import { MAX_MERGE_RADIUS, VISUAL_RADIUS } from '../components/rock/rock';
 import Particle from '../components/particle/particle';
 import Ore from '../components/ore/ore';
 import loadInputHandlers, { input, onKeyPress } from '../components/ship/handlers';
@@ -26,6 +26,7 @@ const gameboard = document.getElementById('gameboard');
 const menu = document.getElementById('menu');
 const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
+const shieldButton = document.getElementById('shieldButton');
 const hudElements = {
     credits: document.getElementById('credits'),
     location: document.getElementById('location'),
@@ -51,7 +52,7 @@ let fps = 60;
 const hud = {};
 
 const createState = () => {
-    const ship = new Ship(STATION.x + STATION.dockRadius + 60, STATION.y, computeShipStats(getProfile().hull));
+    const ship = new Ship(STATION.x + STATION.dockRadius + 80, STATION.y, computeShipStats(getProfile().hull));
     ship.angle = 0;
     return {
         ship: ship,
@@ -62,7 +63,7 @@ const createState = () => {
         particles: [],
         ores: [],
         beamHits: [],
-        mergeGhosts: [],
+        mergeLinks: [],
         floatingTexts: [],
         sectors: new SectorManager(getProfile().seed),
         sectorTimer: 0,
@@ -71,6 +72,7 @@ const createState = () => {
         bannerText: 'Undocked. Happy mining!',
         bannerTimer: 2.5,
         cargoFullTimer: 0,
+        shieldHintTimer: 0,
         canDock: false,
         gameOverTimer: 0,
         paused: false,
@@ -120,6 +122,14 @@ const renderInfo = () => {
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
     setText('shieldText', ship.maxShield ? Math.ceil(ship.shield) + ' / ' + Math.round(ship.maxShield) : 'none');
+    const shieldState = ship.maxShield <= 0 ? 'none' : (ship.shieldsEnabled ? (ship.shieldUp ? 'up' : 'depleted') : 'down');
+    if(hud.shieldState !== shieldState) {
+        hud.shieldState = shieldState;
+        shieldButton.className = 'shield-button ' + shieldState;
+        shieldButton.textContent = {
+            none: 'No shields', up: 'Shields: UP (H)', depleted: 'Shields: DEPLETED', down: 'Shields: DOWN (H)'
+        }[shieldState];
+    }
     setBar('cargoBar', used / ship.cargoCapacity);
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
@@ -325,9 +335,102 @@ const missileCollisions = () => {
     });
 };
 
-// Asteroids pulled together by gravity merge into one when they touch.
+// Asteroids pulled together by gravity fuse when they touch: they lock together,
+// share momentum, and the smaller one gradually sinks into the bigger one.
+const startMerge = (a, b) => {
+    const host = a.area >= b.area ? a : b;
+    const guest = host === a ? b : a;
+
+    const total = a.mass + b.mass;
+    const vx = (a.vx * a.mass + b.vx * b.mass) / total;
+    const vy = (a.vy * a.mass + b.vy * b.mass) / total;
+    a.vx = b.vx = vx;
+    a.vy = b.vy = vy;
+    guest.spin = host.spin;
+
+    const link = {
+        host: host,
+        guest: guest,
+        t: 0,
+        duration: 1.1 + guest.radius * 0.02,
+        hostArea: host.area,
+        guestArea: guest.area,
+        offsetX: guest.x - host.x,
+        offsetY: guest.y - host.y,
+        dustTimer: 0
+    };
+    host.merging = link;
+    guest.merging = link;
+    state.mergeLinks.push(link);
+
+    const distance = Math.sqrt(link.offsetX * link.offsetX + link.offsetY * link.offsetY) || 1;
+    const contactX = host.x + link.offsetX / distance * host.radius * VISUAL_RADIUS;
+    const contactY = host.y + link.offsetY / distance * host.radius * VISUAL_RADIUS;
+    Particle.mergeCloud(state.particles, contactX, contactY, host,
+        Math.round(12 + guest.radius), guest.radius * 1.1, '175,165,150');
+    sounds.merge(Math.sqrt(host.area + guest.area));
+};
+
+const updateMerges = (dt) => {
+    state.mergeLinks.forEach(link => {
+        const host = link.host;
+        const guest = link.guest;
+        if(host.dead || guest.dead) {
+            host.merging = null;
+            guest.merging = null;
+            link.done = true;
+            return;
+        }
+
+        link.t += dt;
+        const p = Math.min(1, link.t / link.duration);
+        const k = p * p * (3 - 2 * p);   // smoothstep
+
+        // Stay attached while the pair tumbles together.
+        const turn = host.spin * dt;
+        const cos = Math.cos(turn);
+        const sin = Math.sin(turn);
+        const ox = link.offsetX * cos - link.offsetY * sin;
+        const oy = link.offsetX * sin + link.offsetY * cos;
+        link.offsetX = ox;
+        link.offsetY = oy;
+
+        guest.x = host.x + ox * (1 - 0.85 * k);
+        guest.y = host.y + oy * (1 - 0.85 * k);
+        guest.vx = host.vx;
+        guest.vy = host.vy;
+
+        // Mass flows from the guest into the host.
+        const target = link.guestArea * (1 - k);
+        const moved = Math.max(0, guest.area - target);
+        guest.setArea(Math.min(guest.area, target));
+        host.setArea(host.area + moved);
+
+        // Dust squeezed out along the seam, drawn back onto the surface.
+        link.dustTimer -= dt;
+        if(link.dustTimer <= 0 && p < 0.9) {
+            link.dustTimer = 0.06;
+            const distance = Math.sqrt(ox * ox + oy * oy) || 1;
+            const along = (Math.random() - 0.5) * 1.2;
+            const angle = Math.atan2(oy, ox) + along;
+            const seamX = host.x + Math.cos(angle) * host.radius * VISUAL_RADIUS;
+            const seamY = host.y + Math.sin(angle) * host.radius * VISUAL_RADIUS;
+            Particle.mergeCloud(state.particles, seamX, seamY, host, 2, guest.radius * 0.4 + 4, '170,160,148');
+            if(distance < 1) link.dustTimer = 1;
+        }
+
+        if(p >= 1) {
+            host.finishMerge(guest, link.hostArea, link.guestArea, Math.atan2(oy, ox));
+            guest.dead = true;
+            host.merging = null;
+            link.done = true;
+        }
+    });
+    state.mergeLinks = state.mergeLinks.filter(link => !link.done);
+};
+
 const rockCollisions = () => {
-    const { rocks, particles } = state;
+    const { rocks } = state;
 
     for(let i = 0; i < rocks.length; i++) {
         const a = rocks[i];
@@ -336,10 +439,11 @@ const rockCollisions = () => {
         for(let j = i + 1; j < rocks.length; j++) {
             const b = rocks[j];
             if(b.dead) continue;
+            if(a.merging && a.merging === b.merging) continue;
 
             const dx = b.x - a.x;
             const dy = b.y - a.y;
-            const reach = (a.radius + b.radius) * 0.9;
+            const reach = (a.radius + b.radius) * VISUAL_RADIUS;
             const distSq = dx * dx + dy * dy;
             if(distSq > reach * reach) continue;
 
@@ -348,31 +452,14 @@ const rockCollisions = () => {
             const normalY = dy / distance;
             const combinedRadius = Math.sqrt(a.area + b.area);
 
-            // Fresh fragments and asteroids that would get too big just bump.
-            if(a.grace > 0 || b.grace > 0 || combinedRadius > MAX_MERGE_RADIUS) {
+            // Fresh fragments, busy pairs and oversized bodies just rest against each other.
+            if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > MAX_MERGE_RADIUS) {
                 resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
                 continue;
             }
 
-            const contactX = a.x + normalX * a.radius;
-            const contactY = a.y + normalY * a.radius;
-            const bigger = a.area >= b.area ? a : b;
-            const smaller = bigger === a ? b : a;
-            bigger.merge(smaller);
-
-            // The smaller body sinks into the bigger one while a dust cloud
-            // billows out and swirls back in, settling on the surface.
-            state.mergeGhosts.push({
-                rock: smaller, host: bigger, life: 0.9, maxLife: 0.9,
-                offsetX: smaller.x - bigger.x, offsetY: smaller.y - bigger.y
-            });
-            Particle.mergeCloud(particles, contactX, contactY, bigger,
-                Math.round(14 + smaller.radius * 1.2), smaller.radius * 1.3, '175,165,150');
-            Particle.burst(particles, contactX, contactY, bigger.vx, bigger.vy, 8, {
-                minSpeed: 10, maxSpeed: 60, minLife: 0.3, maxLife: 0.7, size: 2, color: '230,215,190'
-            });
-            sounds.merge(bigger.radius);
-            if(a.dead) break;
+            startMerge(a, b);
+            break;
         }
     }
 };
@@ -383,18 +470,35 @@ const shipCollisions = () => {
 
     rocks.forEach(rock => {
         if(rock.dead) return;
+        const rockRadius = rock.radius * VISUAL_RADIUS;
 
-        // Broad phase against the whole hull first.
+        // Broad phase against the whole ship first.
         const center = delta(ship, rock);
-        const reach = ship.radius + rock.radius;
+        const reach = ship.radius * 1.5 + rockRadius;
         if(center.x * center.x + center.y * center.y > reach * reach) return;
+
+        // Raised shields: asteroids bounce off the bubble, never reaching the hull.
+        if(ship.shieldUp) {
+            const contact = ship.shieldContact(rock.x, rock.y, rockRadius);
+            if(!contact) return;
+            const impactSpeed = resolveImpact(ship, rock, contact.nx, contact.ny, contact.overlap, SHIP_RESTITUTION);
+            if(impactSpeed > 15) {
+                const damage = 2 + impactSpeed * rock.mass / 6000;
+                ship.takeDamage(damage, particles, contact.x, contact.y);
+                Particle.burst(particles, contact.x, contact.y, rock.vx, rock.vy, 6, {
+                    minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2,
+                    color: ship.hullDef.shieldColor || '120,210,255'
+                });
+            }
+            return;
+        }
 
         const colliders = ship.worldColliders();
         for(let i = 0; i < colliders.length; i++) {
             const c = colliders[i];
             const d = delta(c, rock);
             const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
-            const overlap = c.r + rock.radius * 0.85 - distance;
+            const overlap = c.r + rockRadius - distance;
             if(overlap <= 0) continue;
 
             const impactSpeed = resolveImpact(ship, rock, d.x / distance, d.y / distance, overlap, SHIP_RESTITUTION);
@@ -414,9 +518,32 @@ const collectOre = (dt) => {
     const ship = state.ship;
     const cargoFull = cargoUsed() >= ship.cargoCapacity;
     if(state.cargoFullTimer > 0) state.cargoFullTimer -= dt;
+    if(state.shieldHintTimer > 0) state.shieldHintTimer -= dt;
+
+    const shielded = ship.shieldUp;
 
     state.ores.forEach(ore => {
         if(ore.dead) return;
+
+        if(shielded) {
+            // Raised shields block the tractor beam and vaporise ore that touches them.
+            ore.update(dt, ship, false);
+            const contact = ship.shieldContact(ore.x, ore.y, ore.radius);
+            if(contact) {
+                ore.dead = true;
+                ship.absorbOre(contact.x, contact.y);
+                Particle.burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 5, {
+                    minSpeed: 20, maxSpeed: 90, minLife: 0.15, maxLife: 0.35, size: 2, color: MATERIALS[ore.material].color
+                });
+                sounds.oreZap();
+                if(state.shieldHintTimer <= 0) {
+                    state.shieldHintTimer = 8;
+                    banner('Shields up: ore burns up! Lower shields (H) to collect.', 2.5);
+                }
+            }
+            return;
+        }
+
         if(!ore.update(dt, ship, !cargoFull)) return;
 
         if(storeOre(ore.material, ship.cargoCapacity)) {
@@ -457,19 +584,10 @@ const step = (dt) => {
         sounds.beamImpact();
     });
     state.beamHits = [];
-    state.mergeGhosts.forEach(ghost => {
-        ghost.life -= dt;
-        const t = Math.max(0, ghost.life / ghost.maxLife);
-        ghost.rock.x = ghost.host.x + ghost.offsetX * t;
-        ghost.rock.y = ghost.host.y + ghost.offsetY * t;
-        ghost.rock.angle += ghost.rock.spin * dt;
-        ghost.rock.renderScale = 0.25 + 0.75 * t;
-        ghost.rock.renderAlpha = t;
-    });
-    state.mergeGhosts = state.mergeGhosts.filter(ghost => ghost.life > 0);
     applyGravity(dt);
 
     state.rocks.forEach(rock => rock.update(dt));
+    updateMerges(dt);
     bullets.forEach(bullet => bullet.update(dt));
     missiles.forEach(missile => missile.update(dt, state.rocks, particles));
     particles.forEach(particle => particle.update(dt));
@@ -800,8 +918,9 @@ const render = () => {
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
     visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
-    state.mergeGhosts.forEach(ghost => ghost.rock.draw(ctx, time));
-    visibleRocks.forEach(rock => rock.draw(ctx, time));
+    // Merging guests are drawn first so they sink beneath their host.
+    visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
+    visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
     state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
@@ -838,6 +957,7 @@ const freeze = (frozen) => {
     input.reset();
     input.enabled = !frozen;
     document.body.classList.toggle('playing', !frozen);
+    shieldButton.style.display = state && !frozen ? '' : 'none';
     if(frozen) {
         sounds.stopAll();
     } else {
@@ -949,6 +1069,19 @@ const initialize = () => {
         banner('Auto-targeting ' + (state.ship.autoTarget ? 'ON' : 'OFF'), 1.2);
         return true;
     });
+
+    const toggleShields = () => {
+        if(!state || state.paused || !state.ship.alive) return false;
+        if(state.ship.maxShield <= 0) {
+            banner('No shield emitter fitted', 1.2);
+            return true;
+        }
+        state.ship.toggleShields();
+        banner(state.ship.shieldsEnabled ? 'Shields raised' : 'Shields lowered: ore collection enabled', 1.4);
+        return true;
+    };
+    onKeyPress('KeyH', toggleShields);
+    shieldButton.addEventListener('click', () => toggleShields());
 
     onKeyPress('KeyB', () => {
         if(!state || state.paused || !state.canDock) return false;

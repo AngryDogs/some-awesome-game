@@ -1,7 +1,7 @@
 import Bullet from '../bullet/bullet';
 import Missile from '../missile/missile';
 import Particle from '../particle/particle';
-import { drawHullArt } from '../../shipyard/hulls';
+import { drawHullArt, shieldFor } from '../../shipyard/hulls';
 import MODULES, { drawModule } from '../../shipyard/modules';
 import { delta } from '../../physics/physics';
 import sounds from '../../audio/audio';
@@ -84,6 +84,9 @@ class Ship {
         this.salvoCooldown = 0;
         this.nextLauncher = 0;
         this.missileLock = null;
+        this.shieldsEnabled = true;
+        this.shieldLevel = 0;         // animated 0..1 power level of the bubble
+        this.shieldImpacts = [];
 
         // Animated thruster output levels (0..1), eased towards their targets.
         this.thrusters = { main: 0, retro: 0, left: 0, right: 0, spinCW: 0, spinCCW: 0 };
@@ -152,6 +155,74 @@ class Ship {
         };
     }
 
+    get shieldUp() {
+        return this.shieldsEnabled && this.alive && this.maxShield > 0 && this.shield > 0.5;
+    }
+
+    toggleShields() {
+        if(this.maxShield <= 0) return false;
+        this.shieldsEnabled = !this.shieldsEnabled;
+        if(this.shieldsEnabled) sounds.shieldUp();
+        else sounds.shieldDown();
+        return true;
+    }
+
+    // Converts a world point into shield-ellipse space.
+    shieldLocal(worldX, worldY) {
+        const s = shieldFor(this.hullDef);
+        const cos = Math.cos(-this.angle);
+        const sin = Math.sin(-this.angle);
+        const dx = worldX - this.x;
+        const dy = worldY - this.y;
+        return { x: dx * cos - dy * sin - s.x, y: dx * sin + dy * cos - s.y, s: s };
+    }
+
+    // Circle vs shield-ellipse contact. Returns the outward normal (world space),
+    // overlap depth and contact point, or null when not touching.
+    shieldContact(worldX, worldY, radius) {
+        const l = this.shieldLocal(worldX, worldY);
+        const s = l.s;
+        const k = Math.sqrt((l.x / s.rx) * (l.x / s.rx) + (l.y / s.ry) * (l.y / s.ry)) || 0.0001;
+        const length = Math.sqrt(l.x * l.x + l.y * l.y) || 0.0001;
+        const gap = length * (1 - 1 / k);
+        const overlap = radius - gap;
+        if(overlap <= 0) return null;
+
+        const px = l.x / k;
+        const py = l.y / k;
+        let nx = px / (s.rx * s.rx);
+        let ny = py / (s.ry * s.ry);
+        const n = Math.sqrt(nx * nx + ny * ny) || 1;
+        nx /= n;
+        ny /= n;
+
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        const contact = this.localToWorld(px + s.x, py + s.y);
+        return {
+            nx: nx * cos - ny * sin,
+            ny: nx * sin + ny * cos,
+            overlap: overlap,
+            x: contact.x,
+            y: contact.y
+        };
+    }
+
+    // Ripple on the shield where something struck it.
+    shieldImpact(worldX, worldY, strength) {
+        const l = this.shieldLocal(worldX, worldY);
+        const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
+        this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
+        if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
+        this.shieldFlash = Math.max(this.shieldFlash, 0.1 * strength);
+    }
+
+    // Ore that hits raised shields burns up and costs a sliver of shield energy.
+    absorbOre(worldX, worldY) {
+        this.shield = Math.max(0, this.shield - 0.25);
+        this.shieldImpact(worldX, worldY, 0.35);
+    }
+
     get thrusting() {
         const t = this.thrusters;
         return t.main > 0.2 || t.retro > 0.2 || t.left > 0.2 || t.right > 0.2 ||
@@ -190,6 +261,10 @@ class Ship {
         if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
             this.shield = Math.min(this.maxShield, this.shield + this.stats.shieldRegen * dt);
         }
+        const targetLevel = this.shieldUp ? 1 : 0;
+        this.shieldLevel += (targetLevel - this.shieldLevel) * Math.min(1, dt * (targetLevel ? 3 : 5));
+        this.shieldImpacts.forEach(impact => { impact.life -= dt * 1.4; });
+        this.shieldImpacts = this.shieldImpacts.filter(impact => impact.life > 0);
 
         this.fly(dt, input, world.particles);
         this.updateTargeting(input, world.rocks);
@@ -606,17 +681,19 @@ class Ship {
     }
 
     // Returns true if damage was applied.
-    takeDamage(amount, particles) {
+    takeDamage(amount, particles, hitX, hitY) {
         if(!this.alive || this.hitCooldown > 0 || this.immunity > 0) return false;
 
         this.hitCooldown = HIT_COOLDOWN;
         this.sinceHit = 0;
 
-        const absorbed = Math.min(this.shield, amount);
+        // Lowered shields don't absorb anything.
+        const absorbed = this.shieldUp ? Math.min(this.shield, amount) : 0;
         this.shield -= absorbed;
         const remaining = amount - absorbed;
         if(absorbed > 0) {
             this.shieldFlash = 0.25;
+            if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
             sounds.shieldHit();
         }
 
@@ -723,22 +800,100 @@ class Ship {
         ctx.restore();
     }
 
+    // Hexagon lattice for the shield surface, cached per hull.
+    shieldLattice(radius) {
+        const key = Math.round(radius);
+        if(this.latticeKey === key) return this.lattice;
+        const path = new Path2D();
+        const size = 7;
+        const w = size * Math.sqrt(3);
+        for(let row = -Math.ceil(radius / (size * 1.5)); row <= Math.ceil(radius / (size * 1.5)); row++) {
+            for(let col = -Math.ceil(radius / w) - 1; col <= Math.ceil(radius / w) + 1; col++) {
+                const cx = col * w + (row % 2 ? w / 2 : 0);
+                const cy = row * size * 1.5;
+                if(cx * cx + cy * cy > (radius + size) * (radius + size)) continue;
+                for(let i = 0; i < 6; i++) {
+                    const a1 = Math.PI / 6 + i * Math.PI / 3;
+                    const a2 = a1 + Math.PI / 3;
+                    path.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                    path.lineTo(cx + Math.cos(a2) * size, cy + Math.sin(a2) * size);
+                }
+            }
+        }
+        this.latticeKey = key;
+        this.lattice = path;
+        return path;
+    }
+
     drawShield(ctx) {
-        if(this.maxShield <= 0 || this.shield <= 0) return;
-        const s = this.hullDef.shield;
-        const strength = this.shield / this.maxShield;
-        const alpha = 0.1 + 0.2 * strength + Math.max(0, this.shieldFlash) * 2.5;
+        const level = this.shieldLevel;
+        if(this.maxShield <= 0 || level < 0.01) return;
+
+        const s = shieldFor(this.hullDef);
         const color = this.hullDef.shieldColor || '120,210,255';
+        const strength = Math.max(0.15, this.shield / this.maxShield);
+        // Bubble expands outwards when powering up and collapses when lowered.
+        const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
+        const rx = s.rx * grow;
+        const squash = s.ry / s.rx;
+        const flash = Math.max(0, this.shieldFlash) * 3;
+        const t = this.time;
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, alpha) + ')';
-        ctx.fillStyle = 'rgba(' + color + ', ' + Math.min(0.25, alpha * 0.25) + ')';
-        ctx.lineWidth = 1.2;
+        ctx.translate(s.x, s.y);
+        ctx.scale(1, squash);   // draw the ellipse as a circle in squashed space
+
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
+        body.addColorStop(0, 'rgba(' + color + ', 0)');
+        body.addColorStop(0.8, 'rgba(' + color + ', ' + (0.05 * level * strength) + ')');
+        body.addColorStop(1, 'rgba(' + color + ', ' + Math.min(0.5, (0.2 + flash * 0.3) * level * strength) + ')');
+        ctx.fillStyle = body;
+        ctx.fill();
+
+        ctx.save();
+        ctx.clip();
+
+        // Lattice with a bright scan band sweeping across it.
+        const sweep = Math.sin(t * 1.3) * rx;
+        const band = ctx.createLinearGradient(sweep - rx * 0.5, -rx, sweep + rx * 0.5, rx);
+        band.addColorStop(0, 'rgba(' + color + ', ' + (0.03 * level) + ')');
+        band.addColorStop(0.5, 'rgba(' + color + ', ' + ((0.16 + flash * 0.3) * level * strength) + ')');
+        band.addColorStop(1, 'rgba(' + color + ', ' + (0.03 * level) + ')');
+        ctx.strokeStyle = band;
+        ctx.lineWidth = 0.6;
+        ctx.stroke(this.shieldLattice(rx));
+
+        // Impact ripples: a hot flare at the hit point and a ring spreading across the bubble.
+        ctx.globalCompositeOperation = 'lighter';
+        this.shieldImpacts.forEach(impact => {
+            const ix = impact.x * grow;
+            const iy = impact.y * grow / squash;
+            const age = 1 - impact.life;
+            const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 10 + 30 * impact.strength);
+            flare.addColorStop(0, 'rgba(255, 255, 255, ' + (0.8 * impact.life * impact.strength) + ')');
+            flare.addColorStop(0.3, 'rgba(' + color + ', ' + (0.5 * impact.life) + ')');
+            flare.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = flare;
+            ctx.fillRect(ix - 50, iy - 50, 100, 100);
+
+            ctx.strokeStyle = 'rgba(' + color + ', ' + (0.7 * impact.life) + ')';
+            ctx.lineWidth = 2 * impact.life + 0.5;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 4 + age * rx * 0.9, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
+
+        // Rim.
+        const shimmer = 0.75 + 0.25 * Math.sin(t * 3);
+        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, (0.3 + flash) * shimmer * level * (0.4 + 0.6 * strength)) + ')';
+        ctx.lineWidth = 1.4;
         ctx.shadowBlur = 10;
         ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
-        ctx.ellipse(s.x, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
     }

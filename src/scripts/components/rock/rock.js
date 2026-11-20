@@ -11,7 +11,8 @@ const MIN_SPLIT_RADIUS = 16;      // only asteroids at least this big break apar
 const SPLIT_GRACE = 1.2;          // seconds a fresh fragment won't merge
 const MAX_SCARS = 10;
 const SHAPE_POINTS = 30;
-export const MAX_MERGE_RADIUS = 110;
+export const MAX_MERGE_RADIUS = 170;
+export const VISUAL_RADIUS = 0.88;   // average outline radius relative to `radius`
 
 // Light comes from the top-left of the screen for every asteroid.
 const LIGHT_X = -0.55;
@@ -68,6 +69,7 @@ class Rock {
         this.oreProgress = 0;
         this.dead = false;
         this.renderScale = 1;
+        this.merging = null;          // active merge link while two asteroids fuse
         this.renderAlpha = 1;
         this.scars = [];
         this.shape = options.shape || randomShape(rnd);
@@ -257,38 +259,51 @@ class Rock {
         return fragment;
     }
 
-    // Absorb another asteroid: area, momentum, spin and composition combine.
-    merge(other) {
-        const total = this.area + other.area;
-        const wa = this.area / total;
-        const wb = other.area / total;
-
-        this.x = this.x * wa + other.x * wb;
-        this.y = this.y * wa + other.y * wb;
-        this.vx = this.vx * wa + other.vx * wb;
-        this.vy = this.vy * wa + other.vy * wb;
-        this.spin = this.spin * wa + other.spin * wb;
+    // Completes a merge after `guest` has fully sunk in: blend composition by the
+    // original masses and reshape the outline so the result reads as one lumpy body.
+    finishMerge(guest, hostArea, guestArea, contactWorldAngle) {
+        const total = hostArea + guestArea;
+        const wa = hostArea / total;
+        const wb = guestArea / total;
 
         const composition = {};
-        [[this, wa], [other, wb]].forEach(pair => {
+        [[this, wa], [guest, wb]].forEach(pair => {
             Object.keys(pair[0].composition).forEach(id => {
                 composition[id] = (composition[id] || 0) + pair[0].composition[id] * pair[1];
             });
         });
         this.composition = normalizeComposition(composition);
-        this.setArea(total);
-        this.oreProgress += other.oreProgress;
+        this.oreProgress += guest.oreProgress;
+        this.spin = this.spin * wa + guest.spin * wb;
 
-        // The impact rounds things out a little and adds a crater where they met.
-        this.shape.forEach(p => { p.factor = Math.min(1, p.factor + 0.05); });
-        const contact = Math.atan2(other.y - this.y, other.x - this.x) - this.angle;
-        this.craters.push({
-            x: Math.cos(contact) * 0.5, y: Math.sin(contact) * 0.5,
-            r: Math.min(0.3, 0.1 + wb * 0.4), squash: 0.6, tilt: contact
+        // Bulge where the guest joined, with a flattened seam either side.
+        const contact = contactWorldAngle - this.angle;
+        const bulge = Math.min(0.35, Math.sqrt(wb) * 0.45);
+        this.shape.forEach(p => {
+            let diff = Math.abs(p.angle - contact) % (Math.PI * 2);
+            if(diff > Math.PI) diff = Math.PI * 2 - diff;
+            if(diff < 0.9) {
+                const w = Math.cos(diff / 0.9 * Math.PI / 2);
+                p.factor = Math.min(1.08, p.factor + bulge * w * w);
+            } else if(diff < 1.4) {
+                p.factor = Math.max(0.6, p.factor - bulge * 0.25);
+            }
         });
-        if(this.craters.length > 12) this.craters.shift();
+
+        // Carry over some of the guest's surface features near the seam.
+        guest.craters.slice(0, 3).forEach(c => {
+            this.craters.push({
+                x: Math.cos(contact) * 0.55 + c.x * Math.sqrt(wb) * 0.6,
+                y: Math.sin(contact) * 0.55 + c.y * Math.sqrt(wb) * 0.6,
+                r: c.r * Math.sqrt(wb), squash: c.squash, tilt: c.tilt
+            });
+        });
+        this.cracks.push([[Math.cos(contact + 0.6) * 0.5, Math.sin(contact + 0.6) * 0.5],
+            [Math.cos(contact) * 0.45, Math.sin(contact) * 0.45],
+            [Math.cos(contact - 0.6) * 0.5, Math.sin(contact - 0.6) * 0.5]]);
+        if(this.craters.length > 14) this.craters.splice(0, this.craters.length - 14);
+        if(this.cracks.length > 6) this.cracks.shift();
         this.updateLook();
-        other.dead = true;
     }
 
     update(dt) {

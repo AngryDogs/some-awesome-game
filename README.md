@@ -23,7 +23,8 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Guns | Left click / Space |
 | Missiles | Right click / F |
 | Toggle auto-targeting | G (needs a targeting computer) |
-| Dock at the shipyard | B (inside the dashed ring, slowly) |
+| Dock at Atlantis (shipyard) | B (inside the dashed ring, slowly) |
+| Shields on / off | H (or the button at the top of the screen) |
 | Pause | Esc |
 
 ## Mining
@@ -33,15 +34,18 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 - Asteroids contain rock, iron, copper, titanium, gold and naquadah. Valuable metals appear further from base.
 - Shooting chips an asteroid down and breaks chunks off. The chipped material floats free as ore.
   Fly near it to scoop it into your cargo hold.
-- Asteroids pull on each other with gravity based on their size, and merge when they collide.
-- Dock at the shipyard (B) to sell ore in the Market tab and repair your hull.
+- Asteroids pull on each other with gravity based on their size. When they touch they lock together
+  and the smaller one gradually sinks into the bigger one in a cloud of dust.
+- Shields protect the hull, but while they're up the tractor beam is offline and ore that touches them
+  burns up (costing a little shield energy). Lower shields (H) to collect ore.
+- Dock at Atlantis (B) to sell ore in the Market tab and repair your hull.
   If your ship is destroyed, the cargo is lost.
 
 ## Shipyard
 
 Spend credits on:
 
-- **Hulls**: X-302, X-303, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields.
+- **Hulls**: F-302, X-303, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields.
 - **Modules** placed on mounts by drag & drop (or select one and click a mount):
   minigun turrets, Goa'uld staff cannons, Asgard ion beams, missile pods, Ancient drone launchers,
   sublight engines, shield emitters, targeting computers, cargo pods, ore tractors and armor.

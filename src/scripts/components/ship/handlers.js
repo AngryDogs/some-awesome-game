@@ -82,6 +82,8 @@ const loadInputHandlers = () => {
 
     window.addEventListener('mousedown', (event) => {
         if(!input.enabled) return;
+        // Clicking HUD buttons shouldn't fire the guns.
+        if(event.target && event.target.closest && event.target.closest('button')) return;
         if(event.button === 0) input.mouseDown = true;
         if(event.button === 2) input.rightMouseDown = true;
     });

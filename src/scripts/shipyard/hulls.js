@@ -6,7 +6,7 @@
 // engines:   built-in main engine nozzles (flames are drawn here)
 // colliders: circles approximating the hull for asteroid collisions
 // jets:      manoeuvring jet positions on the hull edges (mirrored to both sides)
-// shield:    shield bubble ellipse
+// The shield bubble is computed from the line art so it always encloses the whole ship.
 
 const mirror = (pts) => pts.map(p => [p[0], -p[1]]);
 const rect = (x1, y1, x2, y2) => ({ rect: [x1, y1, x2, y2] });
@@ -31,12 +31,13 @@ const grid = (x0, y0, cols, rows, w, h, gap) => {
 const HULLS = {
     x302: {
         id: 'x302',
-        name: 'X-302',
+        name: 'F-302',
         className: 'Interceptor',
         faction: "Tau'ri",
-        description: 'Nimble starter fighter. Few mounts, tiny cargo hold, very agile.',
+        description: 'Nimble starter fighter with swept wings and twin nacelles. Few mounts, tiny cargo hold.',
         cost: 0,
         color: '225,235,255',
+        exhaust: '255,160,80',
         mass: 1,
         hull: 60,
         baseShield: 0,
@@ -45,26 +46,30 @@ const HULLS = {
         torque: 9,
         maxTurn: 5,
         moduleScale: 0.6,
-        radius: 20,
+        radius: 28,
         art: [
-            { closed: true, pts: [[20, 0], [15, -3], [-14, -3], [-16, -2], [-16, 2], [-14, 3], [15, 3]] },
-            { closed: true, pts: [[6, -3], [-5, -14], [-12, -14], [-10, -3]] },
-            { closed: true, pts: mirror([[6, -3], [-5, -14], [-12, -14], [-10, -3]]) },
-            rect(12, -1.5, 6, 1.5),
-            line(-2, -3, -2, 3),
-            ...mirrorRect(2, -3, -9, -5),
-            ...mirrorLine(-6, -9, -11, -9)
+            // Big swept wings.
+            { closed: true, pts: [[13, -3.4], [-18, -26], [-21.5, -26], [-21.5, -24.5], [-4, -9], [-6, -3.6]] },
+            { closed: true, pts: mirror([[13, -3.4], [-18, -26], [-21.5, -26], [-21.5, -24.5], [-4, -9], [-6, -3.6]]) },
+            ...mirrorLine(8, -5.5, -17, -23),
+            ...mirrorRect(-18.5, -24.5, -20.5, -22.5),
+            // Outer pods and inner engine nacelles.
+            ...mirrorRect(-6, -11.5, -20, -8.5), ...mirrorRect(-20, -11, -21.5, -9),
+            ...mirrorRect(3, -7.5, -22, -4), ...mirrorRect(-22, -7, -24, -4.5),
+            // Fuselage and canopy.
+            { closed: true, pts: symmetric([[21, 0], [17, -2], [12, -3.4], [-14, -3.6], [-20, -3]]) },
+            { closed: true, pts: symmetric([[15, 0], [11, -1.6], [6, -1.6]]) },
+            line(1, -3.4, 1, 3.4), line(-10, -3.6, -10, 3.6)
         ],
         slots: [
-            { id: 'c', x: -8, y: 0 },
-            { id: 'wl', x: -7, y: -10 },
-            { id: 'wr', x: -7, y: 10 }
+            { id: 'c', x: -6, y: 0 },
+            { id: 'wl', x: -10, y: -15 },
+            { id: 'wr', x: -10, y: 15 }
         ],
-        engines: [{ x: -16, y: -1.5, size: 0.6 }, { x: -16, y: 1.5, size: 0.6 }],
-        colliders: [[10, 0, 6], [-4, 0, 7], [-8, -9, 6], [-8, 9, 6]],
-        jets: { retro: [[12, 2.6]], side: [[-8, 14]], bow: [15, 2.5], stern: [-14, 3] },
-        jetScale: 0.9,
-        shield: { x: -1, rx: 24, ry: 20 }
+        engines: [{ x: -24, y: -5.75, size: 0.6 }, { x: -24, y: 5.75, size: 0.6 }, { x: -21.5, y: -10, size: 0.4 }, { x: -21.5, y: 10, size: 0.4 }],
+        colliders: [[12, 0, 5], [0, 0, 6], [-12, 0, 6], [-12, -12, 6], [-12, 12, 6], [-18, -21, 4], [-18, 21, 4]],
+        jets: { retro: [[14, 3]], side: [[-20, 26]], bow: [16, 2], stern: [-22, 8] },
+        jetScale: 0.9
     },
 
     x303: {
@@ -72,9 +77,10 @@ const HULLS = {
         name: 'X-303',
         className: 'Prometheus-class',
         faction: "Tau'ri",
-        description: 'First Earth battlecruiser. Boxy hull, raised bridge and twin engine pods.',
+        description: 'First Earth battlecruiser: narrow forward hull, wide rear section and two big engine nacelles.',
         cost: 2500,
         color: '205,225,255',
+        exhaust: '255,160,80',
         mass: 3,
         hull: 160,
         baseShield: 0,
@@ -85,32 +91,37 @@ const HULLS = {
         moduleScale: 0.9,
         radius: 50,
         art: [
-            { closed: true, pts: [[46, -3], [40, -10], [-36, -10], [-36, 10], [40, 10], [46, 3]] },
-            ...mirrorRect(-12, -14, -46, -21),
-            ...mirrorRect(-18, -10, -24, -14),
-            ...mirrorRect(-34, -10, -40, -14),
-            ...mirrorRect(-46, -15.5, -49, -19.5),
-            rect(-36, -5, -41, 5),
-            rect(12, -5, -6, 5),
-            rect(8, -2.5, -2, 2.5),
-            line(34, -10, 34, 10), line(20, -10, 20, 10), line(-20, -10, -20, 10),
-            ...mirrorLine(40, -6, 22, -6),
-            ...mirrorLine(-14, -17.5, -44, -17.5)
+            // Engine nacelles with chevron intakes.
+            { closed: true, pts: [[-1, -15.5], [-6, -19.5], [-43, -19.5], [-46, -17], [-46, -14], [-43, -11.5], [-6, -11.5]] },
+            { closed: true, pts: mirror([[-1, -15.5], [-6, -19.5], [-43, -19.5], [-46, -17], [-46, -14], [-43, -11.5], [-6, -11.5]]) },
+            ...mirrorLine(-10, -15.5, -40, -15.5),
+            ...mirrorLine(-36, -19.5, -36, -11.5), ...mirrorLine(-40, -19.5, -40, -11.5),
+            ...mirrorRect(-46, -18, -48.5, -13),
+            // Rear section.
+            { closed: true, pts: symmetric([[-4, -13], [-40, -13], [-46, -8], [-46, 0]]) },
+            rect(-46, -4, -48.5, 4),
+            // Forward hull.
+            { closed: true, pts: symmetric([[46, 0], [40, -4], [36, -10], [-4, -10]]) },
+            line(32, -10, 32, 10), line(20, -10, 20, 10), line(8, -10, 8, 10),
+            ...mirrorLine(36, -5, 8, -5),
+            // Arrow-shaped central superstructure with hangar.
+            { closed: true, pts: symmetric([[4, 0], [-6, -8], [-38, -8]]) },
+            ...mirrorLine(-10, -4.5, -34, -4.5),
+            rect(-14, -2, -28, 2)
         ],
         slots: [
-            { id: 'bow', x: 28, y: 0 },
-            { id: 'bridge', x: 3, y: 0 },
-            { id: 'ml', x: -14, y: -5 },
-            { id: 'mr', x: -14, y: 5 },
-            { id: 'nl', x: -29, y: -17.5 },
-            { id: 'nr', x: -29, y: 17.5 }
+            { id: 'bow', x: 34, y: 0 },
+            { id: 'bridge', x: 14, y: 0 },
+            { id: 'ml', x: -20, y: -6 },
+            { id: 'mr', x: -20, y: 6 },
+            { id: 'nl', x: -24, y: -15.5 },
+            { id: 'nr', x: -24, y: 15.5 }
         ],
-        engines: [{ x: -49, y: -17.5, size: 1 }, { x: -49, y: 17.5, size: 1 }, { x: -41, y: 0, size: 0.8 }],
-        colliders: row([40, 26, 12, -2, -16, -30], 0, 10)
-            .concat(row([-18, -30, -42], -17.5, 5), row([-18, -30, -42], 17.5, 5)),
-        jets: { retro: [[40, 9]], side: [[26, 10], [-30, 21]], bow: [42, 6], stern: [-44, 21] },
-        jetScale: 1.3,
-        shield: { x: -1, rx: 58, ry: 34 }
+        engines: [{ x: -48.5, y: -15.5, size: 1 }, { x: -48.5, y: 15.5, size: 1 }, { x: -48.5, y: 0, size: 0.7 }],
+        colliders: row([40, 30, 18, 6], 0, 9)
+            .concat(row([-8, -20, -32, -42], 0, 12), row([-6, -18, -30, -42], -15.5, 4.5), row([-6, -18, -30, -42], 15.5, 4.5)),
+        jets: { retro: [[36, 10], [-2, 15.5]], side: [[20, 10], [-30, 19.5]], bow: [42, 4], stern: [-44, 19.5] },
+        jetScale: 1.3
     },
 
     x304: {
@@ -175,7 +186,6 @@ const HULLS = {
             .concat(row([-14, -28, -42, -56], -30, 8), row([-14, -28, -42, -56], 30, 8)),
         jets: { retro: [[40, 11], [-8, 30]], side: [[22, 12], [-36, 38]], bow: [56, 7], stern: [-60, 38] },
         jetScale: 1.5,
-        shield: { x: -2, rx: 78, ry: 50 }
     },
 
     hatak: {
@@ -224,7 +234,6 @@ const HULLS = {
         jetScale: 1.8,
         exhaust: '255,190,90',
         shieldColor: '255,200,120',
-        shield: { x: 2, rx: 64, ry: 58 }
     },
 
     asgard: {
@@ -276,14 +285,13 @@ const HULLS = {
         jetScale: 1.5,
         exhaust: '140,220,255',
         shieldColor: '150,230,255',
-        shield: { x: 2, rx: 90, ry: 46 }
     },
     aurora: {
         id: 'aurora',
         name: 'Aurora',
         className: 'Ancient warship',
         faction: 'Ancient',
-        description: 'Lantean battleship. Fastest drive, powerful shields and ten mounts. Built for drone weapons.',
+        description: 'Lantean battleship: pointed bow, blocky drone module and broad rear wings. Fastest drive, ten mounts.',
         cost: 25000,
         color: '240,220,160',
         exhaust: '130,200,255',
@@ -296,39 +304,47 @@ const HULLS = {
         torque: 3.4,
         maxTurn: 2.4,
         moduleScale: 1,
-        radius: 90,
+        radius: 92,
         art: [
-            { closed: true, pts: symmetric([[88, 0], [72, -9], [44, -14], [26, -30], [-6, -30], [-16, -12],
-                [-56, -12], [-74, -26], [-86, -26], [-80, -9], [-88, -6], [-88, 0]]) },
-            { closed: true, pts: symmetric([[40, -11], [24, -25], [-4, -25], [-10, -11]]) },
-            line(80, 0, 40, 0), line(-10, 0, -84, 0),
-            ...mirrorLine(72, -9, 44, -9),
-            ...mirrorLine(-56, -12, -76, -23),
-            ...mirrorRect(10, -21, -2, -14),
-            ...mirrorLine(-20, -12, -20, -6), ...mirrorLine(-36, -12, -36, -6),
-            { circle: [16, 0, 6] },
-            { circle: [16, 0, 2.5] },
-            rect(-88, -6, -91, -2), rect(-88, 2, -91, 6),
-            ...mirrorRect(-86, -25, -89, -19)
+            // Broad rear wing blocks.
+            { closed: true, pts: [[-58, -9], [-60, -28], [-66, -30], [-82, -30], [-85, -26], [-85, -9]] },
+            { closed: true, pts: mirror([[-58, -9], [-60, -28], [-66, -30], [-82, -30], [-85, -26], [-85, -9]]) },
+            ...mirrorRect(-64, -26, -80, -13),
+            ...mirrorLine(-64, -19.5, -80, -19.5),
+            ...mirrorRect(-85, -26, -87.5, -20),
+            // Fins on the spine.
+            { closed: true, pts: [[-29, -8], [-31, -20], [-35, -21], [-37, -8]] },
+            { closed: true, pts: mirror([[-29, -8], [-31, -20], [-35, -21], [-37, -8]]) },
+            // Main hull: bow, forward module, mid-body, spine and stern.
+            { closed: true, pts: symmetric([[88, 0], [74, -4], [50, -14], [47, -17], [22, -17], [19, -19.5], [-12, -19.5],
+                [-17, -15], [-17, -8], [-58, -8], [-60, -9], [-87, -9], [-89, -5], [-89, 0]]) },
+            line(80, 0, 50, 0), line(-17, 0, -84, 0),
+            ...mirrorLine(74, -4, 50, -4),
+            line(47, -17, 47, 17), line(22, -17, 22, 17),
+            ...mirrorRect(42, -14, 26, -8),
+            rect(14, -15, -12, 15),
+            line(14, -15, -12, 15), line(-12, -15, 14, 15),
+            { circle: [1, 0, 5] },
+            ...mirrorLine(-40, -8, -40, -3), ...mirrorLine(-50, -8, -50, -3),
+            rect(-89, -5, -92, -1), rect(-89, 1, -92, 5)
         ],
         slots: [
-            { id: 'nose', x: 64, y: 0 },
-            { id: 'fwd', x: 40, y: 0 },
-            { id: 'pl', x: 14, y: -18 },
-            { id: 'pr', x: 14, y: 18 },
-            { id: 'core', x: 0, y: 0 },
-            { id: 'mid', x: -28, y: 0 },
-            { id: 'aft', x: -50, y: 0 },
-            { id: 'fl', x: -74, y: -19 },
-            { id: 'fr', x: -74, y: 19 },
-            { id: 'tail', x: -76, y: 0 }
+            { id: 'nose', x: 66, y: 0 },
+            { id: 'fwd', x: 34, y: 0 },
+            { id: 'pl', x: 34, y: -11 },
+            { id: 'pr', x: 34, y: 11 },
+            { id: 'core', x: 1, y: 0 },
+            { id: 'mid', x: -26, y: 0 },
+            { id: 'aft', x: -48, y: 0 },
+            { id: 'fl', x: -72, y: -20 },
+            { id: 'fr', x: -72, y: 20 },
+            { id: 'tail', x: -78, y: 0 }
         ],
-        engines: [{ x: -91, y: -4, size: 1.1 }, { x: -91, y: 4, size: 1.1 }, { x: -89, y: -22, size: 0.8 }, { x: -89, y: 22, size: 0.8 }],
-        colliders: row([80, 66, 52, 38, 24, 10, -4, -18, -32, -46, -60, -74, -86], 0, 8)
-            .concat([[14, -20, 10], [14, 20, 10], [32, -12, 8], [32, 12, 8], [-76, -20, 7], [-76, 20, 7]]),
-        jets: { retro: [[44, 14], [-6, 30]], side: [[10, 30], [-80, 26]], bow: [70, 9], stern: [-84, 24] },
-        jetScale: 1.6,
-        shield: { x: 0, rx: 98, ry: 42 }
+        engines: [{ x: -92, y: -3, size: 1.1 }, { x: -92, y: 3, size: 1.1 }, { x: -87.5, y: -23, size: 0.9 }, { x: -87.5, y: 23, size: 0.9 }],
+        colliders: row([80, 68, 56, 44, 32, 20, 8, -4, -16, -28, -40, -52, -64, -76, -86], 0, 8)
+            .concat([[34, -12, 7], [34, 12, 7], [6, -12, 8], [6, 12, 8], [-72, -20, 9], [-72, 20, 9], [-33, -15, 5], [-33, 15, 5]]),
+        jets: { retro: [[48, 16], [-60, 26]], side: [[2, 19.5], [-74, 30]], bow: [72, 4.5], stern: [-86, 28] },
+        jetScale: 1.6
     }
 };
 
@@ -389,6 +405,29 @@ export const drawHullArt = (ctx, hull, options) => {
     });
 
     ctx.restore();
+};
+
+// Smallest ellipse (with the hull's aspect ratio) that encloses every point of the
+// line art, plus padding, so the shield never clips through the ship.
+export const shieldFor = (hull) => {
+    if(hull._shield) return hull._shield;
+    const b = hullBounds(hull);
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const hw = (b.maxX - b.minX) / 2;
+    const hh = (b.maxY - b.minY) / 2;
+    let scale = 0;
+    hull.art.forEach(part => {
+        const pts = part.circle ? [[part.circle[0] + part.circle[2], part.circle[1]], [part.circle[0], part.circle[1] + part.circle[2]]] : partPoints(part);
+        pts.forEach(p => {
+            const nx = (p[0] - cx) / hw;
+            const ny = (p[1] - cy) / hh;
+            scale = Math.max(scale, Math.sqrt(nx * nx + ny * ny));
+        });
+    });
+    const padding = 4 + hull.radius * 0.06;
+    hull._shield = { x: cx, y: cy, rx: hw * scale + padding, ry: hh * scale + padding };
+    return hull._shield;
 };
 
 export default HULLS;

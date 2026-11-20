@@ -320,7 +320,7 @@ const gravityAt = (body, attractors) => {
 // engines:   built-in main engine nozzles (flames are drawn here)
 // colliders: circles approximating the hull for asteroid collisions
 // jets:      manoeuvring jet positions on the hull edges (mirrored to both sides)
-// shield:    shield bubble ellipse
+// The shield bubble is computed from the line art so it always encloses the whole ship.
 
 const mirror = (pts) => pts.map(p => [p[0], -p[1]]);
 const rect = (x1, y1, x2, y2) => ({ rect: [x1, y1, x2, y2] });
@@ -345,12 +345,13 @@ const grid = (x0, y0, cols, rows, w, h, gap) => {
 const HULLS = {
     x302: {
         id: 'x302',
-        name: 'X-302',
+        name: 'F-302',
         className: 'Interceptor',
         faction: "Tau'ri",
-        description: 'Nimble starter fighter. Few mounts, tiny cargo hold, very agile.',
+        description: 'Nimble starter fighter with swept wings and twin nacelles. Few mounts, tiny cargo hold.',
         cost: 0,
         color: '225,235,255',
+        exhaust: '255,160,80',
         mass: 1,
         hull: 60,
         baseShield: 0,
@@ -359,26 +360,30 @@ const HULLS = {
         torque: 9,
         maxTurn: 5,
         moduleScale: 0.6,
-        radius: 20,
+        radius: 28,
         art: [
-            { closed: true, pts: [[20, 0], [15, -3], [-14, -3], [-16, -2], [-16, 2], [-14, 3], [15, 3]] },
-            { closed: true, pts: [[6, -3], [-5, -14], [-12, -14], [-10, -3]] },
-            { closed: true, pts: mirror([[6, -3], [-5, -14], [-12, -14], [-10, -3]]) },
-            rect(12, -1.5, 6, 1.5),
-            line(-2, -3, -2, 3),
-            ...mirrorRect(2, -3, -9, -5),
-            ...mirrorLine(-6, -9, -11, -9)
+            // Big swept wings.
+            { closed: true, pts: [[13, -3.4], [-18, -26], [-21.5, -26], [-21.5, -24.5], [-4, -9], [-6, -3.6]] },
+            { closed: true, pts: mirror([[13, -3.4], [-18, -26], [-21.5, -26], [-21.5, -24.5], [-4, -9], [-6, -3.6]]) },
+            ...mirrorLine(8, -5.5, -17, -23),
+            ...mirrorRect(-18.5, -24.5, -20.5, -22.5),
+            // Outer pods and inner engine nacelles.
+            ...mirrorRect(-6, -11.5, -20, -8.5), ...mirrorRect(-20, -11, -21.5, -9),
+            ...mirrorRect(3, -7.5, -22, -4), ...mirrorRect(-22, -7, -24, -4.5),
+            // Fuselage and canopy.
+            { closed: true, pts: symmetric([[21, 0], [17, -2], [12, -3.4], [-14, -3.6], [-20, -3]]) },
+            { closed: true, pts: symmetric([[15, 0], [11, -1.6], [6, -1.6]]) },
+            line(1, -3.4, 1, 3.4), line(-10, -3.6, -10, 3.6)
         ],
         slots: [
-            { id: 'c', x: -8, y: 0 },
-            { id: 'wl', x: -7, y: -10 },
-            { id: 'wr', x: -7, y: 10 }
+            { id: 'c', x: -6, y: 0 },
+            { id: 'wl', x: -10, y: -15 },
+            { id: 'wr', x: -10, y: 15 }
         ],
-        engines: [{ x: -16, y: -1.5, size: 0.6 }, { x: -16, y: 1.5, size: 0.6 }],
-        colliders: [[10, 0, 6], [-4, 0, 7], [-8, -9, 6], [-8, 9, 6]],
-        jets: { retro: [[12, 2.6]], side: [[-8, 14]], bow: [15, 2.5], stern: [-14, 3] },
-        jetScale: 0.9,
-        shield: { x: -1, rx: 24, ry: 20 }
+        engines: [{ x: -24, y: -5.75, size: 0.6 }, { x: -24, y: 5.75, size: 0.6 }, { x: -21.5, y: -10, size: 0.4 }, { x: -21.5, y: 10, size: 0.4 }],
+        colliders: [[12, 0, 5], [0, 0, 6], [-12, 0, 6], [-12, -12, 6], [-12, 12, 6], [-18, -21, 4], [-18, 21, 4]],
+        jets: { retro: [[14, 3]], side: [[-20, 26]], bow: [16, 2], stern: [-22, 8] },
+        jetScale: 0.9
     },
 
     x303: {
@@ -386,9 +391,10 @@ const HULLS = {
         name: 'X-303',
         className: 'Prometheus-class',
         faction: "Tau'ri",
-        description: 'First Earth battlecruiser. Boxy hull, raised bridge and twin engine pods.',
+        description: 'First Earth battlecruiser: narrow forward hull, wide rear section and two big engine nacelles.',
         cost: 2500,
         color: '205,225,255',
+        exhaust: '255,160,80',
         mass: 3,
         hull: 160,
         baseShield: 0,
@@ -399,32 +405,37 @@ const HULLS = {
         moduleScale: 0.9,
         radius: 50,
         art: [
-            { closed: true, pts: [[46, -3], [40, -10], [-36, -10], [-36, 10], [40, 10], [46, 3]] },
-            ...mirrorRect(-12, -14, -46, -21),
-            ...mirrorRect(-18, -10, -24, -14),
-            ...mirrorRect(-34, -10, -40, -14),
-            ...mirrorRect(-46, -15.5, -49, -19.5),
-            rect(-36, -5, -41, 5),
-            rect(12, -5, -6, 5),
-            rect(8, -2.5, -2, 2.5),
-            line(34, -10, 34, 10), line(20, -10, 20, 10), line(-20, -10, -20, 10),
-            ...mirrorLine(40, -6, 22, -6),
-            ...mirrorLine(-14, -17.5, -44, -17.5)
+            // Engine nacelles with chevron intakes.
+            { closed: true, pts: [[-1, -15.5], [-6, -19.5], [-43, -19.5], [-46, -17], [-46, -14], [-43, -11.5], [-6, -11.5]] },
+            { closed: true, pts: mirror([[-1, -15.5], [-6, -19.5], [-43, -19.5], [-46, -17], [-46, -14], [-43, -11.5], [-6, -11.5]]) },
+            ...mirrorLine(-10, -15.5, -40, -15.5),
+            ...mirrorLine(-36, -19.5, -36, -11.5), ...mirrorLine(-40, -19.5, -40, -11.5),
+            ...mirrorRect(-46, -18, -48.5, -13),
+            // Rear section.
+            { closed: true, pts: symmetric([[-4, -13], [-40, -13], [-46, -8], [-46, 0]]) },
+            rect(-46, -4, -48.5, 4),
+            // Forward hull.
+            { closed: true, pts: symmetric([[46, 0], [40, -4], [36, -10], [-4, -10]]) },
+            line(32, -10, 32, 10), line(20, -10, 20, 10), line(8, -10, 8, 10),
+            ...mirrorLine(36, -5, 8, -5),
+            // Arrow-shaped central superstructure with hangar.
+            { closed: true, pts: symmetric([[4, 0], [-6, -8], [-38, -8]]) },
+            ...mirrorLine(-10, -4.5, -34, -4.5),
+            rect(-14, -2, -28, 2)
         ],
         slots: [
-            { id: 'bow', x: 28, y: 0 },
-            { id: 'bridge', x: 3, y: 0 },
-            { id: 'ml', x: -14, y: -5 },
-            { id: 'mr', x: -14, y: 5 },
-            { id: 'nl', x: -29, y: -17.5 },
-            { id: 'nr', x: -29, y: 17.5 }
+            { id: 'bow', x: 34, y: 0 },
+            { id: 'bridge', x: 14, y: 0 },
+            { id: 'ml', x: -20, y: -6 },
+            { id: 'mr', x: -20, y: 6 },
+            { id: 'nl', x: -24, y: -15.5 },
+            { id: 'nr', x: -24, y: 15.5 }
         ],
-        engines: [{ x: -49, y: -17.5, size: 1 }, { x: -49, y: 17.5, size: 1 }, { x: -41, y: 0, size: 0.8 }],
-        colliders: row([40, 26, 12, -2, -16, -30], 0, 10)
-            .concat(row([-18, -30, -42], -17.5, 5), row([-18, -30, -42], 17.5, 5)),
-        jets: { retro: [[40, 9]], side: [[26, 10], [-30, 21]], bow: [42, 6], stern: [-44, 21] },
-        jetScale: 1.3,
-        shield: { x: -1, rx: 58, ry: 34 }
+        engines: [{ x: -48.5, y: -15.5, size: 1 }, { x: -48.5, y: 15.5, size: 1 }, { x: -48.5, y: 0, size: 0.7 }],
+        colliders: row([40, 30, 18, 6], 0, 9)
+            .concat(row([-8, -20, -32, -42], 0, 12), row([-6, -18, -30, -42], -15.5, 4.5), row([-6, -18, -30, -42], 15.5, 4.5)),
+        jets: { retro: [[36, 10], [-2, 15.5]], side: [[20, 10], [-30, 19.5]], bow: [42, 4], stern: [-44, 19.5] },
+        jetScale: 1.3
     },
 
     x304: {
@@ -489,7 +500,6 @@ const HULLS = {
             .concat(row([-14, -28, -42, -56], -30, 8), row([-14, -28, -42, -56], 30, 8)),
         jets: { retro: [[40, 11], [-8, 30]], side: [[22, 12], [-36, 38]], bow: [56, 7], stern: [-60, 38] },
         jetScale: 1.5,
-        shield: { x: -2, rx: 78, ry: 50 }
     },
 
     hatak: {
@@ -538,7 +548,6 @@ const HULLS = {
         jetScale: 1.8,
         exhaust: '255,190,90',
         shieldColor: '255,200,120',
-        shield: { x: 2, rx: 64, ry: 58 }
     },
 
     asgard: {
@@ -590,14 +599,13 @@ const HULLS = {
         jetScale: 1.5,
         exhaust: '140,220,255',
         shieldColor: '150,230,255',
-        shield: { x: 2, rx: 90, ry: 46 }
     },
     aurora: {
         id: 'aurora',
         name: 'Aurora',
         className: 'Ancient warship',
         faction: 'Ancient',
-        description: 'Lantean battleship. Fastest drive, powerful shields and ten mounts. Built for drone weapons.',
+        description: 'Lantean battleship: pointed bow, blocky drone module and broad rear wings. Fastest drive, ten mounts.',
         cost: 25000,
         color: '240,220,160',
         exhaust: '130,200,255',
@@ -610,39 +618,47 @@ const HULLS = {
         torque: 3.4,
         maxTurn: 2.4,
         moduleScale: 1,
-        radius: 90,
+        radius: 92,
         art: [
-            { closed: true, pts: symmetric([[88, 0], [72, -9], [44, -14], [26, -30], [-6, -30], [-16, -12],
-                [-56, -12], [-74, -26], [-86, -26], [-80, -9], [-88, -6], [-88, 0]]) },
-            { closed: true, pts: symmetric([[40, -11], [24, -25], [-4, -25], [-10, -11]]) },
-            line(80, 0, 40, 0), line(-10, 0, -84, 0),
-            ...mirrorLine(72, -9, 44, -9),
-            ...mirrorLine(-56, -12, -76, -23),
-            ...mirrorRect(10, -21, -2, -14),
-            ...mirrorLine(-20, -12, -20, -6), ...mirrorLine(-36, -12, -36, -6),
-            { circle: [16, 0, 6] },
-            { circle: [16, 0, 2.5] },
-            rect(-88, -6, -91, -2), rect(-88, 2, -91, 6),
-            ...mirrorRect(-86, -25, -89, -19)
+            // Broad rear wing blocks.
+            { closed: true, pts: [[-58, -9], [-60, -28], [-66, -30], [-82, -30], [-85, -26], [-85, -9]] },
+            { closed: true, pts: mirror([[-58, -9], [-60, -28], [-66, -30], [-82, -30], [-85, -26], [-85, -9]]) },
+            ...mirrorRect(-64, -26, -80, -13),
+            ...mirrorLine(-64, -19.5, -80, -19.5),
+            ...mirrorRect(-85, -26, -87.5, -20),
+            // Fins on the spine.
+            { closed: true, pts: [[-29, -8], [-31, -20], [-35, -21], [-37, -8]] },
+            { closed: true, pts: mirror([[-29, -8], [-31, -20], [-35, -21], [-37, -8]]) },
+            // Main hull: bow, forward module, mid-body, spine and stern.
+            { closed: true, pts: symmetric([[88, 0], [74, -4], [50, -14], [47, -17], [22, -17], [19, -19.5], [-12, -19.5],
+                [-17, -15], [-17, -8], [-58, -8], [-60, -9], [-87, -9], [-89, -5], [-89, 0]]) },
+            line(80, 0, 50, 0), line(-17, 0, -84, 0),
+            ...mirrorLine(74, -4, 50, -4),
+            line(47, -17, 47, 17), line(22, -17, 22, 17),
+            ...mirrorRect(42, -14, 26, -8),
+            rect(14, -15, -12, 15),
+            line(14, -15, -12, 15), line(-12, -15, 14, 15),
+            { circle: [1, 0, 5] },
+            ...mirrorLine(-40, -8, -40, -3), ...mirrorLine(-50, -8, -50, -3),
+            rect(-89, -5, -92, -1), rect(-89, 1, -92, 5)
         ],
         slots: [
-            { id: 'nose', x: 64, y: 0 },
-            { id: 'fwd', x: 40, y: 0 },
-            { id: 'pl', x: 14, y: -18 },
-            { id: 'pr', x: 14, y: 18 },
-            { id: 'core', x: 0, y: 0 },
-            { id: 'mid', x: -28, y: 0 },
-            { id: 'aft', x: -50, y: 0 },
-            { id: 'fl', x: -74, y: -19 },
-            { id: 'fr', x: -74, y: 19 },
-            { id: 'tail', x: -76, y: 0 }
+            { id: 'nose', x: 66, y: 0 },
+            { id: 'fwd', x: 34, y: 0 },
+            { id: 'pl', x: 34, y: -11 },
+            { id: 'pr', x: 34, y: 11 },
+            { id: 'core', x: 1, y: 0 },
+            { id: 'mid', x: -26, y: 0 },
+            { id: 'aft', x: -48, y: 0 },
+            { id: 'fl', x: -72, y: -20 },
+            { id: 'fr', x: -72, y: 20 },
+            { id: 'tail', x: -78, y: 0 }
         ],
-        engines: [{ x: -91, y: -4, size: 1.1 }, { x: -91, y: 4, size: 1.1 }, { x: -89, y: -22, size: 0.8 }, { x: -89, y: 22, size: 0.8 }],
-        colliders: row([80, 66, 52, 38, 24, 10, -4, -18, -32, -46, -60, -74, -86], 0, 8)
-            .concat([[14, -20, 10], [14, 20, 10], [32, -12, 8], [32, 12, 8], [-76, -20, 7], [-76, 20, 7]]),
-        jets: { retro: [[44, 14], [-6, 30]], side: [[10, 30], [-80, 26]], bow: [70, 9], stern: [-84, 24] },
-        jetScale: 1.6,
-        shield: { x: 0, rx: 98, ry: 42 }
+        engines: [{ x: -92, y: -3, size: 1.1 }, { x: -92, y: 3, size: 1.1 }, { x: -87.5, y: -23, size: 0.9 }, { x: -87.5, y: 23, size: 0.9 }],
+        colliders: row([80, 68, 56, 44, 32, 20, 8, -4, -16, -28, -40, -52, -64, -76, -86], 0, 8)
+            .concat([[34, -12, 7], [34, 12, 7], [6, -12, 8], [6, 12, 8], [-72, -20, 9], [-72, 20, 9], [-33, -15, 5], [-33, 15, 5]]),
+        jets: { retro: [[48, 16], [-60, 26]], side: [[2, 19.5], [-74, 30]], bow: [72, 4.5], stern: [-86, 28] },
+        jetScale: 1.6
     }
 };
 
@@ -709,6 +725,31 @@ const drawHullArt = (ctx, hull, options) => {
     ctx.restore();
 };
 /* harmony export (immutable) */ __webpack_exports__["c"] = drawHullArt;
+
+
+// Smallest ellipse (with the hull's aspect ratio) that encloses every point of the
+// line art, plus padding, so the shield never clips through the ship.
+const shieldFor = (hull) => {
+    if(hull._shield) return hull._shield;
+    const b = hullBounds(hull);
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const hw = (b.maxX - b.minX) / 2;
+    const hh = (b.maxY - b.minY) / 2;
+    let scale = 0;
+    hull.art.forEach(part => {
+        const pts = part.circle ? [[part.circle[0] + part.circle[2], part.circle[1]], [part.circle[0], part.circle[1] + part.circle[2]]] : partPoints(part);
+        pts.forEach(p => {
+            const nx = (p[0] - cx) / hw;
+            const ny = (p[1] - cy) / hh;
+            scale = Math.max(scale, Math.sqrt(nx * nx + ny * ny));
+        });
+    });
+    const padding = 4 + hull.radius * 0.06;
+    hull._shield = { x: cx, y: cy, rx: hw * scale + padding, ry: hh * scale + padding };
+    return hull._shield;
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = shieldFor;
 
 
 /* harmony default export */ __webpack_exports__["b"] = (HULLS);
@@ -1528,6 +1569,28 @@ const sounds = {
         tone(c, 'triangle', 2400, 600, 0.2, envelope(c, 0.08, 0.002, 0.2));
     },
 
+    shieldUp() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        tone(c, 'sine', 180, 900, 0.5, envelope(c, 0.16, 0.02, 0.5));
+        tone(c, 'triangle', 360, 1800, 0.45, envelope(c, 0.06, 0.02, 0.45));
+    },
+
+    shieldDown() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        tone(c, 'sine', 900, 120, 0.45, envelope(c, 0.14, 0.01, 0.45));
+        noise(c, 0.4, 'bandpass', 2000, 300, envelope(c, 0.05, 0.01, 0.4), 2);
+    },
+
+    // Ore burning up against raised shields.
+    oreZap() {
+        const c = throttle('oreZap', 0.05);
+        if(!c) return;
+        tone(c, 'square', 2400, 900, 0.07, envelope(c, 0.035, 0.001, 0.07));
+        noise(c, 0.08, 'highpass', 5000, 3000, envelope(c, 0.04, 0.001, 0.08));
+    },
+
     hullHit() {
         const c = throttle('hull', 0.1);
         if(!c) return;
@@ -1595,9 +1658,12 @@ const MIN_SPLIT_RADIUS = 16;      // only asteroids at least this big break apar
 const SPLIT_GRACE = 1.2;          // seconds a fresh fragment won't merge
 const MAX_SCARS = 10;
 const SHAPE_POINTS = 30;
-const MAX_MERGE_RADIUS = 110;
+const MAX_MERGE_RADIUS = 170;
 /* harmony export (immutable) */ __webpack_exports__["a"] = MAX_MERGE_RADIUS;
 
+const VISUAL_RADIUS = 0.88;
+/* harmony export (immutable) */ __webpack_exports__["b"] = VISUAL_RADIUS;
+   // average outline radius relative to `radius`
 
 // Light comes from the top-left of the screen for every asteroid.
 const LIGHT_X = -0.55;
@@ -1654,6 +1720,7 @@ class Rock {
         this.oreProgress = 0;
         this.dead = false;
         this.renderScale = 1;
+        this.merging = null;          // active merge link while two asteroids fuse
         this.renderAlpha = 1;
         this.scars = [];
         this.shape = options.shape || randomShape(rnd);
@@ -1843,38 +1910,51 @@ class Rock {
         return fragment;
     }
 
-    // Absorb another asteroid: area, momentum, spin and composition combine.
-    merge(other) {
-        const total = this.area + other.area;
-        const wa = this.area / total;
-        const wb = other.area / total;
-
-        this.x = this.x * wa + other.x * wb;
-        this.y = this.y * wa + other.y * wb;
-        this.vx = this.vx * wa + other.vx * wb;
-        this.vy = this.vy * wa + other.vy * wb;
-        this.spin = this.spin * wa + other.spin * wb;
+    // Completes a merge after `guest` has fully sunk in: blend composition by the
+    // original masses and reshape the outline so the result reads as one lumpy body.
+    finishMerge(guest, hostArea, guestArea, contactWorldAngle) {
+        const total = hostArea + guestArea;
+        const wa = hostArea / total;
+        const wb = guestArea / total;
 
         const composition = {};
-        [[this, wa], [other, wb]].forEach(pair => {
+        [[this, wa], [guest, wb]].forEach(pair => {
             Object.keys(pair[0].composition).forEach(id => {
                 composition[id] = (composition[id] || 0) + pair[0].composition[id] * pair[1];
             });
         });
         this.composition = normalizeComposition(composition);
-        this.setArea(total);
-        this.oreProgress += other.oreProgress;
+        this.oreProgress += guest.oreProgress;
+        this.spin = this.spin * wa + guest.spin * wb;
 
-        // The impact rounds things out a little and adds a crater where they met.
-        this.shape.forEach(p => { p.factor = Math.min(1, p.factor + 0.05); });
-        const contact = Math.atan2(other.y - this.y, other.x - this.x) - this.angle;
-        this.craters.push({
-            x: Math.cos(contact) * 0.5, y: Math.sin(contact) * 0.5,
-            r: Math.min(0.3, 0.1 + wb * 0.4), squash: 0.6, tilt: contact
+        // Bulge where the guest joined, with a flattened seam either side.
+        const contact = contactWorldAngle - this.angle;
+        const bulge = Math.min(0.35, Math.sqrt(wb) * 0.45);
+        this.shape.forEach(p => {
+            let diff = Math.abs(p.angle - contact) % (Math.PI * 2);
+            if(diff > Math.PI) diff = Math.PI * 2 - diff;
+            if(diff < 0.9) {
+                const w = Math.cos(diff / 0.9 * Math.PI / 2);
+                p.factor = Math.min(1.08, p.factor + bulge * w * w);
+            } else if(diff < 1.4) {
+                p.factor = Math.max(0.6, p.factor - bulge * 0.25);
+            }
         });
-        if(this.craters.length > 12) this.craters.shift();
+
+        // Carry over some of the guest's surface features near the seam.
+        guest.craters.slice(0, 3).forEach(c => {
+            this.craters.push({
+                x: Math.cos(contact) * 0.55 + c.x * Math.sqrt(wb) * 0.6,
+                y: Math.sin(contact) * 0.55 + c.y * Math.sqrt(wb) * 0.6,
+                r: c.r * Math.sqrt(wb), squash: c.squash, tilt: c.tilt
+            });
+        });
+        this.cracks.push([[Math.cos(contact + 0.6) * 0.5, Math.sin(contact + 0.6) * 0.5],
+            [Math.cos(contact) * 0.45, Math.sin(contact) * 0.45],
+            [Math.cos(contact - 0.6) * 0.5, Math.sin(contact - 0.6) * 0.5]]);
+        if(this.craters.length > 14) this.craters.splice(0, this.craters.length - 14);
+        if(this.cracks.length > 6) this.cracks.shift();
         this.updateLook();
-        other.dead = true;
     }
 
     update(dt) {
@@ -2044,7 +2124,7 @@ class Rock {
     }
 }
 
-/* harmony default export */ __webpack_exports__["b"] = (Rock);
+/* harmony default export */ __webpack_exports__["c"] = (Rock);
 
 
 /***/ }),
@@ -2817,6 +2897,7 @@ const gameboard = document.getElementById('gameboard');
 const menu = document.getElementById('menu');
 const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
+const shieldButton = document.getElementById('shieldButton');
 const hudElements = {
     credits: document.getElementById('credits'),
     location: document.getElementById('location'),
@@ -2842,7 +2923,7 @@ let fps = 60;
 const hud = {};
 
 const createState = () => {
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */](__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].dockRadius + 60, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["e" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().hull));
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */](__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["e" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().hull));
     ship.angle = 0;
     return {
         ship: ship,
@@ -2853,7 +2934,7 @@ const createState = () => {
         particles: [],
         ores: [],
         beamHits: [],
-        mergeGhosts: [],
+        mergeLinks: [],
         floatingTexts: [],
         sectors: new __WEBPACK_IMPORTED_MODULE_8__world_sectors__["a" /* SectorManager */](Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().seed),
         sectorTimer: 0,
@@ -2862,6 +2943,7 @@ const createState = () => {
         bannerText: 'Undocked. Happy mining!',
         bannerTimer: 2.5,
         cargoFullTimer: 0,
+        shieldHintTimer: 0,
         canDock: false,
         gameOverTimer: 0,
         paused: false,
@@ -2911,6 +2993,14 @@ const renderInfo = () => {
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
     setText('shieldText', ship.maxShield ? Math.ceil(ship.shield) + ' / ' + Math.round(ship.maxShield) : 'none');
+    const shieldState = ship.maxShield <= 0 ? 'none' : (ship.shieldsEnabled ? (ship.shieldUp ? 'up' : 'depleted') : 'down');
+    if(hud.shieldState !== shieldState) {
+        hud.shieldState = shieldState;
+        shieldButton.className = 'shield-button ' + shieldState;
+        shieldButton.textContent = {
+            none: 'No shields', up: 'Shields: UP (H)', depleted: 'Shields: DEPLETED', down: 'Shields: DOWN (H)'
+        }[shieldState];
+    }
     setBar('cargoBar', used / ship.cargoCapacity);
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
@@ -3116,9 +3206,102 @@ const missileCollisions = () => {
     });
 };
 
-// Asteroids pulled together by gravity merge into one when they touch.
+// Asteroids pulled together by gravity fuse when they touch: they lock together,
+// share momentum, and the smaller one gradually sinks into the bigger one.
+const startMerge = (a, b) => {
+    const host = a.area >= b.area ? a : b;
+    const guest = host === a ? b : a;
+
+    const total = a.mass + b.mass;
+    const vx = (a.vx * a.mass + b.vx * b.mass) / total;
+    const vy = (a.vy * a.mass + b.vy * b.mass) / total;
+    a.vx = b.vx = vx;
+    a.vy = b.vy = vy;
+    guest.spin = host.spin;
+
+    const link = {
+        host: host,
+        guest: guest,
+        t: 0,
+        duration: 1.1 + guest.radius * 0.02,
+        hostArea: host.area,
+        guestArea: guest.area,
+        offsetX: guest.x - host.x,
+        offsetY: guest.y - host.y,
+        dustTimer: 0
+    };
+    host.merging = link;
+    guest.merging = link;
+    state.mergeLinks.push(link);
+
+    const distance = Math.sqrt(link.offsetX * link.offsetX + link.offsetY * link.offsetY) || 1;
+    const contactX = host.x + link.offsetX / distance * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+    const contactY = host.y + link.offsetY / distance * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(state.particles, contactX, contactY, host,
+        Math.round(12 + guest.radius), guest.radius * 1.1, '175,165,150');
+    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].merge(Math.sqrt(host.area + guest.area));
+};
+
+const updateMerges = (dt) => {
+    state.mergeLinks.forEach(link => {
+        const host = link.host;
+        const guest = link.guest;
+        if(host.dead || guest.dead) {
+            host.merging = null;
+            guest.merging = null;
+            link.done = true;
+            return;
+        }
+
+        link.t += dt;
+        const p = Math.min(1, link.t / link.duration);
+        const k = p * p * (3 - 2 * p);   // smoothstep
+
+        // Stay attached while the pair tumbles together.
+        const turn = host.spin * dt;
+        const cos = Math.cos(turn);
+        const sin = Math.sin(turn);
+        const ox = link.offsetX * cos - link.offsetY * sin;
+        const oy = link.offsetX * sin + link.offsetY * cos;
+        link.offsetX = ox;
+        link.offsetY = oy;
+
+        guest.x = host.x + ox * (1 - 0.85 * k);
+        guest.y = host.y + oy * (1 - 0.85 * k);
+        guest.vx = host.vx;
+        guest.vy = host.vy;
+
+        // Mass flows from the guest into the host.
+        const target = link.guestArea * (1 - k);
+        const moved = Math.max(0, guest.area - target);
+        guest.setArea(Math.min(guest.area, target));
+        host.setArea(host.area + moved);
+
+        // Dust squeezed out along the seam, drawn back onto the surface.
+        link.dustTimer -= dt;
+        if(link.dustTimer <= 0 && p < 0.9) {
+            link.dustTimer = 0.06;
+            const distance = Math.sqrt(ox * ox + oy * oy) || 1;
+            const along = (Math.random() - 0.5) * 1.2;
+            const angle = Math.atan2(oy, ox) + along;
+            const seamX = host.x + Math.cos(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+            const seamY = host.y + Math.sin(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(state.particles, seamX, seamY, host, 2, guest.radius * 0.4 + 4, '170,160,148');
+            if(distance < 1) link.dustTimer = 1;
+        }
+
+        if(p >= 1) {
+            host.finishMerge(guest, link.hostArea, link.guestArea, Math.atan2(oy, ox));
+            guest.dead = true;
+            host.merging = null;
+            link.done = true;
+        }
+    });
+    state.mergeLinks = state.mergeLinks.filter(link => !link.done);
+};
+
 const rockCollisions = () => {
-    const { rocks, particles } = state;
+    const { rocks } = state;
 
     for(let i = 0; i < rocks.length; i++) {
         const a = rocks[i];
@@ -3127,10 +3310,11 @@ const rockCollisions = () => {
         for(let j = i + 1; j < rocks.length; j++) {
             const b = rocks[j];
             if(b.dead) continue;
+            if(a.merging && a.merging === b.merging) continue;
 
             const dx = b.x - a.x;
             const dy = b.y - a.y;
-            const reach = (a.radius + b.radius) * 0.9;
+            const reach = (a.radius + b.radius) * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
             const distSq = dx * dx + dy * dy;
             if(distSq > reach * reach) continue;
 
@@ -3139,31 +3323,14 @@ const rockCollisions = () => {
             const normalY = dy / distance;
             const combinedRadius = Math.sqrt(a.area + b.area);
 
-            // Fresh fragments and asteroids that would get too big just bump.
-            if(a.grace > 0 || b.grace > 0 || combinedRadius > __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* MAX_MERGE_RADIUS */]) {
+            // Fresh fragments, busy pairs and oversized bodies just rest against each other.
+            if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* MAX_MERGE_RADIUS */]) {
                 resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
                 continue;
             }
 
-            const contactX = a.x + normalX * a.radius;
-            const contactY = a.y + normalY * a.radius;
-            const bigger = a.area >= b.area ? a : b;
-            const smaller = bigger === a ? b : a;
-            bigger.merge(smaller);
-
-            // The smaller body sinks into the bigger one while a dust cloud
-            // billows out and swirls back in, settling on the surface.
-            state.mergeGhosts.push({
-                rock: smaller, host: bigger, life: 0.9, maxLife: 0.9,
-                offsetX: smaller.x - bigger.x, offsetY: smaller.y - bigger.y
-            });
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(particles, contactX, contactY, bigger,
-                Math.round(14 + smaller.radius * 1.2), smaller.radius * 1.3, '175,165,150');
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(particles, contactX, contactY, bigger.vx, bigger.vy, 8, {
-                minSpeed: 10, maxSpeed: 60, minLife: 0.3, maxLife: 0.7, size: 2, color: '230,215,190'
-            });
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].merge(bigger.radius);
-            if(a.dead) break;
+            startMerge(a, b);
+            break;
         }
     }
 };
@@ -3174,18 +3341,35 @@ const shipCollisions = () => {
 
     rocks.forEach(rock => {
         if(rock.dead) return;
+        const rockRadius = rock.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
 
-        // Broad phase against the whole hull first.
+        // Broad phase against the whole ship first.
         const center = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(ship, rock);
-        const reach = ship.radius + rock.radius;
+        const reach = ship.radius * 1.5 + rockRadius;
         if(center.x * center.x + center.y * center.y > reach * reach) return;
+
+        // Raised shields: asteroids bounce off the bubble, never reaching the hull.
+        if(ship.shieldUp) {
+            const contact = ship.shieldContact(rock.x, rock.y, rockRadius);
+            if(!contact) return;
+            const impactSpeed = resolveImpact(ship, rock, contact.nx, contact.ny, contact.overlap, SHIP_RESTITUTION);
+            if(impactSpeed > 15) {
+                const damage = 2 + impactSpeed * rock.mass / 6000;
+                ship.takeDamage(damage, particles, contact.x, contact.y);
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(particles, contact.x, contact.y, rock.vx, rock.vy, 6, {
+                    minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2,
+                    color: ship.hullDef.shieldColor || '120,210,255'
+                });
+            }
+            return;
+        }
 
         const colliders = ship.worldColliders();
         for(let i = 0; i < colliders.length; i++) {
             const c = colliders[i];
             const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["a" /* delta */])(c, rock);
             const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
-            const overlap = c.r + rock.radius * 0.85 - distance;
+            const overlap = c.r + rockRadius - distance;
             if(overlap <= 0) continue;
 
             const impactSpeed = resolveImpact(ship, rock, d.x / distance, d.y / distance, overlap, SHIP_RESTITUTION);
@@ -3205,9 +3389,32 @@ const collectOre = (dt) => {
     const ship = state.ship;
     const cargoFull = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])() >= ship.cargoCapacity;
     if(state.cargoFullTimer > 0) state.cargoFullTimer -= dt;
+    if(state.shieldHintTimer > 0) state.shieldHintTimer -= dt;
+
+    const shielded = ship.shieldUp;
 
     state.ores.forEach(ore => {
         if(ore.dead) return;
+
+        if(shielded) {
+            // Raised shields block the tractor beam and vaporise ore that touches them.
+            ore.update(dt, ship, false);
+            const contact = ship.shieldContact(ore.x, ore.y, ore.radius);
+            if(contact) {
+                ore.dead = true;
+                ship.absorbOre(contact.x, contact.y);
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 5, {
+                    minSpeed: 20, maxSpeed: 90, minLife: 0.15, maxLife: 0.35, size: 2, color: __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material].color
+                });
+                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].oreZap();
+                if(state.shieldHintTimer <= 0) {
+                    state.shieldHintTimer = 8;
+                    banner('Shields up: ore burns up! Lower shields (H) to collect.', 2.5);
+                }
+            }
+            return;
+        }
+
         if(!ore.update(dt, ship, !cargoFull)) return;
 
         if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["p" /* storeOre */])(ore.material, ship.cargoCapacity)) {
@@ -3248,19 +3455,10 @@ const step = (dt) => {
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].beamImpact();
     });
     state.beamHits = [];
-    state.mergeGhosts.forEach(ghost => {
-        ghost.life -= dt;
-        const t = Math.max(0, ghost.life / ghost.maxLife);
-        ghost.rock.x = ghost.host.x + ghost.offsetX * t;
-        ghost.rock.y = ghost.host.y + ghost.offsetY * t;
-        ghost.rock.angle += ghost.rock.spin * dt;
-        ghost.rock.renderScale = 0.25 + 0.75 * t;
-        ghost.rock.renderAlpha = t;
-    });
-    state.mergeGhosts = state.mergeGhosts.filter(ghost => ghost.life > 0);
     applyGravity(dt);
 
     state.rocks.forEach(rock => rock.update(dt));
+    updateMerges(dt);
     bullets.forEach(bullet => bullet.update(dt));
     missiles.forEach(missile => missile.update(dt, state.rocks, particles));
     particles.forEach(particle => particle.update(dt));
@@ -3591,8 +3789,9 @@ const render = () => {
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
     visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
-    state.mergeGhosts.forEach(ghost => ghost.rock.draw(ctx, time));
-    visibleRocks.forEach(rock => rock.draw(ctx, time));
+    // Merging guests are drawn first so they sink beneath their host.
+    visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
+    visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
     state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
@@ -3629,6 +3828,7 @@ const freeze = (frozen) => {
     __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].reset();
     __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = !frozen;
     document.body.classList.toggle('playing', !frozen);
+    shieldButton.style.display = state && !frozen ? '' : 'none';
     if(frozen) {
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
     } else {
@@ -3740,6 +3940,19 @@ const initialize = () => {
         banner('Auto-targeting ' + (state.ship.autoTarget ? 'ON' : 'OFF'), 1.2);
         return true;
     });
+
+    const toggleShields = () => {
+        if(!state || state.paused || !state.ship.alive) return false;
+        if(state.ship.maxShield <= 0) {
+            banner('No shield emitter fitted', 1.2);
+            return true;
+        }
+        state.ship.toggleShields();
+        banner(state.ship.shieldsEnabled ? 'Shields raised' : 'Shields lowered: ore collection enabled', 1.4);
+        return true;
+    };
+    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
+    shieldButton.addEventListener('click', () => toggleShields());
 
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyB', () => {
         if(!state || state.paused || !state.canDock) return false;
@@ -3873,6 +4086,9 @@ class Ship {
         this.salvoCooldown = 0;
         this.nextLauncher = 0;
         this.missileLock = null;
+        this.shieldsEnabled = true;
+        this.shieldLevel = 0;         // animated 0..1 power level of the bubble
+        this.shieldImpacts = [];
 
         // Animated thruster output levels (0..1), eased towards their targets.
         this.thrusters = { main: 0, retro: 0, left: 0, right: 0, spinCW: 0, spinCCW: 0 };
@@ -3941,6 +4157,74 @@ class Ship {
         };
     }
 
+    get shieldUp() {
+        return this.shieldsEnabled && this.alive && this.maxShield > 0 && this.shield > 0.5;
+    }
+
+    toggleShields() {
+        if(this.maxShield <= 0) return false;
+        this.shieldsEnabled = !this.shieldsEnabled;
+        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldUp();
+        else __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldDown();
+        return true;
+    }
+
+    // Converts a world point into shield-ellipse space.
+    shieldLocal(worldX, worldY) {
+        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
+        const cos = Math.cos(-this.angle);
+        const sin = Math.sin(-this.angle);
+        const dx = worldX - this.x;
+        const dy = worldY - this.y;
+        return { x: dx * cos - dy * sin - s.x, y: dx * sin + dy * cos - s.y, s: s };
+    }
+
+    // Circle vs shield-ellipse contact. Returns the outward normal (world space),
+    // overlap depth and contact point, or null when not touching.
+    shieldContact(worldX, worldY, radius) {
+        const l = this.shieldLocal(worldX, worldY);
+        const s = l.s;
+        const k = Math.sqrt((l.x / s.rx) * (l.x / s.rx) + (l.y / s.ry) * (l.y / s.ry)) || 0.0001;
+        const length = Math.sqrt(l.x * l.x + l.y * l.y) || 0.0001;
+        const gap = length * (1 - 1 / k);
+        const overlap = radius - gap;
+        if(overlap <= 0) return null;
+
+        const px = l.x / k;
+        const py = l.y / k;
+        let nx = px / (s.rx * s.rx);
+        let ny = py / (s.ry * s.ry);
+        const n = Math.sqrt(nx * nx + ny * ny) || 1;
+        nx /= n;
+        ny /= n;
+
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        const contact = this.localToWorld(px + s.x, py + s.y);
+        return {
+            nx: nx * cos - ny * sin,
+            ny: nx * sin + ny * cos,
+            overlap: overlap,
+            x: contact.x,
+            y: contact.y
+        };
+    }
+
+    // Ripple on the shield where something struck it.
+    shieldImpact(worldX, worldY, strength) {
+        const l = this.shieldLocal(worldX, worldY);
+        const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
+        this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
+        if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
+        this.shieldFlash = Math.max(this.shieldFlash, 0.1 * strength);
+    }
+
+    // Ore that hits raised shields burns up and costs a sliver of shield energy.
+    absorbOre(worldX, worldY) {
+        this.shield = Math.max(0, this.shield - 0.25);
+        this.shieldImpact(worldX, worldY, 0.35);
+    }
+
     get thrusting() {
         const t = this.thrusters;
         return t.main > 0.2 || t.retro > 0.2 || t.left > 0.2 || t.right > 0.2 ||
@@ -3979,6 +4263,10 @@ class Ship {
         if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
             this.shield = Math.min(this.maxShield, this.shield + this.stats.shieldRegen * dt);
         }
+        const targetLevel = this.shieldUp ? 1 : 0;
+        this.shieldLevel += (targetLevel - this.shieldLevel) * Math.min(1, dt * (targetLevel ? 3 : 5));
+        this.shieldImpacts.forEach(impact => { impact.life -= dt * 1.4; });
+        this.shieldImpacts = this.shieldImpacts.filter(impact => impact.life > 0);
 
         this.fly(dt, input, world.particles);
         this.updateTargeting(input, world.rocks);
@@ -4395,17 +4683,19 @@ class Ship {
     }
 
     // Returns true if damage was applied.
-    takeDamage(amount, particles) {
+    takeDamage(amount, particles, hitX, hitY) {
         if(!this.alive || this.hitCooldown > 0 || this.immunity > 0) return false;
 
         this.hitCooldown = HIT_COOLDOWN;
         this.sinceHit = 0;
 
-        const absorbed = Math.min(this.shield, amount);
+        // Lowered shields don't absorb anything.
+        const absorbed = this.shieldUp ? Math.min(this.shield, amount) : 0;
         this.shield -= absorbed;
         const remaining = amount - absorbed;
         if(absorbed > 0) {
             this.shieldFlash = 0.25;
+            if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
             __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldHit();
         }
 
@@ -4512,22 +4802,100 @@ class Ship {
         ctx.restore();
     }
 
+    // Hexagon lattice for the shield surface, cached per hull.
+    shieldLattice(radius) {
+        const key = Math.round(radius);
+        if(this.latticeKey === key) return this.lattice;
+        const path = new Path2D();
+        const size = 7;
+        const w = size * Math.sqrt(3);
+        for(let row = -Math.ceil(radius / (size * 1.5)); row <= Math.ceil(radius / (size * 1.5)); row++) {
+            for(let col = -Math.ceil(radius / w) - 1; col <= Math.ceil(radius / w) + 1; col++) {
+                const cx = col * w + (row % 2 ? w / 2 : 0);
+                const cy = row * size * 1.5;
+                if(cx * cx + cy * cy > (radius + size) * (radius + size)) continue;
+                for(let i = 0; i < 6; i++) {
+                    const a1 = Math.PI / 6 + i * Math.PI / 3;
+                    const a2 = a1 + Math.PI / 3;
+                    path.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                    path.lineTo(cx + Math.cos(a2) * size, cy + Math.sin(a2) * size);
+                }
+            }
+        }
+        this.latticeKey = key;
+        this.lattice = path;
+        return path;
+    }
+
     drawShield(ctx) {
-        if(this.maxShield <= 0 || this.shield <= 0) return;
-        const s = this.hullDef.shield;
-        const strength = this.shield / this.maxShield;
-        const alpha = 0.1 + 0.2 * strength + Math.max(0, this.shieldFlash) * 2.5;
+        const level = this.shieldLevel;
+        if(this.maxShield <= 0 || level < 0.01) return;
+
+        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
         const color = this.hullDef.shieldColor || '120,210,255';
+        const strength = Math.max(0.15, this.shield / this.maxShield);
+        // Bubble expands outwards when powering up and collapses when lowered.
+        const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
+        const rx = s.rx * grow;
+        const squash = s.ry / s.rx;
+        const flash = Math.max(0, this.shieldFlash) * 3;
+        const t = this.time;
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, alpha) + ')';
-        ctx.fillStyle = 'rgba(' + color + ', ' + Math.min(0.25, alpha * 0.25) + ')';
-        ctx.lineWidth = 1.2;
+        ctx.translate(s.x, s.y);
+        ctx.scale(1, squash);   // draw the ellipse as a circle in squashed space
+
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
+        body.addColorStop(0, 'rgba(' + color + ', 0)');
+        body.addColorStop(0.8, 'rgba(' + color + ', ' + (0.05 * level * strength) + ')');
+        body.addColorStop(1, 'rgba(' + color + ', ' + Math.min(0.5, (0.2 + flash * 0.3) * level * strength) + ')');
+        ctx.fillStyle = body;
+        ctx.fill();
+
+        ctx.save();
+        ctx.clip();
+
+        // Lattice with a bright scan band sweeping across it.
+        const sweep = Math.sin(t * 1.3) * rx;
+        const band = ctx.createLinearGradient(sweep - rx * 0.5, -rx, sweep + rx * 0.5, rx);
+        band.addColorStop(0, 'rgba(' + color + ', ' + (0.03 * level) + ')');
+        band.addColorStop(0.5, 'rgba(' + color + ', ' + ((0.16 + flash * 0.3) * level * strength) + ')');
+        band.addColorStop(1, 'rgba(' + color + ', ' + (0.03 * level) + ')');
+        ctx.strokeStyle = band;
+        ctx.lineWidth = 0.6;
+        ctx.stroke(this.shieldLattice(rx));
+
+        // Impact ripples: a hot flare at the hit point and a ring spreading across the bubble.
+        ctx.globalCompositeOperation = 'lighter';
+        this.shieldImpacts.forEach(impact => {
+            const ix = impact.x * grow;
+            const iy = impact.y * grow / squash;
+            const age = 1 - impact.life;
+            const flare = ctx.createRadialGradient(ix, iy, 0, ix, iy, 10 + 30 * impact.strength);
+            flare.addColorStop(0, 'rgba(255, 255, 255, ' + (0.8 * impact.life * impact.strength) + ')');
+            flare.addColorStop(0.3, 'rgba(' + color + ', ' + (0.5 * impact.life) + ')');
+            flare.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = flare;
+            ctx.fillRect(ix - 50, iy - 50, 100, 100);
+
+            ctx.strokeStyle = 'rgba(' + color + ', ' + (0.7 * impact.life) + ')';
+            ctx.lineWidth = 2 * impact.life + 0.5;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 4 + age * rx * 0.9, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        ctx.restore();
+
+        // Rim.
+        const shimmer = 0.75 + 0.25 * Math.sin(t * 3);
+        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, (0.3 + flash) * shimmer * level * (0.4 + 0.6 * strength)) + ')';
+        ctx.lineWidth = 1.4;
         ctx.shadowBlur = 10;
         ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
-        ctx.ellipse(s.x, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
     }
@@ -5009,6 +5377,8 @@ const loadInputHandlers = () => {
 
     window.addEventListener('mousedown', (event) => {
         if(!input.enabled) return;
+        // Clicking HUD buttons shouldn't fire the guns.
+        if(event.target && event.target.closest && event.target.closest('button')) return;
         if(event.button === 0) input.mouseDown = true;
         if(event.button === 2) input.rightMouseDown = true;
     });
@@ -5123,7 +5493,7 @@ const generateSector = (seed, sx, sy) => {
 
         const angle = random() * Math.PI * 2;
         const speed = random() * 22;
-        rocks.push(new __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__["b" /* default */]({
+        rocks.push(new __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__["c" /* default */]({
             x: x,
             y: y,
             vx: Math.cos(angle) * speed,
@@ -5197,22 +5567,28 @@ class SectorManager {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-// The home shipyard station at the centre of the map. Fly close and press B to dock.
+// Home base at the centre of the map: an Atlantis-style six-armed city-ship.
+// Fly inside the docking ring and press B to dock with the shipyard.
 
 const STATION = {
     x: 0,
     y: 0,
-    dockRadius: 260,
+    dockRadius: 400,
     maxDockSpeed: 140,
-    spin: 0.03
+    spin: 0.012
 };
 /* harmony export (immutable) */ __webpack_exports__["a"] = STATION;
 
 
-const rect = (ctx, x1, y1, x2, y2) => {
+const LINE = 'rgba(200, 225, 255, 0.95)';
+const FILL = 'rgba(8, 16, 30, 0.88)';
+
+const poly = (ctx, pts, fill) => {
     ctx.beginPath();
-    ctx.rect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
-    ctx.fill();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    if(fill !== false) ctx.fill();
     ctx.stroke();
 };
 
@@ -5223,12 +5599,69 @@ const line = (ctx, x1, y1, x2, y2) => {
     ctx.stroke();
 };
 
+const hexagon = (r, offset) => {
+    const pts = [];
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + (offset || 0);
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return pts;
+};
+
+// One arm along +x. Main piers are long with a broad, angled end platform;
+// the others are shorter with a compact platform.
+const drawArm = (ctx, main, time, index) => {
+    const length = main ? 270 : 215;
+    const half = main ? 22 : 18;
+
+    // Pier.
+    poly(ctx, [[70, -half], [length, -half], [length, half], [70, half]]);
+    line(ctx, 80, 0, length - 10, 0);
+    line(ctx, 80, -half * 0.5, length - 10, -half * 0.5);
+    line(ctx, 80, half * 0.5, length - 10, half * 0.5);
+    for(let x = 95; x < length - 10; x += 22) line(ctx, x, -half, x, half);
+
+    // End platform.
+    if(main) {
+        poly(ctx, [[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
+            [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]);
+        poly(ctx, [[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]);
+        // Tower blocks seen from above.
+        [[length + 36, -18], [length + 56, 14], [length + 44, 26], [length + 62, -26]].forEach(t => {
+            ctx.strokeRect(t[0] - 6, t[1] - 6, 12, 12);
+            ctx.strokeRect(t[0] - 3, t[1] - 3, 6, 6);
+        });
+        // Side jetty.
+        poly(ctx, [[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]);
+    } else {
+        poly(ctx, [[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
+            [length + 52, 30], [length + 20, 38], [length, half]]);
+        ctx.strokeRect(length + 16, -12, 24, 24);
+        ctx.beginPath();
+        ctx.arc(length + 28, 0, 6, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Window lights along the pier, twinkling slowly.
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 230, 160, 0.85)';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(255, 210, 120, 0.9)';
+    for(let x = 90; x < length; x += 11) {
+        const on = Math.sin(time * 0.7 + x * 0.37 + index * 1.7) > -0.3;
+        if(!on) continue;
+        ctx.fillRect(x, -half * 0.75, 2, 2);
+        ctx.fillRect(x + 4, half * 0.7, 2, 2);
+    }
+    ctx.restore();
+};
+
 const drawStation = (ctx, time, canDock) => {
     ctx.save();
     ctx.translate(STATION.x, STATION.y);
 
-    // Docking zone.
-    ctx.setLineDash([10, 12]);
+    // Docking ring.
+    ctx.setLineDash([12, 14]);
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
     ctx.beginPath();
@@ -5236,57 +5669,83 @@ const drawStation = (ctx, time, canDock) => {
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // Faint city shield dome.
+    const dome = ctx.createRadialGradient(0, 0, 200, 0, 0, 380);
+    dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
+    dome.addColorStop(0.9, 'rgba(120, 190, 255, 0.05)');
+    dome.addColorStop(1, 'rgba(120, 190, 255, 0.12)');
+    ctx.fillStyle = dome;
+    ctx.beginPath();
+    ctx.arc(0, 0, 380, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.rotate(time * STATION.spin);
     ctx.lineJoin = 'miter';
-    ctx.lineWidth = 1.6;
-    ctx.strokeStyle = 'rgba(200, 220, 255, 0.95)';
-    ctx.fillStyle = 'rgba(8, 14, 28, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = LINE;
+    ctx.fillStyle = FILL;
     ctx.shadowBlur = 8;
-    ctx.shadowColor = 'rgba(160, 200, 255, 0.8)';
+    ctx.shadowColor = 'rgba(150, 200, 255, 0.7)';
 
-    // Four construction arms with gantry frames and dock blocks.
-    for(let i = 0; i < 4; i++) {
+    for(let i = 0; i < 6; i++) {
         ctx.save();
-        ctx.rotate(i * Math.PI / 2);
-        rect(ctx, 40, -12, 150, 12);
-        for(let x = 55; x < 150; x += 20) line(ctx, x, -12, x + 10, 12);
-        rect(ctx, 150, -30, 190, 30);
-        rect(ctx, 158, -22, 182, 22);
-        // Slipway: open frame where ships are built.
-        ctx.beginPath();
-        ctx.moveTo(60, -12); ctx.lineTo(60, -60); ctx.lineTo(140, -60); ctx.lineTo(140, -12);
-        ctx.stroke();
-        line(ctx, 60, -36, 140, -36);
+        ctx.rotate(i * Math.PI / 3 - Math.PI / 2);
+        ctx.strokeStyle = LINE;
+        ctx.fillStyle = FILL;
+        drawArm(ctx, i % 2 === 0, time, i);
         ctx.restore();
     }
 
-    // Central hub.
-    rect(ctx, -44, -44, 44, 44);
-    rect(ctx, -30, -30, 30, 30);
-    line(ctx, -30, -30, 30, 30);
-    line(ctx, -30, 30, 30, -30);
-    rect(ctx, -10, -10, 10, 10);
+    // Central hub: layered hexagons, the star-shaped gate room and the central tower.
+    poly(ctx, hexagon(92, Math.PI / 6));
+    poly(ctx, hexagon(70, 0));
+    poly(ctx, hexagon(48, Math.PI / 6));
+    const star = hexagon(40, 0);
+    line(ctx, star[0][0], star[0][1], star[2][0], star[2][1]);
+    line(ctx, star[2][0], star[2][1], star[4][0], star[4][1]);
+    line(ctx, star[4][0], star[4][1], star[0][0], star[0][1]);
+    line(ctx, star[1][0], star[1][1], star[3][0], star[3][1]);
+    line(ctx, star[3][0], star[3][1], star[5][0], star[5][1]);
+    line(ctx, star[5][0], star[5][1], star[1][0], star[1][1]);
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        line(ctx, Math.cos(a) * 70, Math.sin(a) * 70, Math.cos(a) * 92, Math.sin(a) * 92);
+    }
 
-    // Blinking beacons on the arm tips.
+    // Gate room glow.
+    ctx.shadowBlur = 0;
+    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
+    const gate = ctx.createRadialGradient(0, 0, 0, 0, 0, 18);
+    gate.addColorStop(0, 'rgba(160, 220, 255, ' + (0.8 * pulse) + ')');
+    gate.addColorStop(1, 'rgba(80, 150, 255, 0)');
+    ctx.fillStyle = gate;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = LINE;
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
     ctx.shadowBlur = 12;
-    for(let i = 0; i < 4; i++) {
-        const angle = i * Math.PI / 2;
+    for(let i = 0; i < 6; i += 2) {
+        const angle = i * Math.PI / 3 - Math.PI / 2;
         const color = blink ? (canDock ? '140,255,160' : '255,120,100') : '80,90,110';
         ctx.fillStyle = 'rgb(' + color + ')';
         ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
-        ctx.arc(Math.cos(angle) * 196, Math.sin(angle) * 196, 3.5, 0, Math.PI * 2);
+        ctx.arc(Math.cos(angle) * 372, Math.sin(angle) * 372, 4, 0, Math.PI * 2);
         ctx.fill();
     }
     ctx.restore();
 
-    // Label (not rotated).
     ctx.save();
-    ctx.font = '14px Bungee, sans-serif';
+    ctx.font = '16px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
-    ctx.fillText('SHIPYARD', STATION.x, STATION.y - STATION.dockRadius - 12);
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.85)';
+    ctx.fillText('ATLANTIS · SHIPYARD', STATION.x, STATION.y - STATION.dockRadius - 14);
     ctx.restore();
 };
 /* harmony export (immutable) */ __webpack_exports__["b"] = drawStation;
@@ -5333,7 +5792,7 @@ exports = module.exports = __webpack_require__(20)(undefined);
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n", ""]);
 
 // exports
 
