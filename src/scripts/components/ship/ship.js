@@ -2,8 +2,9 @@ import Bullet from '../bullet/bullet';
 import Missile from '../missile/missile';
 import Particle from '../particle/particle';
 import { drawHullArt } from '../../shipyard/hulls';
-import { drawModule } from '../../shipyard/modules';
+import MODULES, { drawModule } from '../../shipyard/modules';
 import { delta } from '../../physics/physics';
+import sounds from '../../audio/audio';
 
 // Zero-g flight model: thrusters change velocity, nothing slows you down
 // except firing thrusters the other way (or the X stabilizer).
@@ -13,14 +14,20 @@ const MASS_UNIT = 300;            // physics mass per hull mass point
 
 const BULLET_SPEED = 850;
 const BULLET_SPREAD = 0.035;
+const PLASMA_SPEED = 520;
 const RECOIL = 3.5;               // px/s per bullet for a mass-1 hull
 const TURRET_TURN_RATE = 14;      // rad/s
-const MISSILE_SALVO_GAP = 0.12;   // s between launchers firing
+const SALVO_GAP = 0.12;           // s between launchers firing
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
+const HEAT_COOLING = 0.35;        // minigun heat lost per second
+const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
 
 const HIT_COOLDOWN = 0.25;
 const SHIELD_REGEN_DELAY = 2;
 const SPAWN_IMMUNITY = 2;
+
+const TURRET_TYPES = ['minigun', 'staff', 'beam'];
+const LAUNCHER_TYPES = ['missile', 'drones'];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -29,6 +36,28 @@ const angleDifference = (a, b) => {
     while(d > Math.PI) d -= Math.PI * 2;
     while(d < -Math.PI) d += Math.PI * 2;
     return d;
+};
+
+// Distance along a ray to the first asteroid it hits.
+const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
+    let best = null;
+    let bestDistance = range;
+    rocks.forEach(rock => {
+        if(rock.dead) return;
+        const mx = rock.x - x;
+        const my = rock.y - y;
+        const along = mx * dirX + my * dirY;
+        if(along < -rock.radius) return;
+        const closestSq = mx * mx + my * my - along * along;
+        const r = rock.radius * 0.92;
+        if(closestSq > r * r) return;
+        const hit = Math.max(0, along - Math.sqrt(r * r - closestSq));
+        if(hit < bestDistance) {
+            bestDistance = hit;
+            best = rock;
+        }
+    });
+    return { rock: best, distance: bestDistance };
 };
 
 class Ship {
@@ -45,12 +74,14 @@ class Ship {
         this.time = 0;
         this.exhaustTimer = 0;
         this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
         this.hitCooldown = 0;
         this.immunity = SPAWN_IMMUNITY;
         this.sinceHit = SHIELD_REGEN_DELAY;
         this.shieldFlash = 0;
         this.hullFlash = 0;
-        this.missileCooldown = 0;
+        this.salvoCooldown = 0;
         this.nextLauncher = 0;
         this.missileLock = null;
 
@@ -81,17 +112,44 @@ class Ship {
         this.collectRadius = hull.radius * 0.55 + 8;
 
         const u = hull.moduleScale;
-        this.turrets = stats.modules.filter(m => m.type === 'minigun').map(m => ({
+        this.turrets = stats.modules.filter(m => TURRET_TYPES.indexOf(m.type) !== -1).map(m => ({
             module: m,
+            kind: m.type,
             aim: this.angle,
             cooldown: 0,
             target: null,
-            flash: 0
+            flash: 0,
+            heat: 0,
+            overheated: false,
+            beamTime: 0,
+            beam: null
         }));
-        this.launchers = stats.modules.filter(m => m.type === 'missile').map(m => ({ module: m, cooldown: 0 }));
+        this.launchers = stats.modules.filter(m => LAUNCHER_TYPES.indexOf(m.type) !== -1)
+            .map(m => ({ module: m, kind: m.type, cooldown: 0 }));
         this.engines = hull.engines.concat(stats.modules
             .filter(m => m.type === 'engine')
             .map(m => ({ x: m.slot.x - 4 * u, y: m.slot.y, size: (0.45 + m.level * 0.15) * u * 1.6 })));
+        this.jetList = this.buildJets();
+    }
+
+    // Manoeuvring jet positions from the hull definition: [x, y, dirX, dirY].
+    buildJets() {
+        const j = this.hullDef.jets;
+        const both = (points, dirX) => {
+            const list = [];
+            points.forEach(p => {
+                list.push([p[0], p[1], dirX, 0]);
+                list.push([p[0], -p[1], dirX, 0]);
+            });
+            return list;
+        };
+        return {
+            retro: both(j.retro, 1),
+            left: j.side.map(p => [p[0], Math.abs(p[1]), 0, 1]),
+            right: j.side.map(p => [p[0], -Math.abs(p[1]), 0, -1]),
+            spinCW: [[j.bow[0], -j.bow[1], 0, -1], [j.stern[0], j.stern[1], 0, 1]],
+            spinCCW: [[j.bow[0], j.bow[1], 0, 1], [j.stern[0], -j.stern[1], 0, -1]]
+        };
     }
 
     get thrusting() {
@@ -114,14 +172,19 @@ class Ship {
     }
 
     update(dt, input, world) {
-        if(!this.alive) return;
+        if(!this.alive) {
+            this.firing = false;
+            this.minigunFiring = false;
+            this.beaming = false;
+            return;
+        }
 
         this.time += dt;
         if(this.hitCooldown > 0) this.hitCooldown -= dt;
         if(this.immunity > 0) this.immunity -= dt;
         if(this.shieldFlash > 0) this.shieldFlash -= dt;
         if(this.hullFlash > 0) this.hullFlash -= dt;
-        if(this.missileCooldown > 0) this.missileCooldown -= dt;
+        if(this.salvoCooldown > 0) this.salvoCooldown -= dt;
         this.sinceHit += dt;
 
         if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
@@ -205,22 +268,6 @@ class Ship {
         });
     }
 
-    // Manoeuvring jet positions, scaled to the hull.
-    jets() {
-        const r = this.hullDef.rcs;
-        return {
-            retro: [[r.nose * 0.6, -r.half * 0.45, 1, 0], [r.nose * 0.6, r.half * 0.45, 1, 0]],
-            left: [[0, r.half, 0, 1]],
-            right: [[0, -r.half, 0, -1]],
-            spinCW: [[r.nose * 0.8, -r.half * 0.35, 0, -1], [r.tail * 0.8, r.half * 0.6, 0, 1]],
-            spinCCW: [[r.nose * 0.8, r.half * 0.35, 0, 1], [r.tail * 0.8, -r.half * 0.6, 0, -1]]
-        };
-    }
-
-    jetScale() {
-        return Math.max(1, Math.sqrt(this.hullDef.rcs.half / 8));
-    }
-
     // Spits hot exhaust particles out of the engines (and puffs from the jets).
     emitExhaust(dt, particles) {
         const t = this.thrusters;
@@ -234,21 +281,21 @@ class Ship {
         if(t.main > 0.15) {
             this.engines.forEach(engine => {
                 const nozzle = this.localToWorld(engine.x, engine.y);
-                const spread = (Math.random() - 0.5) * 0.5;
+                const spread = (Math.random() - 0.5) * 0.3;
                 const speed = (160 + Math.random() * 120) * Math.sqrt(engine.size);
                 particles.push(new Particle({
                     x: nozzle.x,
                     y: nozzle.y,
                     vx: this.vx - Math.cos(this.angle + spread) * speed * t.main,
                     vy: this.vy - Math.sin(this.angle + spread) * speed * t.main,
-                    life: 0.25 + Math.random() * 0.25,
-                    size: (2.5 + Math.random() * 2) * Math.sqrt(engine.size),
-                    color: Math.random() < 0.5 ? '255,170,60' : '255,110,40'
+                    life: 0.2 + Math.random() * 0.2,
+                    size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
+                    color: this.hullDef.exhaust || '255,150,60'
                 }));
             });
         }
 
-        const jets = this.jets();
+        const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.2 || Math.random() > 0.5) return;
             jets[key].forEach(jet => {
@@ -301,18 +348,28 @@ class Ship {
                 return;
             }
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
-            turret.target = this.nearestRock(p.x, p.y, rocks, range);
+            const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
+            turret.target = this.nearestRock(p.x, p.y, rocks, reach);
         });
     }
 
     updateTurrets(dt, input, world) {
         this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
 
         this.turrets.forEach(turret => {
             const stats = turret.module.stats;
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
             if(turret.cooldown > 0) turret.cooldown -= dt;
             if(turret.flash > 0) turret.flash -= dt;
+            turret.beam = null;
+
+            // Minigun heat bleeds off continuously.
+            if(turret.kind === 'minigun') {
+                turret.heat = Math.max(0, turret.heat - HEAT_COOLING * dt);
+                if(turret.overheated && turret.heat <= HEAT_RESUME) turret.overheated = false;
+            }
 
             // Manual fire always aims at the cursor; otherwise the guidance computer
             // leads the locked target.
@@ -322,7 +379,8 @@ class Ship {
             if(!input.firing && turret.target) {
                 const target = turret.target;
                 let d = delta(p, target);
-                const time = Math.sqrt(d.x * d.x + d.y * d.y) / BULLET_SPEED;
+                const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
+                const time = turret.kind === 'beam' ? 0 : Math.sqrt(d.x * d.x + d.y * d.y) / speed;
                 d = { x: d.x + target.vx * time, y: d.y + target.vy * time };
                 desired = Math.atan2(d.y, d.x);
                 shouldFire = true;
@@ -331,37 +389,116 @@ class Ship {
             const diff = angleDifference(turret.aim, desired);
             const maxTurn = TURRET_TURN_RATE * dt;
             turret.aim += clamp(diff, -maxTurn, maxTurn);
+            const aimed = Math.abs(diff) < 0.2;
 
-            if(!shouldFire || Math.abs(diff) > 0.2) return;
+            if(turret.kind === 'beam') {
+                this.updateBeam(dt, turret, p, shouldFire && aimed, world);
+                return;
+            }
+
+            if(!shouldFire || !aimed || turret.overheated) return;
             this.firing = true;
-
+            if(turret.kind === 'minigun') this.minigunFiring = true;
             if(turret.cooldown > 0) return;
-            turret.cooldown += 1 / stats.fireRate;
-            if(turret.cooldown < 0) turret.cooldown = 0;
 
-            const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
-            const dirX = Math.cos(angle);
-            const dirY = Math.sin(angle);
-            const barrel = 9 * this.hullDef.moduleScale;
-
-            // Bullets inherit the ship's speed along the line of fire, but not its
-            // sideways drift, so they travel where the turret points.
-            const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
-            const speed = BULLET_SPEED + inherited;
-            world.bullets.push(new Bullet(
-                p.x + Math.cos(turret.aim) * barrel,
-                p.y + Math.sin(turret.aim) * barrel,
-                dirX * speed,
-                dirY * speed,
-                stats.damage
-            ));
-
-            // Equal and opposite reaction.
-            const recoil = RECOIL / this.stats.mass;
-            this.vx -= dirX * recoil;
-            this.vy -= dirY * recoil;
-            turret.flash = 0.04;
+            if(turret.kind === 'minigun') this.fireMinigun(turret, p, stats, world);
+            if(turret.kind === 'staff') this.fireStaff(turret, p, stats, world);
         });
+    }
+
+    fireMinigun(turret, p, stats, world) {
+        turret.cooldown = Math.max(0, turret.cooldown) + 1 / stats.fireRate;
+
+        const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
+        const dirX = Math.cos(angle);
+        const dirY = Math.sin(angle);
+        const barrel = 9 * this.hullDef.moduleScale;
+
+        // Bullets inherit the ship's speed along the line of fire, but not its
+        // sideways drift, so they travel where the turret points.
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = BULLET_SPEED + inherited;
+        world.bullets.push(new Bullet(
+            p.x + Math.cos(turret.aim) * barrel,
+            p.y + Math.sin(turret.aim) * barrel,
+            dirX * speed,
+            dirY * speed,
+            stats.damage
+        ));
+
+        // Equal and opposite reaction.
+        const recoil = RECOIL / this.stats.mass;
+        this.vx -= dirX * recoil;
+        this.vy -= dirY * recoil;
+        turret.flash = 0.04;
+
+        // Each round adds enough heat to outpace cooling, so sustained fire
+        // overheats after `heatShots` rounds.
+        turret.heat += 1 / stats.heatShots + HEAT_COOLING / stats.fireRate;
+        if(turret.heat >= 1) {
+            turret.heat = 1;
+            turret.overheated = true;
+            sounds.overheat();
+        }
+    }
+
+    fireStaff(turret, p, stats, world) {
+        turret.cooldown = 1 / stats.fireRate;
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const barrel = 8 * this.hullDef.moduleScale;
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = PLASMA_SPEED + inherited;
+
+        world.bullets.push(new Bullet(
+            p.x + dirX * barrel, p.y + dirY * barrel,
+            dirX * speed, dirY * speed,
+            stats.damage, 'plasma', stats.splash
+        ));
+        this.vx -= dirX * RECOIL * 2 / this.stats.mass;
+        this.vy -= dirY * RECOIL * 2 / this.stats.mass;
+        turret.flash = 0.08;
+        sounds.staffShot();
+    }
+
+    // Asgard beam: fires a burst for a few seconds, then must recharge.
+    updateBeam(dt, turret, p, trigger, world) {
+        const stats = turret.module.stats;
+
+        if(turret.beamTime > 0 && !trigger) {
+            // Released early: recharge for the part of the burst that was used.
+            turret.cooldown = stats.cooldown * (1 - turret.beamTime / stats.burst);
+            turret.beamTime = 0;
+        }
+        if(trigger && turret.beamTime <= 0 && turret.cooldown <= 0) turret.beamTime = stats.burst;
+        if(turret.beamTime <= 0) return;
+
+        turret.beamTime -= dt;
+        if(turret.beamTime <= 0) {
+            turret.beamTime = 0;
+            turret.cooldown = stats.cooldown;
+        }
+
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const startX = p.x + dirX * 6 * this.hullDef.moduleScale;
+        const startY = p.y + dirY * 6 * this.hullDef.moduleScale;
+        const hit = raycastRocks(startX, startY, dirX, dirY, stats.range, world.rocks);
+        const endX = startX + dirX * hit.distance;
+        const endY = startY + dirY * hit.distance;
+
+        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!hit.rock };
+        this.firing = true;
+        this.beaming = true;
+
+        if(hit.rock) {
+            world.beamHits.push({ rock: hit.rock, damage: stats.dps * dt, x: endX, y: endY, dirX: dirX, dirY: dirY });
+        }
+    }
+
+    pickLauncherTarget(input, rocks) {
+        if(this.guidance) return this.missileLock;
+        return null;
     }
 
     updateLaunchers(dt, input, world) {
@@ -369,36 +506,103 @@ class Ship {
             if(launcher.cooldown > 0) launcher.cooldown -= dt;
         });
 
-        if(!input.firingMissiles || this.missileCooldown > 0 || this.launchers.length === 0) return;
+        if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
 
         for(let i = 0; i < this.launchers.length; i++) {
             const index = (this.nextLauncher + i) % this.launchers.length;
             const launcher = this.launchers[index];
             if(launcher.cooldown > 0) continue;
 
-            const stats = launcher.module.stats;
-            const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-            const target = this.guidance ? this.missileLock : null;
-            const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-            const angle = Math.atan2(aimAt.y, aimAt.x);
+            if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
+            if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
 
-            world.missiles.push(new Missile({
-                x: p.x,
-                y: p.y,
-                vx: this.vx + Math.cos(angle) * 120,
-                vy: this.vy + Math.sin(angle) * 120,
-                angle: angle,
-                damage: stats.damage,
-                blast: stats.blast,
-                target: target,
-                homing: this.guidance ? this.guidance.homing : 0
-            }));
-
-            launcher.cooldown = stats.cooldown;
-            this.missileCooldown = MISSILE_SALVO_GAP;
+            this.salvoCooldown = SALVO_GAP;
             this.nextLauncher = index + 1;
             return;
         }
+    }
+
+    fireMissile(launcher, input, world) {
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = this.guidance ? this.missileLock : null;
+        const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const angle = Math.atan2(aimAt.y, aimAt.x);
+
+        world.missiles.push(new Missile({
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 120,
+            vy: this.vy + Math.sin(angle) * 120,
+            angle: angle,
+            damage: stats.damage,
+            blast: stats.blast,
+            target: target,
+            homing: this.guidance ? this.guidance.homing : 0
+        }));
+        launcher.cooldown = stats.cooldown;
+        sounds.missileLaunch();
+    }
+
+    // Ancient drones: a fan of self-guided drones that hunt asteroids on their own.
+    fireDrones(launcher, input, world) {
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 400);
+        const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const base = Math.atan2(aimAt.y, aimAt.x);
+
+        for(let i = 0; i < stats.count; i++) {
+            const angle = base + (i - (stats.count - 1) / 2) * 0.45;
+            world.missiles.push(new Missile({
+                kind: 'drone',
+                x: p.x,
+                y: p.y,
+                vx: this.vx + Math.cos(angle) * 160,
+                vy: this.vy + Math.sin(angle) * 160,
+                angle: angle,
+                damage: stats.damage,
+                blast: 14,
+                target: target,
+                homing: 7,
+                launchDelay: i * 0.06
+            }));
+        }
+        launcher.cooldown = stats.cooldown;
+        sounds.droneLaunch();
+    }
+
+    // Readiness of each weapon group for the HUD: 1 = ready.
+    weaponStatus() {
+        const groups = {};
+        this.turrets.concat(this.launchers).forEach(w => {
+            const def = MODULES[w.kind];
+            if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
+            const g = groups[w.kind];
+            const stats = w.module.stats;
+            let ready = 1;
+            let state = 'ready';
+
+            if(w.kind === 'minigun') {
+                ready = 1 - w.heat;
+                state = w.overheated ? 'overheated' : (w.heat > 0.6 ? 'hot' : 'ready');
+            } else if(w.kind === 'beam') {
+                if(w.beamTime > 0) { ready = w.beamTime / stats.burst; state = 'firing'; }
+                else if(w.cooldown > 0) { ready = 1 - w.cooldown / stats.cooldown; state = 'charging'; }
+            } else if(w.cooldown > 0) {
+                const total = w.kind === 'staff' ? 1 / stats.fireRate : stats.cooldown;
+                ready = 1 - w.cooldown / total;
+                state = 'reloading';
+            }
+
+            g.ready += clamp(ready, 0, 1);
+            g.count++;
+            if(state !== 'ready') g.state = state;
+        });
+        return Object.keys(groups).map(kind => {
+            const g = groups[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: g.state };
+        });
     }
 
     // Returns true if damage was applied.
@@ -411,18 +615,23 @@ class Ship {
         const absorbed = Math.min(this.shield, amount);
         this.shield -= absorbed;
         const remaining = amount - absorbed;
-        if(absorbed > 0) this.shieldFlash = 0.25;
+        if(absorbed > 0) {
+            this.shieldFlash = 0.25;
+            sounds.shieldHit();
+        }
 
         if(remaining > 0) {
             this.hp -= remaining;
             this.hullFlash = 0.15;
             this.explode(particles, 10 + Math.round(remaining / 2));
+            sounds.hullHit();
         }
 
         if(this.hp <= 0) {
             this.hp = 0;
             this.alive = false;
             this.explode(particles, 40 + this.radius * 2);
+            sounds.explosion(1);
         }
         return true;
     }
@@ -468,10 +677,11 @@ class Ship {
 
     drawThrusters(ctx) {
         const t = this.thrusters;
-        const flicker = () => 0.75 + Math.random() * 0.5;
-        const scale = this.jetScale();
+        const flicker = () => 0.8 + Math.random() * 0.4;
+        const jetScale = this.hullDef.jetScale || 1;
         const jetOuter = 'rgba(170, 210, 255, 0.85)';
         const jetInner = 'rgba(255, 255, 255, 0.95)';
+        const exhaust = this.hullDef.exhaust || '255,150,60';
 
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -479,34 +689,34 @@ class Ship {
         const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
         this.engines.forEach(engine => {
-            const size = engine.size * (1 + (scale - 1) * 0.6);
+            const size = engine.size;
 
-            // Idle engine glow, pulsing even when not thrusting.
-            const glowRadius = (3 + pulse * 1.5 + t.main * 4) * size * 2;
+            // Nozzle glow, pulsing even when idle.
+            const glowRadius = (2.5 + pulse + t.main * 3) * size * 1.6;
             const glow = ctx.createRadialGradient(engine.x, engine.y, 0, engine.x, engine.y, glowRadius);
-            glow.addColorStop(0, 'rgba(255, 200, 120, ' + (0.6 + t.main * 0.4) + ')');
-            glow.addColorStop(1, 'rgba(255, 120, 40, 0)');
+            glow.addColorStop(0, 'rgba(' + exhaust + ', ' + (0.55 + t.main * 0.45) + ')');
+            glow.addColorStop(1, 'rgba(' + exhaust + ', 0)');
             ctx.fillStyle = glow;
             ctx.beginPath();
             ctx.arc(engine.x, engine.y, glowRadius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Main engine plume.
-            const length = t.main * (18 + Math.random() * 12) * size;
+            // Plume straight out of the nozzle, as wide as the nozzle.
+            const length = t.main * (14 + Math.random() * 8) * size * 1.4;
             const plume = ctx.createLinearGradient(engine.x, engine.y, engine.x - length, engine.y);
-            plume.addColorStop(0, 'rgba(255, 220, 140, 0.95)');
-            plume.addColorStop(0.5, 'rgba(255, 130, 40, 0.8)');
-            plume.addColorStop(1, 'rgba(255, 60, 20, 0)');
-            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 4.5 * size * flicker(), plume, 'rgba(255, 255, 230, 0.95)');
+            plume.addColorStop(0, 'rgba(255, 235, 190, 0.95)');
+            plume.addColorStop(0.4, 'rgba(' + exhaust + ', 0.8)');
+            plume.addColorStop(1, 'rgba(' + exhaust + ', 0)');
+            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 2.6 * size * flicker(), plume, 'rgba(255, 255, 235, 0.9)');
         });
 
-        // Manoeuvring jets: retro, strafe and attitude control.
-        const jets = this.jets();
+        // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
+        const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.02) return;
-            const length = t[key] * 9 * scale;
+            const length = t[key] * 7 * jetScale;
             jets[key].forEach(jet => {
-                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.8 * scale, jetOuter, jetInner);
+                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.3 * jetScale, jetOuter, jetInner);
             });
         });
 
@@ -518,18 +728,49 @@ class Ship {
         const s = this.hullDef.shield;
         const strength = this.shield / this.maxShield;
         const alpha = 0.1 + 0.2 * strength + Math.max(0, this.shieldFlash) * 2.5;
+        const color = this.hullDef.shieldColor || '120,210,255';
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(120, 210, 255, ' + Math.min(1, alpha) + ')';
-        ctx.fillStyle = 'rgba(120, 210, 255, ' + Math.min(0.25, alpha * 0.25) + ')';
+        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, alpha) + ')';
+        ctx.fillStyle = 'rgba(' + color + ', ' + Math.min(0.25, alpha * 0.25) + ')';
         ctx.lineWidth = 1.2;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(120, 210, 255)';
+        ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
         ctx.ellipse(s.x, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+    }
+
+    // Beams are drawn in world space (after the ship transform is restored).
+    drawBeams(ctx) {
+        this.turrets.forEach(turret => {
+            const beam = turret.beam;
+            if(!beam) return;
+            const flicker = 0.75 + Math.random() * 0.25;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            [[9, 'rgba(90, 170, 255, 0.18)'], [4, 'rgba(140, 210, 255, 0.55)'], [1.6, 'rgba(240, 250, 255, 0.95)']].forEach(layer => {
+                ctx.lineWidth = layer[0] * flicker * this.hullDef.moduleScale;
+                ctx.strokeStyle = layer[1];
+                ctx.beginPath();
+                ctx.moveTo(beam.x1, beam.y1);
+                ctx.lineTo(beam.x2, beam.y2);
+                ctx.stroke();
+            });
+            if(beam.hit) {
+                const glow = ctx.createRadialGradient(beam.x2, beam.y2, 0, beam.x2, beam.y2, 16);
+                glow.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
+                glow.addColorStop(1, 'rgba(120, 190, 255, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(beam.x2, beam.y2, 16, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        });
     }
 
     draw(ctx) {
@@ -547,7 +788,7 @@ class Ship {
         drawHullArt(ctx, this.hullDef, { color: this.hullFlash > 0 ? '255,120,120' : undefined });
 
         this.stats.modules.forEach(module => {
-            if(module.type === 'minigun') return;
+            if(TURRET_TYPES.indexOf(module.type) !== -1) return;
             ctx.save();
             ctx.translate(module.slot.x, module.slot.y);
             drawModule(ctx, module.type, module.level, { scale: u });
@@ -557,11 +798,16 @@ class Ship {
         this.turrets.forEach(turret => {
             ctx.save();
             ctx.translate(turret.module.slot.x, turret.module.slot.y);
-            drawModule(ctx, 'minigun', turret.module.level, { scale: u, aim: turret.aim - this.angle });
+            drawModule(ctx, turret.kind, turret.module.level, {
+                scale: u,
+                aim: turret.aim - this.angle,
+                heat: turret.kind === 'minigun' ? turret.heat : 0
+            });
             if(turret.flash > 0) {
                 const tip = 9 * u;
+                const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
                 ctx.globalCompositeOperation = 'lighter';
-                ctx.fillStyle = 'rgba(255, 230, 150, 0.9)';
+                ctx.fillStyle = 'rgba(' + color + ', 0.9)';
                 ctx.beginPath();
                 ctx.arc(Math.cos(turret.aim - this.angle) * tip, Math.sin(turret.aim - this.angle) * tip,
                     (2 + Math.random() * 3) * Math.max(1, u), 0, Math.PI * 2);
@@ -572,6 +818,8 @@ class Ship {
 
         this.drawShield(ctx);
         ctx.restore();
+
+        this.drawBeams(ctx);
     }
 }
 

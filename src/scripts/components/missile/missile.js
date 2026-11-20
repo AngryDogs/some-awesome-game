@@ -1,10 +1,11 @@
 import Particle from '../particle/particle';
 import { delta } from '../../physics/physics';
 
-const ACCELERATION = 520;
-const MAX_SPEED = 620;
-const LIFETIME = 4;
-const RETARGET_RANGE = 320;
+// Tau'ri missiles ('missile') and Ancient drones ('drone').
+const PROFILES = {
+    missile: { acceleration: 520, maxSpeed: 620, lifetime: 4, retarget: 320, trail: '255,150,70', trailRate: 0.02 },
+    drone: { acceleration: 900, maxSpeed: 760, lifetime: 6, retarget: 650, trail: '255,220,120', trailRate: 0.015 }
+};
 
 const angleDifference = (a, b) => {
     let d = b - a;
@@ -16,6 +17,8 @@ const angleDifference = (a, b) => {
 class Missile {
 
     constructor(options) {
+        this.kind = options.kind || 'missile';
+        this.profile = PROFILES[this.kind];
         this.x = options.x;
         this.y = options.y;
         this.vx = options.vx;
@@ -25,21 +28,28 @@ class Missile {
         this.blast = options.blast;
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
-        this.life = LIFETIME;
+        this.launchDelay = options.launchDelay || 0;
+        this.life = this.profile.lifetime;
         this.trailTimer = 0;
+        this.time = Math.random() * 10;
         this.dead = false;
         this.exploded = false;
     }
 
     update(dt, rocks, particles) {
         this.life -= dt;
+        this.time += dt;
         if(this.life <= 0) {
             this.dead = true;
             this.exploded = true;
             return;
         }
 
-        if(this.homing > 0) {
+        const profile = this.profile;
+        const armed = this.launchDelay <= 0;
+        if(!armed) this.launchDelay -= dt;
+
+        if(this.homing > 0 && armed) {
             if(!this.target || this.target.dead) this.target = this.findTarget(rocks);
             if(this.target) {
                 const d = delta(this, this.target);
@@ -51,10 +61,11 @@ class Missile {
 
         const dirX = Math.cos(this.angle);
         const dirY = Math.sin(this.angle);
-        this.vx += dirX * ACCELERATION * dt;
-        this.vy += dirY * ACCELERATION * dt;
+        const thrust = armed ? profile.acceleration : profile.acceleration * 0.3;
+        this.vx += dirX * thrust * dt;
+        this.vy += dirY * thrust * dt;
 
-        // Guided missiles use their side thrusters to bleed off sideways drift.
+        // Guided weapons use side thrust to bleed off sideways drift.
         if(this.homing > 0) {
             const forward = this.vx * dirX + this.vy * dirY;
             const damp = Math.min(1, this.homing * 0.8 * dt);
@@ -63,9 +74,9 @@ class Missile {
         }
 
         const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        if(speed > MAX_SPEED) {
-            this.vx *= MAX_SPEED / speed;
-            this.vy *= MAX_SPEED / speed;
+        if(speed > profile.maxSpeed) {
+            this.vx *= profile.maxSpeed / speed;
+            this.vy *= profile.maxSpeed / speed;
         }
 
         this.x += this.vx * dt;
@@ -73,18 +84,18 @@ class Missile {
 
         this.trailTimer -= dt;
         if(this.trailTimer <= 0) {
-            this.trailTimer = 0.02;
+            this.trailTimer = profile.trailRate;
             particles.push(new Particle({
-                x: this.x - dirX * 5, y: this.y - dirY * 5,
-                vx: this.vx * 0.2 - dirX * 60, vy: this.vy * 0.2 - dirY * 60,
-                life: 0.3 + Math.random() * 0.2, size: 2.5, color: '255,150,70'
+                x: this.x - dirX * 4, y: this.y - dirY * 4,
+                vx: this.vx * 0.2 - dirX * 50, vy: this.vy * 0.2 - dirY * 50,
+                life: 0.25 + Math.random() * 0.2, size: this.kind === 'drone' ? 2 : 2.5, color: profile.trail
             }));
         }
     }
 
     findTarget(rocks) {
         let best = null;
-        let bestDist = RETARGET_RANGE * RETARGET_RANGE;
+        let bestDist = this.profile.retarget * this.profile.retarget;
         rocks.forEach(rock => {
             if(rock.dead) return;
             const d = delta(this, rock);
@@ -101,6 +112,28 @@ class Missile {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
+
+        if(this.kind === 'drone') {
+            // Golden squid-like drone with a pulsing glow.
+            const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
+            ctx.globalCompositeOperation = 'lighter';
+            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 9);
+            glow.addColorStop(0, 'rgba(255, 240, 180, ' + pulse + ')');
+            glow.addColorStop(1, 'rgba(255, 200, 80, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(0, 0, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(4, 0); ctx.lineTo(-1, -2); ctx.lineTo(-4, -1.2);
+            ctx.moveTo(4, 0); ctx.lineTo(-1, 2); ctx.lineTo(-4, 1.2);
+            ctx.stroke();
+            ctx.restore();
+            return;
+        }
+
         ctx.strokeStyle = 'rgb(255, 160, 140)';
         ctx.lineWidth = 1.3;
         ctx.shadowBlur = 6;

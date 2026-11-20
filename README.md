@@ -41,9 +41,15 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 
 Spend credits on:
 
-- **Hulls**: X-302, X-303, X-304, Ha'tak and Asgard, each with its own mounts, cargo hold, mass, hull and built-in shields.
+- **Hulls**: X-302, X-303, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields.
 - **Modules** placed on mounts by drag & drop (or select one and click a mount):
-  minigun turrets, missile pods, sublight engines, shield emitters, targeting computers, cargo pods,
-  ore tractors and armor. Each module upgrades from Mk I to Mk III and can be sold for half its value.
+  minigun turrets, Goa'uld staff cannons, Asgard ion beams, missile pods, Ancient drone launchers,
+  sublight engines, shield emitters, targeting computers, cargo pods, ore tractors and armor.
+  Each module upgrades from Mk I to Mk III and can be sold for half its value.
+
+Every weapon has a cooldown, shown in the weapon panel (bottom left): miniguns overheat, ion beams fire
+in bursts and recharge, staff cannons, missiles and drones reload between shots.
+Primary weapons (left click / Space): minigun, staff cannon, ion beam.
+Secondary weapons (right click / F): missiles, drones.
 
 A targeting computer makes turrets lock on and fire automatically and turns missiles into homing missiles.

@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 8);
+/******/ 	return __webpack_require__(__webpack_require__.s = 9);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -140,6 +140,9 @@ const dominantMaterial = (composition) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+// Small glowing sparks, plus soft dust that can be drawn into an asteroid
+// (used when asteroids merge: the dust cloud spirals in and settles on the surface).
+
 class Particle {
 
     constructor(options) {
@@ -152,6 +155,10 @@ class Particle {
         this.size = options.size || 2;
         this.color = options.color || '255,255,255';
         this.shrink = options.shrink !== false;
+        this.dust = !!options.dust;
+        this.alpha = options.alpha === undefined ? 1 : options.alpha;
+        this.attractor = options.attractor || null;
+        this.swirl = options.swirl || 0;
         this.dead = false;
     }
 
@@ -166,12 +173,52 @@ class Particle {
                 vy: baseVy + Math.sin(angle) * speed,
                 life: options.minLife + Math.random() * (options.maxLife - options.minLife),
                 size: options.size * (0.6 + Math.random() * 0.8),
-                color: options.color
+                color: options.color,
+                dust: options.dust,
+                alpha: options.alpha
+            }));
+        }
+    }
+
+    // A ring of dust around (x, y) that swirls inwards onto `attractor`.
+    static mergeCloud(target, x, y, attractor, count, spread, color) {
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = spread * (0.3 + Math.random() * 0.9);
+            const px = x + Math.cos(angle) * distance;
+            const py = y + Math.sin(angle) * distance;
+            const out = 15 + Math.random() * 35;
+            target.push(new Particle({
+                x: px,
+                y: py,
+                vx: attractor.vx + Math.cos(angle) * out,
+                vy: attractor.vy + Math.sin(angle) * out,
+                life: 1.6 + Math.random() * 1.4,
+                size: 5 + Math.random() * 9,
+                color: color,
+                dust: true,
+                alpha: 0.18 + Math.random() * 0.14,
+                attractor: attractor,
+                swirl: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
             }));
         }
     }
 
     update(dt) {
+        const a = this.attractor;
+        if(a && !a.dead) {
+            const dx = a.x - this.x;
+            const dy = a.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+            // Fall inwards with a tangential swirl, matching the asteroid's drift.
+            const pull = 160 + 3000 / (distance + 20);
+            this.vx += (dx / distance * pull - dy / distance * pull * this.swirl) * dt;
+            this.vy += (dy / distance * pull + dx / distance * pull * this.swirl) * dt;
+            this.vx += (a.vx - this.vx) * Math.min(1, dt * 1.5);
+            this.vy += (a.vy - this.vy) * Math.min(1, dt * 1.5);
+            if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
+        }
+
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.life -= dt;
@@ -180,8 +227,17 @@ class Particle {
 
     draw(ctx) {
         const t = Math.max(this.life / this.maxLife, 0);
+        if(this.dust) {
+            // Soft puff: fade in quickly, fade out slowly.
+            const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
+            ctx.fillStyle = 'rgba(' + this.color + ',' + (this.alpha * fade).toFixed(3) + ')';
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * (0.6 + 0.4 * (1 - t)), 0, Math.PI * 2);
+            ctx.fill();
+            return;
+        }
         const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
-        ctx.fillStyle = 'rgba(' + this.color + ',' + t.toFixed(3) + ')';
+        ctx.fillStyle = 'rgba(' + this.color + ',' + (t * this.alpha).toFixed(3) + ')';
         ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
     }
 }
@@ -263,7 +319,7 @@ const gravityAt = (body, attractors) => {
 // slots:     module mounts the player can fill in the shipyard
 // engines:   built-in main engine nozzles (flames are drawn here)
 // colliders: circles approximating the hull for asteroid collisions
-// rcs:       where manoeuvring jets sit (nose x, tail x, half width)
+// jets:      manoeuvring jet positions on the hull edges (mirrored to both sides)
 // shield:    shield bubble ellipse
 
 const mirror = (pts) => pts.map(p => [p[0], -p[1]]);
@@ -272,6 +328,19 @@ const line = (x1, y1, x2, y2) => ({ pts: [[x1, y1], [x2, y2]] });
 const mirrorRect = (x1, y1, x2, y2) => [rect(x1, y1, x2, y2), rect(x1, -y1, x2, -y2)];
 const mirrorLine = (x1, y1, x2, y2) => [line(x1, y1, x2, y2), line(x1, -y1, x2, -y2)];
 const row = (xs, y, r) => xs.map(x => [x, y, r]);
+// Closed outline from its top half (bow to stern, negative y), mirrored onto the bottom half.
+const symmetric = (half) => half.concat(half.slice().reverse().filter(p => p[1] !== 0).map(p => [p[0], -p[1]]));
+const grid = (x0, y0, cols, rows, w, h, gap) => {
+    const parts = [];
+    for(let c = 0; c < cols; c++) {
+        for(let r = 0; r < rows; r++) {
+            const x = x0 + c * (w + gap);
+            const y = y0 + r * (h + gap);
+            parts.push(rect(x, y, x + w, y + h));
+        }
+    }
+    return parts;
+};
 
 const HULLS = {
     x302: {
@@ -307,7 +376,8 @@ const HULLS = {
         ],
         engines: [{ x: -16, y: -1.5, size: 0.6 }, { x: -16, y: 1.5, size: 0.6 }],
         colliders: [[10, 0, 6], [-4, 0, 7], [-8, -9, 6], [-8, 9, 6]],
-        rcs: { nose: 14, tail: -13, half: 9 },
+        jets: { retro: [[12, 2.6]], side: [[-8, 14]], bow: [15, 2.5], stern: [-14, 3] },
+        jetScale: 0.9,
         shield: { x: -1, rx: 24, ry: 20 }
     },
 
@@ -352,7 +422,8 @@ const HULLS = {
         engines: [{ x: -49, y: -17.5, size: 1 }, { x: -49, y: 17.5, size: 1 }, { x: -41, y: 0, size: 0.8 }],
         colliders: row([40, 26, 12, -2, -16, -30], 0, 10)
             .concat(row([-18, -30, -42], -17.5, 5), row([-18, -30, -42], 17.5, 5)),
-        rcs: { nose: 42, tail: -42, half: 22 },
+        jets: { retro: [[40, 9]], side: [[26, 10], [-30, 21]], bow: [42, 6], stern: [-44, 21] },
+        jetScale: 1.3,
         shield: { x: -1, rx: 58, ry: 34 }
     },
 
@@ -361,9 +432,10 @@ const HULLS = {
         name: 'X-304',
         className: 'Daedalus-class',
         faction: "Tau'ri",
-        description: 'Deep-space carrier: twin hangar bays (big cargo hold) and Asgard shielding.',
+        description: 'Deep-space battlecruiser: long forward hull, wide engineering section and twin hangar pods.',
         cost: 6000,
         color: '210,230,255',
+        exhaust: '255,160,80',
         mass: 5,
         hull: 260,
         baseShield: 30,
@@ -372,37 +444,52 @@ const HULLS = {
         torque: 3,
         maxTurn: 2,
         moduleScale: 1,
-        radius: 64,
+        radius: 70,
         art: [
-            { closed: true, pts: [[50, -3], [46, -9], [-50, -9], [-50, 9], [46, 9], [50, 3]] },
-            { closed: true, pts: [[60, -13], [64, -17], [64, -21], [60, -25], [-32, -25], [-32, -13]] },
-            { closed: true, pts: mirror([[60, -13], [64, -17], [64, -21], [60, -25], [-32, -25], [-32, -13]]) },
-            { pts: [[58, -15], [44, -15], [44, -23], [58, -23]] },
-            { pts: mirror([[58, -15], [44, -15], [44, -23], [58, -23]]) },
-            ...mirrorLine(24, -13, 24, -25), ...mirrorLine(4, -13, 4, -25), ...mirrorLine(-16, -13, -16, -25),
-            ...mirrorRect(28, -9, 20, -13),
-            ...mirrorRect(-10, -9, -18, -13),
-            rect(-18, -5, -34, 5),
-            line(-21, -3, -21, 3),
-            line(38, -9, 38, 9), line(14, -9, 14, 9), line(-6, -9, -6, 9),
-            rect(-50, -6, -55, -1), rect(-50, 1, -55, 6),
-            ...mirrorRect(-32, -16, -36, -22)
+            // Hangar pods either side of the engineering section.
+            { closed: true, pts: [[-8, -22], [-8, -33], [-13, -38], [-62, -38], [-64, -36], [-64, -22]] },
+            { closed: true, pts: mirror([[-8, -22], [-8, -33], [-13, -38], [-62, -38], [-64, -36], [-64, -22]]) },
+            ...mirrorRect(-14, -25, -58, -35),
+            ...mirrorLine(-27, -25, -27, -35), ...mirrorLine(-42, -25, -42, -35),
+            // Engineering section.
+            { closed: true, pts: symmetric([[-8, -16], [-14, -22], [-58, -22], [-64, -16]]) },
+            rect(-14, -16, -58, 16),
+            line(-14, -8, -58, -8), line(-14, 8, -58, 8),
+            ...mirrorRect(-20, -13, -28, -10), ...mirrorRect(-44, -13, -52, -10),
+            rect(-30, -4, -42, 4),
+            // Forward hull, neck and nose.
+            { closed: true, pts: symmetric([[66, -6], [64, -8], [42, -8], [37, -12], [8, -12], [6, -9.5], [-9, -9.5]]) },
+            { closed: true, pts: symmetric([[60, -4], [42, -5], [38, -9], [12, -9]]) },
+            ...grid(14, -7, 5, 2, 3.4, 5, 1.2),
+            // Bridge superstructure on the neck.
+            { closed: true, pts: symmetric([[6, -5], [-6, -6]]) },
+            line(3, -3.5, 3, 3.5),
+            line(66, 4, 80, 4),
+            // Engine nozzles: three centre, three per pod.
+            rect(-64, -13, -67, -7), rect(-64, -3, -67, 3), rect(-64, 7, -67, 13),
+            ...mirrorRect(-64, -27, -66.5, -23), ...mirrorRect(-64, -32, -66.5, -28), ...mirrorRect(-64, -37, -66.5, -33)
         ],
         slots: [
-            { id: 'bl1', x: 34, y: -19 },
-            { id: 'br1', x: 34, y: 19 },
-            { id: 'bl2', x: -6, y: -19 },
-            { id: 'br2', x: -6, y: 19 },
-            { id: 'nose', x: 28, y: 0 },
-            { id: 'mid', x: 4, y: 0 },
-            { id: 'bridge', x: -26, y: 0 },
-            { id: 'aft', x: -43, y: 0 }
+            { id: 'nose', x: 52, y: 0 },
+            { id: 'mid', x: 25, y: 0 },
+            { id: 'bridge', x: 0, y: 0 },
+            { id: 'aft', x: -36, y: 0 },
+            { id: 'cl', x: -50, y: -14 },
+            { id: 'cr', x: -50, y: 14 },
+            { id: 'bl1', x: -20, y: -30 },
+            { id: 'br1', x: -20, y: 30 },
+            { id: 'bl2', x: -48, y: -30 },
+            { id: 'br2', x: -48, y: 30 }
         ],
-        engines: [{ x: -55, y: -3.5, size: 1.1 }, { x: -55, y: 3.5, size: 1.1 }, { x: -36, y: -19, size: 0.9 }, { x: -36, y: 19, size: 0.9 }],
-        colliders: row([42, 28, 14, 0, -14, -28, -42], 0, 9)
-            .concat(row([56, 40, 24, 8, -8, -24], -19, 7), row([56, 40, 24, 8, -8, -24], 19, 7)),
-        rcs: { nose: 56, tail: -52, half: 26 },
-        shield: { x: 2, rx: 72, ry: 40 }
+        engines: [{ x: -67, y: -10, size: 0.9 }, { x: -67, y: 0, size: 0.9 }, { x: -67, y: 10, size: 0.9 },
+            { x: -66.5, y: -25, size: 0.6 }, { x: -66.5, y: -30, size: 0.6 }, { x: -66.5, y: -35, size: 0.6 },
+            { x: -66.5, y: 25, size: 0.6 }, { x: -66.5, y: 30, size: 0.6 }, { x: -66.5, y: 35, size: 0.6 }],
+        colliders: [[58, 0, 7], [46, 0, 8], [32, 0, 11], [18, 0, 11], [4, 0, 9]]
+            .concat(row([-16, -30, -44, -57], -11, 11), row([-16, -30, -44, -57], 11, 11))
+            .concat(row([-14, -28, -42, -56], -30, 8), row([-14, -28, -42, -56], 30, 8)),
+        jets: { retro: [[40, 11], [-8, 30]], side: [[22, 12], [-36, 38]], bow: [56, 7], stern: [-60, 38] },
+        jetScale: 1.5,
+        shield: { x: -2, rx: 78, ry: 50 }
     },
 
     hatak: {
@@ -447,7 +534,10 @@ const HULLS = {
         engines: [{ x: -51, y: -8, size: 1.3 }, { x: -51, y: 8, size: 1.3 }],
         colliders: [[0, 0, 30], [36, 0, 13], [26, -26, 13], [0, -36, 13], [-26, -26, 13], [-36, 0, 13],
             [-26, 26, 13], [0, 36, 13], [26, 26, 13], [54, 0, 6]],
-        rcs: { nose: 50, tail: -48, half: 44 },
+        jets: { retro: [[46, 12]], side: [[-2, 46]], bow: [34, 30], stern: [-34, 30] },
+        jetScale: 1.8,
+        exhaust: '255,190,90',
+        shieldColor: '255,200,120',
         shield: { x: 2, rx: 64, ry: 58 }
     },
 
@@ -496,12 +586,67 @@ const HULLS = {
         engines: [{ x: -78, y: -3.5, size: 1.2 }, { x: -78, y: 3.5, size: 1.2 }, { x: -64, y: -33, size: 0.8 }, { x: -64, y: 33, size: 0.8 }],
         colliders: row([70, 56, 42, 28, 14, 0, -14, -28, -42, -56, -70], 0, 9)
             .concat([[50, -20, 10], [50, 20, 10], [-52, -24, 10], [-52, 24, 10]]),
-        rcs: { nose: 72, tail: -72, half: 32 },
+        jets: { retro: [[60, 28]], side: [[30, 8], [-56, 34]], bow: [64, 18], stern: [-66, 34] },
+        jetScale: 1.5,
+        exhaust: '140,220,255',
+        shieldColor: '150,230,255',
         shield: { x: 2, rx: 90, ry: 46 }
+    },
+    aurora: {
+        id: 'aurora',
+        name: 'Aurora',
+        className: 'Ancient warship',
+        faction: 'Ancient',
+        description: 'Lantean battleship. Fastest drive, powerful shields and ten mounts. Built for drone weapons.',
+        cost: 25000,
+        color: '240,220,160',
+        exhaust: '130,200,255',
+        shieldColor: '255,230,160',
+        mass: 6,
+        hull: 420,
+        baseShield: 160,
+        cargo: 110,
+        thrust: 1900,
+        torque: 3.4,
+        maxTurn: 2.4,
+        moduleScale: 1,
+        radius: 90,
+        art: [
+            { closed: true, pts: symmetric([[88, 0], [72, -9], [44, -14], [26, -30], [-6, -30], [-16, -12],
+                [-56, -12], [-74, -26], [-86, -26], [-80, -9], [-88, -6], [-88, 0]]) },
+            { closed: true, pts: symmetric([[40, -11], [24, -25], [-4, -25], [-10, -11]]) },
+            line(80, 0, 40, 0), line(-10, 0, -84, 0),
+            ...mirrorLine(72, -9, 44, -9),
+            ...mirrorLine(-56, -12, -76, -23),
+            ...mirrorRect(10, -21, -2, -14),
+            ...mirrorLine(-20, -12, -20, -6), ...mirrorLine(-36, -12, -36, -6),
+            { circle: [16, 0, 6] },
+            { circle: [16, 0, 2.5] },
+            rect(-88, -6, -91, -2), rect(-88, 2, -91, 6),
+            ...mirrorRect(-86, -25, -89, -19)
+        ],
+        slots: [
+            { id: 'nose', x: 64, y: 0 },
+            { id: 'fwd', x: 40, y: 0 },
+            { id: 'pl', x: 14, y: -18 },
+            { id: 'pr', x: 14, y: 18 },
+            { id: 'core', x: 0, y: 0 },
+            { id: 'mid', x: -28, y: 0 },
+            { id: 'aft', x: -50, y: 0 },
+            { id: 'fl', x: -74, y: -19 },
+            { id: 'fr', x: -74, y: 19 },
+            { id: 'tail', x: -76, y: 0 }
+        ],
+        engines: [{ x: -91, y: -4, size: 1.1 }, { x: -91, y: 4, size: 1.1 }, { x: -89, y: -22, size: 0.8 }, { x: -89, y: 22, size: 0.8 }],
+        colliders: row([80, 66, 52, 38, 24, 10, -4, -18, -32, -46, -60, -74, -86], 0, 8)
+            .concat([[14, -20, 10], [14, 20, 10], [32, -12, 8], [32, 12, 8], [-76, -20, 7], [-76, 20, 7]]),
+        jets: { retro: [[44, 14], [-6, 30]], side: [[10, 30], [-80, 26]], bow: [70, 9], stern: [-84, 24] },
+        jetScale: 1.6,
+        shield: { x: 0, rx: 98, ry: 42 }
     }
 };
 
-const HULL_ORDER = ['x302', 'x303', 'x304', 'hatak', 'asgard'];
+const HULL_ORDER = ['x302', 'x303', 'x304', 'hatak', 'asgard', 'aurora'];
 /* harmony export (immutable) */ __webpack_exports__["a"] = HULL_ORDER;
 
 
@@ -588,8 +733,38 @@ const MODULES = {
         description: 'Rapid-fire turret. Aims at the cursor, or auto-targets with a targeting computer.',
         cost: 250,
         color: '255,200,120',
-        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7] },
-        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg'
+        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7], heatShots: [60, 85, 120] },
+        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg, overheats after ' + s.heatShots + ' rounds'
+    },
+    staff: {
+        id: 'staff',
+        name: 'Staff cannon',
+        short: 'Staff',
+        description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
+        cost: 900,
+        color: '255,175,70',
+        stats: { fireRate: [2.2, 2.8, 3.5], damage: [5, 7, 9.5], splash: [18, 24, 30] },
+        describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
+    },
+    beam: {
+        id: 'beam',
+        name: 'Asgard ion beam',
+        short: 'Ion beam',
+        description: 'Instant-hit energy beam that carves through rock. Fires in bursts, then recharges.',
+        cost: 2200,
+        color: '140,215,255',
+        stats: { dps: [28, 40, 56], range: [600, 700, 820], burst: [1.2, 1.4, 1.7], cooldown: [2.6, 2.2, 1.8] },
+        describe: (s) => s.dps + ' dmg/s, ' + s.burst + 's burst, recharge ' + s.cooldown + 's'
+    },
+    drones: {
+        id: 'drones',
+        name: 'Drone launcher',
+        short: 'Drones',
+        description: 'Ancient drone weapons (F / right click). Self-guided swarms that hunt targets.',
+        cost: 2800,
+        color: '255,225,130',
+        stats: { count: [3, 4, 5], damage: [14, 18, 24], cooldown: [4, 3.3, 2.6] },
+        describe: (s) => s.count + ' drones x ' + s.damage + ' dmg, reload ' + s.cooldown + 's'
     },
     missile: {
         id: 'missile',
@@ -663,7 +838,7 @@ const MODULES = {
     }
 };
 
-const MODULE_ORDER = ['minigun', 'missile', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
+const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
 /* harmony export (immutable) */ __webpack_exports__["b"] = MODULE_ORDER;
 
 
@@ -738,10 +913,54 @@ const drawModule = (ctx, type, level, options) => {
         ctx.save();
         ctx.rotate(aim);
         const offsets = level === 1 ? [0] : level === 2 ? [-1.3, 1.3] : [-2, 0, 2];
+        if(opts.heat > 0.5) {
+            ctx.strokeStyle = 'rgb(255,' + Math.round(200 - (opts.heat - 0.5) * 300) + ',' + Math.round(120 - (opts.heat - 0.5) * 200) + ')';
+        }
         offsets.forEach(o => line(0, o, 9, o));
+        ctx.strokeStyle = 'rgb(' + color + ')';
         ctx.restore();
         circle(3.6, true);
         circle(1.2);
+    }
+
+    if(type === 'staff') {
+        // Long ribbed plasma cannon on a disc mount.
+        ctx.save();
+        ctx.rotate(aim);
+        shape([[0, -1.6], [10, -1], [10, 1], [0, 1.6]]);
+        for(let i = 0; i < level + 1; i++) line(3 + i * 2, -1.4, 3 + i * 2, 1.4);
+        ctx.restore();
+        shape([[0, -4], [3.5, -2], [3.5, 2], [0, 4], [-3.5, 2], [-3.5, -2]]);
+    }
+
+    if(type === 'beam') {
+        // Asgard emitter: crystal dish with a focusing prong.
+        ctx.save();
+        ctx.rotate(aim);
+        line(0, 0, 8, 0);
+        line(5, -2, 8, 0); line(5, 2, 8, 0);
+        ctx.restore();
+        circle(4, true);
+        ctx.beginPath();
+        ctx.arc(0, 0, 2.2 * u, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 1; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4 + i * 1.4) * u, Math.PI * 0.6, Math.PI * 1.4);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'drones') {
+        // Hexagonal drone bay with glowing drone cells.
+        shape([[4.5, 0], [2.2, -4], [-2.2, -4], [-4.5, 0], [-2.2, 4], [2.2, 4]]);
+        const cells = level + 2;
+        for(let i = 0; i < cells; i++) {
+            const a = (i / cells) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * 2.2 * u, Math.sin(a) * 2.2 * u, 0.7 * u, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 
     if(type === 'missile') {
@@ -1014,7 +1233,7 @@ const computeShipStats = (hullId) => {
     stats.acceleration = stats.thrustForce / stats.mass;
     stats.angularAcceleration = stats.torqueForce / stats.mass;
     stats.maxTurn = hull.maxTurn * Math.min(1.6, Math.sqrt(stats.angularAcceleration / hull.torque));
-    stats.weapons = stats.modules.filter(m => m.type === 'minigun' || m.type === 'missile').length;
+    stats.weapons = stats.modules.filter(m => ['minigun', 'missile', 'staff', 'beam', 'drones'].indexOf(m.type) !== -1).length;
 
     return stats;
 };
@@ -1078,6 +1297,290 @@ const spendCredits = (amount) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+// All game sounds. The engine, thruster and minigun loops use the recorded samples;
+// everything else is synthesized with the Web Audio API so each weapon has its own voice.
+
+const createLoop = (src, volume) => {
+    const audio = new Audio(src);
+    audio.loop = true;
+    audio.volume = volume;
+    return audio;
+};
+
+const thrusterSound = createLoop('./assets/sounds/thrust.mp3', 0.5);
+const minigunSound = createLoop('./assets/sounds/minigun.mp3', 0.45);
+const engineSound = createLoop('./assets/sounds/engine.mp3', 0.18);
+
+const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
+const explosionSound = new Audio('./assets/sounds/explosion2.mp3');
+
+// play() returns a promise that rejects when autoplay is blocked; ignore it.
+const safePlay = (audio) => {
+    const result = audio.play();
+    if(result && result.catch) result.catch(() => {});
+};
+
+const setLooping = (audio, on) => {
+    if(on && audio.paused) safePlay(audio);
+    if(!on && !audio.paused) {
+        audio.pause();
+        audio.currentTime = 0;
+    }
+};
+
+const playOneShot = (audio, volume) => {
+    audio.volume = Math.max(0, Math.min(1, volume));
+    audio.currentTime = 0;
+    safePlay(audio);
+};
+
+// ------------------------------------------------------------ Web Audio synth
+
+let ac = null;
+let master = null;
+let noiseBuffer = null;
+const lastPlayed = {};
+
+const context = () => {
+    if(ac) return ac;
+    try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        master = ac.createGain();
+        master.gain.value = 0.55;
+        master.connect(ac.destination);
+
+        noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    } catch(e) {
+        ac = null;
+    }
+    return ac;
+};
+
+// Limits how often one effect can retrigger, so rapid events don't turn into noise.
+const throttle = (name, seconds) => {
+    const c = context();
+    if(!c) return null;
+    if(lastPlayed[name] && c.currentTime - lastPlayed[name] < seconds) return null;
+    lastPlayed[name] = c.currentTime;
+    return c;
+};
+
+const envelope = (c, peak, attack, decay) => {
+    const gain = c.createGain();
+    const now = c.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(peak, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay);
+    gain.connect(master);
+    return gain;
+};
+
+const tone = (c, type, from, to, duration, output) => {
+    const osc = c.createOscillator();
+    const now = c.currentTime;
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    osc.connect(output);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+    return osc;
+};
+
+const noise = (c, duration, filterType, from, to, output, q) => {
+    const source = c.createBufferSource();
+    source.buffer = noiseBuffer;
+    const filter = c.createBiquadFilter();
+    const now = c.currentTime;
+    filter.type = filterType;
+    filter.Q.value = q || 1;
+    filter.frequency.setValueAtTime(from, now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(20, to), now + duration);
+    source.connect(filter);
+    filter.connect(output);
+    source.start(now, Math.random() * 0.5);
+    source.stop(now + duration + 0.05);
+};
+
+// Continuous Asgard beam hum (two detuned saws through a sweeping band-pass).
+let beamVoice = null;
+const startBeam = () => {
+    const c = context();
+    if(!c || beamVoice) return;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(0.0001, c.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.16, c.currentTime + 0.08);
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 900;
+    filter.Q.value = 3;
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = 9;
+    lfoGain.gain.value = 400;
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = 'sawtooth';
+    b.type = 'sawtooth';
+    a.frequency.value = 220;
+    b.frequency.value = 223.5;
+    a.connect(filter);
+    b.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    [a, b, lfo].forEach(o => o.start());
+    beamVoice = { gain: gain, oscillators: [a, b, lfo] };
+};
+
+const stopBeam = () => {
+    if(!beamVoice || !ac) return;
+    const voice = beamVoice;
+    beamVoice = null;
+    const now = ac.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+    voice.oscillators.forEach(o => o.stop(now + 0.2));
+};
+
+const sounds = {
+    // Must be called from a user gesture (e.g. the launch click) so audio can start.
+    unlock() {
+        const c = context();
+        if(c && c.state === 'suspended') c.resume();
+    },
+
+    startEngine() { setLooping(engineSound, true); },
+    setThrust(on) { setLooping(thrusterSound, on); },
+    setFiring(on) { setLooping(minigunSound, on); },
+    setBeam(on) { if(on) startBeam(); else stopBeam(); },
+
+    rockHit() { playOneShot(rockHitSound, 0.35); },
+    explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
+
+    staffShot() {
+        const c = throttle('staff', 0.05);
+        if(!c) return;
+        tone(c, 'sawtooth', 900, 140, 0.25, envelope(c, 0.22, 0.005, 0.25));
+        tone(c, 'square', 1400, 300, 0.12, envelope(c, 0.06, 0.002, 0.12));
+        noise(c, 0.2, 'bandpass', 3000, 600, envelope(c, 0.12, 0.002, 0.18), 2);
+    },
+
+    plasmaImpact() {
+        const c = throttle('plasmaImpact', 0.05);
+        if(!c) return;
+        noise(c, 0.35, 'lowpass', 2500, 200, envelope(c, 0.3, 0.005, 0.35));
+        tone(c, 'sine', 300, 60, 0.3, envelope(c, 0.2, 0.005, 0.3));
+    },
+
+    missileLaunch() {
+        const c = throttle('missile', 0.05);
+        if(!c) return;
+        noise(c, 0.6, 'bandpass', 600, 2500, envelope(c, 0.25, 0.02, 0.6), 1.5);
+        tone(c, 'triangle', 120, 60, 0.4, envelope(c, 0.15, 0.005, 0.35));
+    },
+
+    droneLaunch() {
+        const c = throttle('drones', 0.1);
+        if(!c) return;
+        // Rising, shimmering Ancient whine.
+        tone(c, 'sine', 320, 1500, 0.7, envelope(c, 0.16, 0.05, 0.7));
+        tone(c, 'sine', 480, 2200, 0.7, envelope(c, 0.08, 0.05, 0.7));
+        tone(c, 'triangle', 640, 900, 0.5, envelope(c, 0.05, 0.1, 0.5));
+    },
+
+    droneImpact() {
+        const c = throttle('droneImpact', 0.04);
+        if(!c) return;
+        tone(c, 'sine', 1800, 200, 0.2, envelope(c, 0.12, 0.002, 0.2));
+        noise(c, 0.25, 'highpass', 2000, 500, envelope(c, 0.12, 0.002, 0.22));
+    },
+
+    missileExplosion() {
+        const c = throttle('boom', 0.05);
+        if(!c) return;
+        noise(c, 0.9, 'lowpass', 1800, 80, envelope(c, 0.45, 0.005, 0.9));
+        tone(c, 'sine', 120, 35, 0.7, envelope(c, 0.35, 0.005, 0.7));
+    },
+
+    beamImpact() {
+        const c = throttle('beamImpact', 0.09);
+        if(!c) return;
+        noise(c, 0.08, 'highpass', 4000, 2500, envelope(c, 0.06, 0.002, 0.08));
+    },
+
+    overheat() {
+        const c = throttle('overheat', 0.5);
+        if(!c) return;
+        tone(c, 'square', 880, 880, 0.08, envelope(c, 0.08, 0.002, 0.08));
+        setTimeout(() => { if(ac) tone(ac, 'square', 660, 660, 0.12, envelope(ac, 0.08, 0.002, 0.12)); }, 120);
+        noise(c, 0.6, 'highpass', 3000, 1500, envelope(c, 0.05, 0.05, 0.6));
+    },
+
+    shieldHit() {
+        const c = throttle('shield', 0.08);
+        if(!c) return;
+        tone(c, 'sine', 1600, 300, 0.3, envelope(c, 0.2, 0.002, 0.3));
+        tone(c, 'triangle', 2400, 600, 0.2, envelope(c, 0.08, 0.002, 0.2));
+    },
+
+    hullHit() {
+        const c = throttle('hull', 0.1);
+        if(!c) return;
+        noise(c, 0.4, 'lowpass', 900, 100, envelope(c, 0.4, 0.002, 0.4));
+        tone(c, 'square', 90, 40, 0.25, envelope(c, 0.15, 0.002, 0.25));
+    },
+
+    rockCrack() {
+        const c = throttle('crack', 0.06);
+        if(!c) return;
+        noise(c, 0.25, 'bandpass', 1500, 300, envelope(c, 0.35, 0.001, 0.25), 0.8);
+        tone(c, 'triangle', 200, 70, 0.2, envelope(c, 0.15, 0.001, 0.2));
+    },
+
+    // Deep rumble as asteroids grind together and merge.
+    merge(size) {
+        const c = throttle('merge', 0.15);
+        if(!c) return;
+        const volume = Math.min(0.5, 0.15 + size / 200);
+        noise(c, 1.4, 'lowpass', 400, 60, envelope(c, volume, 0.15, 1.3));
+        tone(c, 'sine', 70, 40, 1.2, envelope(c, volume * 0.6, 0.1, 1.2));
+    },
+
+    pickup(value) {
+        const c = throttle('pickup', 0.04);
+        if(!c) return;
+        const f = 500 + Math.min(700, value * 8);
+        tone(c, 'triangle', f, f * 1.6, 0.1, envelope(c, 0.08, 0.002, 0.12));
+    },
+
+    dock() {
+        const c = context();
+        if(!c) return;
+        tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25));
+        setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4)); }, 160);
+    },
+
+    stopAll() {
+        setLooping(engineSound, false);
+        setLooping(thrusterSound, false);
+        setLooping(minigunSound, false);
+        stopBeam();
+    }
+};
+
+/* harmony default export */ __webpack_exports__["a"] = (sounds);
+
+
+/***/ }),
+/* 7 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(0);
 
 
@@ -1090,18 +1593,31 @@ const ORE_AREA = 140;             // area of rock that yields one ore piece
 const MIN_RADIUS = 8;             // smaller than this and the asteroid crumbles
 const MIN_SPLIT_RADIUS = 16;      // only asteroids at least this big break apart
 const SPLIT_GRACE = 1.2;          // seconds a fresh fragment won't merge
+const MAX_SCARS = 10;
+const SHAPE_POINTS = 30;
 const MAX_MERGE_RADIUS = 110;
 /* harmony export (immutable) */ __webpack_exports__["a"] = MAX_MERGE_RADIUS;
 
 
+// Light comes from the top-left of the screen for every asteroid.
+const LIGHT_X = -0.55;
+const LIGHT_Y = -0.65;
+
+const BASE_ROCK = [118, 110, 102];
+
 let nextId = 1;
 
+// Lumpy outline from a few layered sine "octaves" (smooth, rock-like, not spiky).
 const randomShape = (random) => {
     const rnd = random || Math.random;
-    const count = 12;
+    const octaves = [[2, 0.09], [3, 0.07], [5, 0.04], [9, 0.025]].map(o => ({ freq: o[0], amp: o[1], phase: rnd() * Math.PI * 2 }));
     const points = [];
-    for(let i = 0; i < count; i++) {
-        points.push({ angle: (i / count) * Math.PI * 2, factor: 0.78 + rnd() * 0.22 });
+    for(let i = 0; i < SHAPE_POINTS; i++) {
+        const angle = (i / SHAPE_POINTS) * Math.PI * 2;
+        let factor = 0.86;
+        octaves.forEach(o => { factor += Math.sin(angle * o.freq + o.phase) * o.amp; });
+        factor += (rnd() - 0.5) * 0.03;
+        points.push({ angle: angle, factor: Math.min(1, Math.max(0.62, factor)) });
     }
     return points;
 };
@@ -1115,9 +1631,14 @@ const normalizeComposition = (composition) => {
     return result;
 };
 
+const parseColor = (color) => color.split(',').map(Number);
+const rgb = (c, alpha) => 'rgba(' + c.map(v => Math.round(Math.max(0, Math.min(255, v)))).join(',') + ',' + (alpha === undefined ? 1 : alpha) + ')';
+const shade = (c, f) => c.map(v => v * f);
+
 class Rock {
 
     constructor(options) {
+        const rnd = options.random || Math.random;
         this.id = nextId++;
         this.x = options.x;
         this.y = options.y;
@@ -1125,15 +1646,19 @@ class Rock {
         this.vy = options.vy || 0;
         this.setArea(options.radius * options.radius);
         this.composition = normalizeComposition(options.composition || { rock: 1 });
-        this.angle = (options.random || Math.random)() * Math.PI * 2;
-        this.spin = ((options.random || Math.random)() - 0.5) * 1.5 * (20 / this.radius);
+        this.angle = rnd() * Math.PI * 2;
+        this.spin = (rnd() - 0.5) * 1.5 * (20 / this.radius);
         this.grace = options.grace || 0;
         this.flash = 0;
         this.stress = 0;
         this.oreProgress = 0;
         this.dead = false;
-        this.shape = options.shape || randomShape(options.random);
-        this.updateLook(options.random);
+        this.renderScale = 1;
+        this.renderAlpha = 1;
+        this.scars = [];
+        this.shape = options.shape || randomShape(rnd);
+        this.createSurface(rnd);
+        this.updateLook(rnd);
     }
 
     setArea(area) {
@@ -1142,24 +1667,74 @@ class Rock {
         this.radius = Math.sqrt(this.area);
     }
 
-    // Colour veins and stroke tint from the composition.
+    // Craters and cracks, in unit coordinates (scaled by radius when drawn).
+    createSurface(rnd) {
+        this.craters = [];
+        const craterCount = 3 + Math.floor(rnd() * 5);
+        for(let i = 0; i < craterCount; i++) {
+            const angle = rnd() * Math.PI * 2;
+            const distance = Math.sqrt(rnd()) * 0.62;
+            this.craters.push({
+                x: Math.cos(angle) * distance,
+                y: Math.sin(angle) * distance,
+                r: 0.07 + rnd() * rnd() * 0.22,
+                squash: 0.7 + rnd() * 0.3,
+                tilt: rnd() * Math.PI
+            });
+        }
+        this.cracks = [];
+        const crackCount = 1 + Math.floor(rnd() * 3);
+        for(let i = 0; i < crackCount; i++) {
+            const points = [];
+            let angle = rnd() * Math.PI * 2;
+            let x = Math.cos(angle) * 0.2 * rnd();
+            let y = Math.sin(angle) * 0.2 * rnd();
+            const heading = rnd() * Math.PI * 2;
+            points.push([x, y]);
+            for(let s = 0; s < 4; s++) {
+                angle = heading + (rnd() - 0.5) * 1.2;
+                x += Math.cos(angle) * 0.14;
+                y += Math.sin(angle) * 0.14;
+                points.push([x, y]);
+            }
+            this.cracks.push(points);
+        }
+    }
+
+    // Base colour and glinting mineral crystals from the composition.
     updateLook(random) {
         const rnd = random || Math.random;
         this.material = Object(__WEBPACK_IMPORTED_MODULE_0__world_materials__["c" /* dominantMaterial */])(this.composition);
-        this.veins = [];
+
+        let base = BASE_ROCK.slice();
         Object.keys(this.composition).forEach(id => {
             if(id === 'rock') return;
-            const count = Math.round(2 + this.composition[id] * 10);
-            for(let i = 0; i < count; i++) {
+            const tint = parseColor(__WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color);
+            const share = this.composition[id] * 0.22;
+            base = base.map((v, i) => v * (1 - share) + tint[i] * 0.6 * share);
+        });
+        this.baseColor = base;
+
+        this.crystals = [];
+        Object.keys(this.composition).forEach(id => {
+            if(id === 'rock') return;
+            const clusters = Math.round(1 + this.composition[id] * 5);
+            for(let c = 0; c < clusters; c++) {
                 const angle = rnd() * Math.PI * 2;
-                const distance = Math.sqrt(rnd()) * 0.65;
-                this.veins.push({
-                    x: Math.cos(angle) * distance,
-                    y: Math.sin(angle) * distance,
-                    length: 0.08 + rnd() * 0.18,
-                    angle: rnd() * Math.PI,
-                    color: __WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color
-                });
+                const distance = Math.sqrt(rnd()) * 0.7;
+                const cx = Math.cos(angle) * distance;
+                const cy = Math.sin(angle) * distance;
+                const shards = 2 + Math.floor(rnd() * 3);
+                for(let s = 0; s < shards; s++) {
+                    this.crystals.push({
+                        x: cx + (rnd() - 0.5) * 0.12,
+                        y: cy + (rnd() - 0.5) * 0.12,
+                        size: 0.035 + rnd() * 0.05,
+                        angle: rnd() * Math.PI,
+                        color: parseColor(__WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color),
+                        phase: rnd() * Math.PI * 2
+                    });
+                }
             }
         });
     }
@@ -1175,9 +1750,10 @@ class Rock {
         this.stress += damage;
         this.flash = 0.05;
 
-        // Dent the outline where the hit landed.
+        // Dent the outline and leave a fresh, pale scar where the hit landed.
         const hitAngle = Math.atan2(hitY - this.y, hitX - this.x) - this.angle;
-        this.dent(hitAngle, 0.94, 0.6);
+        this.dent(hitAngle, 1 - 0.06 * Math.min(1, damage), 0.55);
+        this.addScar(hitAngle, damage);
 
         while(this.oreProgress >= ORE_AREA) {
             this.oreProgress -= ORE_AREA;
@@ -1199,6 +1775,17 @@ class Rock {
         return result;
     }
 
+    addScar(localAngle, damage) {
+        const last = this.scars[this.scars.length - 1];
+        if(last && Math.abs(last.angle - localAngle) < 0.25) {
+            last.size = Math.min(0.3, last.size + 0.01 * damage);
+            last.fresh = 1;
+            return;
+        }
+        this.scars.push({ angle: localAngle, size: 0.08 + 0.02 * damage, fresh: 1 });
+        if(this.scars.length > MAX_SCARS) this.scars.shift();
+    }
+
     pickMaterial() {
         let roll = Math.random();
         const keys = Object.keys(this.composition);
@@ -1210,18 +1797,15 @@ class Rock {
     }
 
     dent(localAngle, factor, minimum) {
-        let nearest = 0;
-        let nearestDiff = Infinity;
-        this.shape.forEach((point, i) => {
+        const step = Math.PI * 2 / this.shape.length;
+        this.shape.forEach(point => {
             let diff = Math.abs(point.angle - localAngle) % (Math.PI * 2);
             if(diff > Math.PI) diff = Math.PI * 2 - diff;
-            if(diff < nearestDiff) {
-                nearestDiff = diff;
-                nearest = i;
-            }
+            if(diff > step * 1.5) return;
+            // Neighbouring points dent less, so the crater is rounded.
+            const weight = 1 - diff / (step * 1.5);
+            point.factor = Math.max(minimum, point.factor * (1 - (1 - factor) * weight));
         });
-        const p = this.shape[nearest];
-        p.factor = Math.max(minimum, p.factor * factor);
     }
 
     // Splits off a chunk on the side facing `worldAngle`, conserving momentum.
@@ -1253,7 +1837,8 @@ class Rock {
 
         // Flatten the broken face.
         const localAngle = worldAngle - this.angle;
-        for(let i = -2; i <= 2; i++) this.dent(localAngle + i * 0.4, 0.75, 0.55);
+        for(let i = -2; i <= 2; i++) this.dent(localAngle + i * 0.3, 0.8, 0.55);
+        this.addScar(localAngle, 6);
 
         return fragment;
     }
@@ -1279,10 +1864,15 @@ class Rock {
         this.composition = normalizeComposition(composition);
         this.setArea(total);
         this.oreProgress += other.oreProgress;
-        this.flash = 0.1;
 
-        // Soften dents a little: the impact rounds things out.
-        this.shape.forEach(p => { p.factor = Math.min(1, p.factor + 0.08); });
+        // The impact rounds things out a little and adds a crater where they met.
+        this.shape.forEach(p => { p.factor = Math.min(1, p.factor + 0.05); });
+        const contact = Math.atan2(other.y - this.y, other.x - this.x) - this.angle;
+        this.craters.push({
+            x: Math.cos(contact) * 0.5, y: Math.sin(contact) * 0.5,
+            r: Math.min(0.3, 0.1 + wb * 0.4), squash: 0.6, tilt: contact
+        });
+        if(this.craters.length > 12) this.craters.shift();
         this.updateLook();
         other.dead = true;
     }
@@ -1293,59 +1883,162 @@ class Rock {
         this.angle += this.spin * dt;
         if(this.grace > 0) this.grace -= dt;
         if(this.flash > 0) this.flash -= dt;
+        this.scars.forEach(scar => { if(scar.fresh > 0) scar.fresh -= dt * 0.25; });
     }
 
-    // Faint halo whose reach scales with mass, hinting at the gravity well.
+    // Very faint halo whose reach scales with mass, hinting at the gravity well.
     drawGravityWell(ctx) {
-        const reach = this.radius * 3.5;
-        const gradient = ctx.createRadialGradient(this.x, this.y, this.radius * 0.8, this.x, this.y, reach);
-        gradient.addColorStop(0, 'rgba(140, 180, 255, 0.08)');
-        gradient.addColorStop(1, 'rgba(140, 180, 255, 0)');
+        const reach = this.radius * 3;
+        const gradient = ctx.createRadialGradient(this.x, this.y, this.radius * 0.9, this.x, this.y, reach);
+        gradient.addColorStop(0, 'rgba(140, 170, 220, 0.05)');
+        gradient.addColorStop(1, 'rgba(140, 170, 220, 0)');
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.arc(this.x, this.y, reach, 0, Math.PI * 2);
         ctx.fill();
     }
 
-    draw(ctx) {
-        const { shape, radius } = this;
-        const tint = __WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][this.material].color;
-
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-
+    outline(ctx, r) {
         ctx.beginPath();
-        shape.forEach((p, i) => {
-            const x = Math.cos(p.angle) * radius * p.factor;
-            const y = Math.sin(p.angle) * radius * p.factor;
+        this.shape.forEach((p, i) => {
+            const x = Math.cos(p.angle) * r * p.factor;
+            const y = Math.sin(p.angle) * r * p.factor;
             if(i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
         });
         ctx.closePath();
+    }
 
-        ctx.fillStyle = this.flash > 0 ? 'rgba(200, 200, 210, 0.95)' : 'rgba(62, 62, 72, 0.95)';
+    draw(ctx, time) {
+        const r = this.radius * this.renderScale;
+        if(r < 0.5) return;
+        const base = this.baseColor;
+
+        // Light direction in the asteroid's rotating frame.
+        const cos = Math.cos(-this.angle);
+        const sin = Math.sin(-this.angle);
+        const lx = LIGHT_X * cos - LIGHT_Y * sin;
+        const ly = LIGHT_X * sin + LIGHT_Y * cos;
+
+        ctx.save();
+        ctx.globalAlpha = this.renderAlpha;
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        // Soft dark rim so the rock separates from the background.
+        this.outline(ctx, r);
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillStyle = rgb(shade(base, 0.35));
         ctx.fill();
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = 'rgba(' + tint + ', 0.9)';
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = 'rgba(' + tint + ', 0.8)';
-        ctx.stroke();
+        ctx.shadowBlur = 0;
 
-        ctx.lineWidth = Math.max(1.5, radius * 0.06);
-        ctx.lineCap = 'round';
-        this.veins.forEach(vein => {
-            const cx = vein.x * radius;
-            const cy = vein.y * radius;
-            const hx = Math.cos(vein.angle) * vein.length * radius;
-            const hy = Math.sin(vein.angle) * vein.length * radius;
-            ctx.strokeStyle = 'rgba(' + vein.color + ', 0.9)';
-            ctx.shadowColor = 'rgba(' + vein.color + ', 0.9)';
+        // Body shading: lit on the light side, falling off into shadow.
+        const body = ctx.createRadialGradient(lx * r * 0.45, ly * r * 0.45, r * 0.05, 0, 0, r * 1.05);
+        body.addColorStop(0, rgb(shade(base, this.flash > 0 ? 2 : 1.45)));
+        body.addColorStop(0.45, rgb(shade(base, 0.95)));
+        body.addColorStop(1, rgb(shade(base, 0.28)));
+        ctx.fillStyle = body;
+        ctx.fill();
+
+        ctx.save();
+        this.outline(ctx, r);
+        ctx.clip();
+
+        // Craters: dark bowl with a lit far rim and a shadowed near rim.
+        this.craters.forEach(c => {
+            const cx = c.x * r;
+            const cy = c.y * r;
+            const cr = c.r * r;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(c.tilt);
+            ctx.scale(1, c.squash);
+            ctx.fillStyle = rgb(shade(base, 0.55), 0.55);
             ctx.beginPath();
-            ctx.moveTo(cx - hx, cy - hy);
-            ctx.lineTo(cx + hx, cy + hy);
+            ctx.arc(0, 0, cr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.lineWidth = Math.max(0.8, cr * 0.18);
+            ctx.strokeStyle = rgb(shade(base, 1.6), 0.45);
+            ctx.beginPath();
+            const rimAngle = Math.atan2(-ly, -lx);
+            ctx.ellipse(cx, cy, cr, cr * c.squash, c.tilt, rimAngle - 1.1 - c.tilt, rimAngle + 1.1 - c.tilt);
+            ctx.stroke();
+            ctx.strokeStyle = rgb(shade(base, 0.25), 0.55);
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, cr, cr * c.squash, c.tilt, rimAngle + Math.PI - 1.1 - c.tilt, rimAngle + Math.PI + 1.1 - c.tilt);
             ctx.stroke();
         });
+
+        // Cracks.
+        ctx.strokeStyle = rgb(shade(base, 0.3), 0.7);
+        ctx.lineWidth = Math.max(0.7, r * 0.025);
+        ctx.lineJoin = 'round';
+        this.cracks.forEach(points => {
+            ctx.beginPath();
+            points.forEach((p, i) => {
+                if(i === 0) ctx.moveTo(p[0] * r, p[1] * r);
+                else ctx.lineTo(p[0] * r, p[1] * r);
+            });
+            ctx.stroke();
+        });
+
+        // Fresh impact scars: pale, freshly exposed rock that weathers over time.
+        this.scars.forEach(scar => {
+            const sx = Math.cos(scar.angle) * r * 0.72;
+            const sy = Math.sin(scar.angle) * r * 0.72;
+            const sr = scar.size * r;
+            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
+            g.addColorStop(0, rgb(shade(base, 1.9), 0.25 + 0.5 * Math.max(0, scar.fresh)));
+            g.addColorStop(1, rgb(shade(base, 1.2), 0));
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Mineral crystals catch the light and glint as the asteroid turns.
+        const t = time || 0;
+        this.crystals.forEach(c => {
+            const x = c.x * r;
+            const y = c.y * r;
+            const s = Math.max(1, c.size * r);
+            const glint = 0.55 + 0.45 * Math.max(0, Math.sin(t * 2 + c.phase + this.angle * 3));
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(c.angle);
+            ctx.fillStyle = rgb(shade(c.color, 0.55));
+            ctx.beginPath();
+            ctx.moveTo(s, 0); ctx.lineTo(0, s * 0.6); ctx.lineTo(-s, 0); ctx.lineTo(0, -s * 0.6);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = rgb(c.color, glint);
+            ctx.beginPath();
+            ctx.moveTo(s * 0.8, 0); ctx.lineTo(0, -s * 0.5); ctx.lineTo(-s * 0.2, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        });
+
+        // Terminator: darken the side facing away from the light.
+        const terminator = ctx.createLinearGradient(lx * r, ly * r, -lx * r, -ly * r);
+        terminator.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        terminator.addColorStop(0.55, 'rgba(0, 0, 0, 0.05)');
+        terminator.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+        ctx.fillStyle = terminator;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.restore();
+
+        // Rim light on the lit edge.
+        this.outline(ctx, r);
+        ctx.lineWidth = Math.max(1, r * 0.03);
+        const rim = ctx.createLinearGradient(lx * r, ly * r, -lx * r * 0.2, -ly * r * 0.2);
+        rim.addColorStop(0, rgb(shade(base, 2), 0.6));
+        rim.addColorStop(1, rgb(shade(base, 2), 0));
+        ctx.strokeStyle = rim;
+        ctx.stroke();
 
         ctx.restore();
     }
@@ -1355,7 +2048,7 @@ class Rock {
 
 
 /***/ }),
-/* 7 */
+/* 8 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2035,13 +2728,13 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 8 */
+/* 9 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(8);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
@@ -2080,22 +2773,22 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 9 */
+/* 10 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(13);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(8);
 
 
 
@@ -2159,6 +2852,8 @@ const createState = () => {
         missiles: [],
         particles: [],
         ores: [],
+        beamHits: [],
+        mergeGhosts: [],
         floatingTexts: [],
         sectors: new __WEBPACK_IMPORTED_MODULE_8__world_sectors__["a" /* SectorManager */](Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().seed),
         sectorTimer: 0,
@@ -2278,19 +2973,32 @@ const hitRock = (rock, damage, hitX, hitY) => {
     __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx + outX * 40, rock.vy + outY * 40, 2, {
         minSpeed: 20, maxSpeed: 90, minLife: 0.2, maxLife: 0.5, size: 2, color: __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][rock.material].color
     });
+    if(Math.random() < Math.min(1, damage * 0.6)) {
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx + outX * 25, rock.vy + outY * 25, 1, {
+            minSpeed: 5, maxSpeed: 30, minLife: 0.8, maxLife: 1.6, size: 6, color: '170,160,150', dust: true, alpha: 0.25
+        });
+    }
 
     if(result.fragment) {
         state.newRocks.push(result.fragment);
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, (rock.x + result.fragment.x) / 2, (rock.y + result.fragment.y) / 2,
+        const midX = (rock.x + result.fragment.x) / 2;
+        const midY = (rock.y + result.fragment.y) / 2;
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, midX, midY,
             rock.vx, rock.vy, 16, { minSpeed: 30, maxSpeed: 130, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230' });
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].explosion(0.35);
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, midX, midY, rock.vx, rock.vy, 8, {
+            minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+        });
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
     }
 
     if(result.crumbled) {
         __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
             minSpeed: 20, maxSpeed: 100, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '200,200,210'
         });
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].explosion(0.3);
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 6, {
+            minSpeed: 5, maxSpeed: 40, minLife: 1, maxLife: 2, size: 7, color: '170,160,150', dust: true, alpha: 0.22
+        });
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
     }
 };
 
@@ -2329,21 +3037,45 @@ const bulletCollisions = () => {
             if(dx * dx + dy * dy > rock.radius * rock.radius) continue;
 
             bullet.dead = true;
-            // Bullets carry momentum and nudge the rock.
+            // Projectiles carry momentum and nudge the rock.
             rock.vx += bullet.vx * bullet.mass / rock.mass;
             rock.vy += bullet.vy * bullet.mass / rock.mass;
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockHit();
             hitRock(rock, bullet.damage, bullet.x, bullet.y);
+
+            if(bullet.kind === 'plasma') {
+                // Staff blast: fiery splash that also scorches nearby rocks.
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 14, {
+                    minSpeed: 30, maxSpeed: 160, minLife: 0.2, maxLife: 0.5, size: 3, color: '255,170,60'
+                });
+                rocks.forEach(other => {
+                    if(other === rock || other.dead) return;
+                    const ox = other.x - bullet.x;
+                    const oy = other.y - bullet.y;
+                    const reach = bullet.splash + other.radius;
+                    if(ox * ox + oy * oy < reach * reach) hitRock(other, bullet.damage * 0.5, bullet.x, bullet.y);
+                });
+                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].plasmaImpact();
+            } else {
+                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockHit();
+            }
             return;
         }
     });
 };
 
 const explodeMissile = (missile) => {
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, 30, {
-        minSpeed: 40, maxSpeed: missile.blast * 3, minLife: 0.2, maxLife: 0.6, size: 3, color: '255,160,80'
+    const drone = missile.kind === 'drone';
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, drone ? 16 : 30, {
+        minSpeed: 40, maxSpeed: missile.blast * 3 + 60, minLife: 0.2, maxLife: 0.6, size: drone ? 2.5 : 3,
+        color: drone ? '255,230,150' : '255,160,80'
     });
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].explosion(0.5);
+    if(!drone) {
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 6, {
+            minSpeed: 10, maxSpeed: 40, minLife: 1, maxLife: 1.8, size: 10, color: '150,140,130', dust: true, alpha: 0.2
+        });
+    }
+    if(drone) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].droneImpact();
+    else __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].missileExplosion();
 
     state.rocks.forEach(rock => {
         if(rock.dead) return;
@@ -2419,10 +3151,18 @@ const rockCollisions = () => {
             const smaller = bigger === a ? b : a;
             bigger.merge(smaller);
 
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(particles, contactX, contactY, bigger.vx, bigger.vy, 18, {
-                minSpeed: 20, maxSpeed: 110, minLife: 0.3, maxLife: 0.9, size: 2.5, color: '210,200,190'
+            // The smaller body sinks into the bigger one while a dust cloud
+            // billows out and swirls back in, settling on the surface.
+            state.mergeGhosts.push({
+                rock: smaller, host: bigger, life: 0.9, maxLife: 0.9,
+                offsetX: smaller.x - bigger.x, offsetY: smaller.y - bigger.y
             });
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].explosion(0.25);
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(particles, contactX, contactY, bigger,
+                Math.round(14 + smaller.radius * 1.2), smaller.radius * 1.3, '175,165,150');
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(particles, contactX, contactY, bigger.vx, bigger.vy, 8, {
+                minSpeed: 10, maxSpeed: 60, minLife: 0.3, maxLife: 0.7, size: 2, color: '230,215,190'
+            });
+            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].merge(bigger.radius);
             if(a.dead) break;
         }
     }
@@ -2496,6 +3236,28 @@ const step = (dt) => {
     __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height / 2 + state.camera.y;
 
     ship.update(dt, __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], state);
+    state.beamHits.forEach(hit => {
+        hit.rock.vx += hit.dirX * 900 * hit.damage / hit.rock.mass;
+        hit.rock.vy += hit.dirY * 900 * hit.damage / hit.rock.mass;
+        hitRock(hit.rock, hit.damage, hit.x, hit.y);
+        if(Math.random() < 0.35) {
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
+                minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
+            });
+        }
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].beamImpact();
+    });
+    state.beamHits = [];
+    state.mergeGhosts.forEach(ghost => {
+        ghost.life -= dt;
+        const t = Math.max(0, ghost.life / ghost.maxLife);
+        ghost.rock.x = ghost.host.x + ghost.offsetX * t;
+        ghost.rock.y = ghost.host.y + ghost.offsetY * t;
+        ghost.rock.angle += ghost.rock.spin * dt;
+        ghost.rock.renderScale = 0.25 + 0.75 * t;
+        ghost.rock.renderAlpha = t;
+    });
+    state.mergeGhosts = state.mergeGhosts.filter(ghost => ghost.life > 0);
     applyGravity(dt);
 
     state.rocks.forEach(rock => rock.update(dt));
@@ -2713,6 +3475,45 @@ const drawStationPointer = () => {
     ctx.restore();
 };
 
+// Weapon readiness: heat for miniguns, recharge for beams, reload for launchers.
+const drawWeaponPanel = () => {
+    const weapons = state.ship.weaponStatus();
+    if(!weapons.length) return;
+    const left = 16;
+    const rowHeight = 22;
+    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].height - 16 - weapons.length * rowHeight - 18;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.4)';
+    ctx.fillRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.strokeRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+    ctx.fillText('WEAPONS', left + 8, top + 14);
+
+    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
+    weapons.forEach((w, i) => {
+        const y = top + 22 + i * rowHeight;
+        ctx.fillStyle = 'rgb(' + w.color + ')';
+        ctx.font = '11px Bungee, sans-serif';
+        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + 8, y + 11);
+
+        const barX = left + 108;
+        const barW = 70;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeRect(barX, y + 3, barW, 8);
+        const warn = w.state === 'overheated' || w.state === 'hot';
+        ctx.fillStyle = warn ? (w.state === 'overheated' ? 'rgb(255, 80, 60)' : 'rgb(255, 170, 70)') : 'rgb(' + w.color + ')';
+        ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
+
+        ctx.font = '9px Bungee, sans-serif';
+        ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
+        ctx.fillText(labels[w.state], barX + barW + 6, y + 11);
+    });
+    ctx.restore();
+};
+
 const drawMinimap = () => {
     const size = MINIMAP_SIZE;
     const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* world */].width - size - 16;
@@ -2790,13 +3591,15 @@ const render = () => {
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
     visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
-    visibleRocks.forEach(rock => rock.draw(ctx));
+    state.mergeGhosts.forEach(ghost => ghost.rock.draw(ctx, time));
+    visibleRocks.forEach(rock => rock.draw(ctx, time));
+    state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    state.particles.forEach(particle => { if(isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if(!particle.dust && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
     ctx.save();
@@ -2814,6 +3617,7 @@ const render = () => {
 
     drawStationPointer();
     drawMinimap();
+    drawWeaponPanel();
     drawDockPrompt();
     if(!state.paused) drawCrosshair();
     drawBanner();
@@ -2850,6 +3654,7 @@ const dock = () => {
     ship.vy = 0;
     ship.angularVelocity = 0;
 
+    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].dock();
     Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__["a" /* getShipyard */])().open({
         tab: Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])() > 0 ? 'market' : 'ship',
         closeLabel: 'Undock',
@@ -2899,7 +3704,8 @@ const frame = (now) => {
         if(steps === MAX_STEPS_PER_FRAME) accumulator = 0;
 
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setThrust(state.ship.alive && state.ship.thrusting);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setFiring(state.ship.alive && state.ship.firing);
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setFiring(state.ship.alive && state.ship.minigunFiring);
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setBeam(state.ship.alive && state.ship.beaming);
     }
 
     render();
@@ -2957,6 +3763,7 @@ const constructGameBoard = () => {
     if(!initialized) initialize();
     if(frameId) cancelAnimationFrame(frameId);
 
+    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].unlock();
     resize();
     state = createState();
     state.rocks = state.sectors.update(state.ship.x, state.ship.y, []);
@@ -2969,16 +3776,18 @@ const constructGameBoard = () => {
 
 
 /***/ }),
-/* 10 */
+/* 11 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(13);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__shipyard_modules__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(6);
+
 
 
 
@@ -2994,14 +3803,20 @@ const MASS_UNIT = 300;            // physics mass per hull mass point
 
 const BULLET_SPEED = 850;
 const BULLET_SPREAD = 0.035;
+const PLASMA_SPEED = 520;
 const RECOIL = 3.5;               // px/s per bullet for a mass-1 hull
 const TURRET_TURN_RATE = 14;      // rad/s
-const MISSILE_SALVO_GAP = 0.12;   // s between launchers firing
+const SALVO_GAP = 0.12;           // s between launchers firing
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
+const HEAT_COOLING = 0.35;        // minigun heat lost per second
+const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
 
 const HIT_COOLDOWN = 0.25;
 const SHIELD_REGEN_DELAY = 2;
 const SPAWN_IMMUNITY = 2;
+
+const TURRET_TYPES = ['minigun', 'staff', 'beam'];
+const LAUNCHER_TYPES = ['missile', 'drones'];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -3010,6 +3825,28 @@ const angleDifference = (a, b) => {
     while(d > Math.PI) d -= Math.PI * 2;
     while(d < -Math.PI) d += Math.PI * 2;
     return d;
+};
+
+// Distance along a ray to the first asteroid it hits.
+const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
+    let best = null;
+    let bestDistance = range;
+    rocks.forEach(rock => {
+        if(rock.dead) return;
+        const mx = rock.x - x;
+        const my = rock.y - y;
+        const along = mx * dirX + my * dirY;
+        if(along < -rock.radius) return;
+        const closestSq = mx * mx + my * my - along * along;
+        const r = rock.radius * 0.92;
+        if(closestSq > r * r) return;
+        const hit = Math.max(0, along - Math.sqrt(r * r - closestSq));
+        if(hit < bestDistance) {
+            bestDistance = hit;
+            best = rock;
+        }
+    });
+    return { rock: best, distance: bestDistance };
 };
 
 class Ship {
@@ -3026,12 +3863,14 @@ class Ship {
         this.time = 0;
         this.exhaustTimer = 0;
         this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
         this.hitCooldown = 0;
         this.immunity = SPAWN_IMMUNITY;
         this.sinceHit = SHIELD_REGEN_DELAY;
         this.shieldFlash = 0;
         this.hullFlash = 0;
-        this.missileCooldown = 0;
+        this.salvoCooldown = 0;
         this.nextLauncher = 0;
         this.missileLock = null;
 
@@ -3062,17 +3901,44 @@ class Ship {
         this.collectRadius = hull.radius * 0.55 + 8;
 
         const u = hull.moduleScale;
-        this.turrets = stats.modules.filter(m => m.type === 'minigun').map(m => ({
+        this.turrets = stats.modules.filter(m => TURRET_TYPES.indexOf(m.type) !== -1).map(m => ({
             module: m,
+            kind: m.type,
             aim: this.angle,
             cooldown: 0,
             target: null,
-            flash: 0
+            flash: 0,
+            heat: 0,
+            overheated: false,
+            beamTime: 0,
+            beam: null
         }));
-        this.launchers = stats.modules.filter(m => m.type === 'missile').map(m => ({ module: m, cooldown: 0 }));
+        this.launchers = stats.modules.filter(m => LAUNCHER_TYPES.indexOf(m.type) !== -1)
+            .map(m => ({ module: m, kind: m.type, cooldown: 0 }));
         this.engines = hull.engines.concat(stats.modules
             .filter(m => m.type === 'engine')
             .map(m => ({ x: m.slot.x - 4 * u, y: m.slot.y, size: (0.45 + m.level * 0.15) * u * 1.6 })));
+        this.jetList = this.buildJets();
+    }
+
+    // Manoeuvring jet positions from the hull definition: [x, y, dirX, dirY].
+    buildJets() {
+        const j = this.hullDef.jets;
+        const both = (points, dirX) => {
+            const list = [];
+            points.forEach(p => {
+                list.push([p[0], p[1], dirX, 0]);
+                list.push([p[0], -p[1], dirX, 0]);
+            });
+            return list;
+        };
+        return {
+            retro: both(j.retro, 1),
+            left: j.side.map(p => [p[0], Math.abs(p[1]), 0, 1]),
+            right: j.side.map(p => [p[0], -Math.abs(p[1]), 0, -1]),
+            spinCW: [[j.bow[0], -j.bow[1], 0, -1], [j.stern[0], j.stern[1], 0, 1]],
+            spinCCW: [[j.bow[0], j.bow[1], 0, 1], [j.stern[0], -j.stern[1], 0, -1]]
+        };
     }
 
     get thrusting() {
@@ -3095,14 +3961,19 @@ class Ship {
     }
 
     update(dt, input, world) {
-        if(!this.alive) return;
+        if(!this.alive) {
+            this.firing = false;
+            this.minigunFiring = false;
+            this.beaming = false;
+            return;
+        }
 
         this.time += dt;
         if(this.hitCooldown > 0) this.hitCooldown -= dt;
         if(this.immunity > 0) this.immunity -= dt;
         if(this.shieldFlash > 0) this.shieldFlash -= dt;
         if(this.hullFlash > 0) this.hullFlash -= dt;
-        if(this.missileCooldown > 0) this.missileCooldown -= dt;
+        if(this.salvoCooldown > 0) this.salvoCooldown -= dt;
         this.sinceHit += dt;
 
         if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
@@ -3186,22 +4057,6 @@ class Ship {
         });
     }
 
-    // Manoeuvring jet positions, scaled to the hull.
-    jets() {
-        const r = this.hullDef.rcs;
-        return {
-            retro: [[r.nose * 0.6, -r.half * 0.45, 1, 0], [r.nose * 0.6, r.half * 0.45, 1, 0]],
-            left: [[0, r.half, 0, 1]],
-            right: [[0, -r.half, 0, -1]],
-            spinCW: [[r.nose * 0.8, -r.half * 0.35, 0, -1], [r.tail * 0.8, r.half * 0.6, 0, 1]],
-            spinCCW: [[r.nose * 0.8, r.half * 0.35, 0, 1], [r.tail * 0.8, -r.half * 0.6, 0, -1]]
-        };
-    }
-
-    jetScale() {
-        return Math.max(1, Math.sqrt(this.hullDef.rcs.half / 8));
-    }
-
     // Spits hot exhaust particles out of the engines (and puffs from the jets).
     emitExhaust(dt, particles) {
         const t = this.thrusters;
@@ -3215,21 +4070,21 @@ class Ship {
         if(t.main > 0.15) {
             this.engines.forEach(engine => {
                 const nozzle = this.localToWorld(engine.x, engine.y);
-                const spread = (Math.random() - 0.5) * 0.5;
+                const spread = (Math.random() - 0.5) * 0.3;
                 const speed = (160 + Math.random() * 120) * Math.sqrt(engine.size);
                 particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
                     x: nozzle.x,
                     y: nozzle.y,
                     vx: this.vx - Math.cos(this.angle + spread) * speed * t.main,
                     vy: this.vy - Math.sin(this.angle + spread) * speed * t.main,
-                    life: 0.25 + Math.random() * 0.25,
-                    size: (2.5 + Math.random() * 2) * Math.sqrt(engine.size),
-                    color: Math.random() < 0.5 ? '255,170,60' : '255,110,40'
+                    life: 0.2 + Math.random() * 0.2,
+                    size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
+                    color: this.hullDef.exhaust || '255,150,60'
                 }));
             });
         }
 
-        const jets = this.jets();
+        const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.2 || Math.random() > 0.5) return;
             jets[key].forEach(jet => {
@@ -3282,18 +4137,28 @@ class Ship {
                 return;
             }
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
-            turret.target = this.nearestRock(p.x, p.y, rocks, range);
+            const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
+            turret.target = this.nearestRock(p.x, p.y, rocks, reach);
         });
     }
 
     updateTurrets(dt, input, world) {
         this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
 
         this.turrets.forEach(turret => {
             const stats = turret.module.stats;
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
             if(turret.cooldown > 0) turret.cooldown -= dt;
             if(turret.flash > 0) turret.flash -= dt;
+            turret.beam = null;
+
+            // Minigun heat bleeds off continuously.
+            if(turret.kind === 'minigun') {
+                turret.heat = Math.max(0, turret.heat - HEAT_COOLING * dt);
+                if(turret.overheated && turret.heat <= HEAT_RESUME) turret.overheated = false;
+            }
 
             // Manual fire always aims at the cursor; otherwise the guidance computer
             // leads the locked target.
@@ -3303,7 +4168,8 @@ class Ship {
             if(!input.firing && turret.target) {
                 const target = turret.target;
                 let d = Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target);
-                const time = Math.sqrt(d.x * d.x + d.y * d.y) / BULLET_SPEED;
+                const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
+                const time = turret.kind === 'beam' ? 0 : Math.sqrt(d.x * d.x + d.y * d.y) / speed;
                 d = { x: d.x + target.vx * time, y: d.y + target.vy * time };
                 desired = Math.atan2(d.y, d.x);
                 shouldFire = true;
@@ -3312,37 +4178,116 @@ class Ship {
             const diff = angleDifference(turret.aim, desired);
             const maxTurn = TURRET_TURN_RATE * dt;
             turret.aim += clamp(diff, -maxTurn, maxTurn);
+            const aimed = Math.abs(diff) < 0.2;
 
-            if(!shouldFire || Math.abs(diff) > 0.2) return;
+            if(turret.kind === 'beam') {
+                this.updateBeam(dt, turret, p, shouldFire && aimed, world);
+                return;
+            }
+
+            if(!shouldFire || !aimed || turret.overheated) return;
             this.firing = true;
-
+            if(turret.kind === 'minigun') this.minigunFiring = true;
             if(turret.cooldown > 0) return;
-            turret.cooldown += 1 / stats.fireRate;
-            if(turret.cooldown < 0) turret.cooldown = 0;
 
-            const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
-            const dirX = Math.cos(angle);
-            const dirY = Math.sin(angle);
-            const barrel = 9 * this.hullDef.moduleScale;
-
-            // Bullets inherit the ship's speed along the line of fire, but not its
-            // sideways drift, so they travel where the turret points.
-            const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
-            const speed = BULLET_SPEED + inherited;
-            world.bullets.push(new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
-                p.x + Math.cos(turret.aim) * barrel,
-                p.y + Math.sin(turret.aim) * barrel,
-                dirX * speed,
-                dirY * speed,
-                stats.damage
-            ));
-
-            // Equal and opposite reaction.
-            const recoil = RECOIL / this.stats.mass;
-            this.vx -= dirX * recoil;
-            this.vy -= dirY * recoil;
-            turret.flash = 0.04;
+            if(turret.kind === 'minigun') this.fireMinigun(turret, p, stats, world);
+            if(turret.kind === 'staff') this.fireStaff(turret, p, stats, world);
         });
+    }
+
+    fireMinigun(turret, p, stats, world) {
+        turret.cooldown = Math.max(0, turret.cooldown) + 1 / stats.fireRate;
+
+        const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
+        const dirX = Math.cos(angle);
+        const dirY = Math.sin(angle);
+        const barrel = 9 * this.hullDef.moduleScale;
+
+        // Bullets inherit the ship's speed along the line of fire, but not its
+        // sideways drift, so they travel where the turret points.
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = BULLET_SPEED + inherited;
+        world.bullets.push(new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
+            p.x + Math.cos(turret.aim) * barrel,
+            p.y + Math.sin(turret.aim) * barrel,
+            dirX * speed,
+            dirY * speed,
+            stats.damage
+        ));
+
+        // Equal and opposite reaction.
+        const recoil = RECOIL / this.stats.mass;
+        this.vx -= dirX * recoil;
+        this.vy -= dirY * recoil;
+        turret.flash = 0.04;
+
+        // Each round adds enough heat to outpace cooling, so sustained fire
+        // overheats after `heatShots` rounds.
+        turret.heat += 1 / stats.heatShots + HEAT_COOLING / stats.fireRate;
+        if(turret.heat >= 1) {
+            turret.heat = 1;
+            turret.overheated = true;
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].overheat();
+        }
+    }
+
+    fireStaff(turret, p, stats, world) {
+        turret.cooldown = 1 / stats.fireRate;
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const barrel = 8 * this.hullDef.moduleScale;
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = PLASMA_SPEED + inherited;
+
+        world.bullets.push(new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
+            p.x + dirX * barrel, p.y + dirY * barrel,
+            dirX * speed, dirY * speed,
+            stats.damage, 'plasma', stats.splash
+        ));
+        this.vx -= dirX * RECOIL * 2 / this.stats.mass;
+        this.vy -= dirY * RECOIL * 2 / this.stats.mass;
+        turret.flash = 0.08;
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].staffShot();
+    }
+
+    // Asgard beam: fires a burst for a few seconds, then must recharge.
+    updateBeam(dt, turret, p, trigger, world) {
+        const stats = turret.module.stats;
+
+        if(turret.beamTime > 0 && !trigger) {
+            // Released early: recharge for the part of the burst that was used.
+            turret.cooldown = stats.cooldown * (1 - turret.beamTime / stats.burst);
+            turret.beamTime = 0;
+        }
+        if(trigger && turret.beamTime <= 0 && turret.cooldown <= 0) turret.beamTime = stats.burst;
+        if(turret.beamTime <= 0) return;
+
+        turret.beamTime -= dt;
+        if(turret.beamTime <= 0) {
+            turret.beamTime = 0;
+            turret.cooldown = stats.cooldown;
+        }
+
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const startX = p.x + dirX * 6 * this.hullDef.moduleScale;
+        const startY = p.y + dirY * 6 * this.hullDef.moduleScale;
+        const hit = raycastRocks(startX, startY, dirX, dirY, stats.range, world.rocks);
+        const endX = startX + dirX * hit.distance;
+        const endY = startY + dirY * hit.distance;
+
+        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!hit.rock };
+        this.firing = true;
+        this.beaming = true;
+
+        if(hit.rock) {
+            world.beamHits.push({ rock: hit.rock, damage: stats.dps * dt, x: endX, y: endY, dirX: dirX, dirY: dirY });
+        }
+    }
+
+    pickLauncherTarget(input, rocks) {
+        if(this.guidance) return this.missileLock;
+        return null;
     }
 
     updateLaunchers(dt, input, world) {
@@ -3350,36 +4295,103 @@ class Ship {
             if(launcher.cooldown > 0) launcher.cooldown -= dt;
         });
 
-        if(!input.firingMissiles || this.missileCooldown > 0 || this.launchers.length === 0) return;
+        if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
 
         for(let i = 0; i < this.launchers.length; i++) {
             const index = (this.nextLauncher + i) % this.launchers.length;
             const launcher = this.launchers[index];
             if(launcher.cooldown > 0) continue;
 
-            const stats = launcher.module.stats;
-            const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-            const target = this.guidance ? this.missileLock : null;
-            const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-            const angle = Math.atan2(aimAt.y, aimAt.x);
+            if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
+            if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
 
-            world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
-                x: p.x,
-                y: p.y,
-                vx: this.vx + Math.cos(angle) * 120,
-                vy: this.vy + Math.sin(angle) * 120,
-                angle: angle,
-                damage: stats.damage,
-                blast: stats.blast,
-                target: target,
-                homing: this.guidance ? this.guidance.homing : 0
-            }));
-
-            launcher.cooldown = stats.cooldown;
-            this.missileCooldown = MISSILE_SALVO_GAP;
+            this.salvoCooldown = SALVO_GAP;
             this.nextLauncher = index + 1;
             return;
         }
+    }
+
+    fireMissile(launcher, input, world) {
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = this.guidance ? this.missileLock : null;
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const angle = Math.atan2(aimAt.y, aimAt.x);
+
+        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 120,
+            vy: this.vy + Math.sin(angle) * 120,
+            angle: angle,
+            damage: stats.damage,
+            blast: stats.blast,
+            target: target,
+            homing: this.guidance ? this.guidance.homing : 0
+        }));
+        launcher.cooldown = stats.cooldown;
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].missileLaunch();
+    }
+
+    // Ancient drones: a fan of self-guided drones that hunt asteroids on their own.
+    fireDrones(launcher, input, world) {
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 400);
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_5__physics_physics__["a" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const base = Math.atan2(aimAt.y, aimAt.x);
+
+        for(let i = 0; i < stats.count; i++) {
+            const angle = base + (i - (stats.count - 1) / 2) * 0.45;
+            world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
+                kind: 'drone',
+                x: p.x,
+                y: p.y,
+                vx: this.vx + Math.cos(angle) * 160,
+                vy: this.vy + Math.sin(angle) * 160,
+                angle: angle,
+                damage: stats.damage,
+                blast: 14,
+                target: target,
+                homing: 7,
+                launchDelay: i * 0.06
+            }));
+        }
+        launcher.cooldown = stats.cooldown;
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].droneLaunch();
+    }
+
+    // Readiness of each weapon group for the HUD: 1 = ready.
+    weaponStatus() {
+        const groups = {};
+        this.turrets.concat(this.launchers).forEach(w => {
+            const def = __WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["c" /* default */][w.kind];
+            if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
+            const g = groups[w.kind];
+            const stats = w.module.stats;
+            let ready = 1;
+            let state = 'ready';
+
+            if(w.kind === 'minigun') {
+                ready = 1 - w.heat;
+                state = w.overheated ? 'overheated' : (w.heat > 0.6 ? 'hot' : 'ready');
+            } else if(w.kind === 'beam') {
+                if(w.beamTime > 0) { ready = w.beamTime / stats.burst; state = 'firing'; }
+                else if(w.cooldown > 0) { ready = 1 - w.cooldown / stats.cooldown; state = 'charging'; }
+            } else if(w.cooldown > 0) {
+                const total = w.kind === 'staff' ? 1 / stats.fireRate : stats.cooldown;
+                ready = 1 - w.cooldown / total;
+                state = 'reloading';
+            }
+
+            g.ready += clamp(ready, 0, 1);
+            g.count++;
+            if(state !== 'ready') g.state = state;
+        });
+        return Object.keys(groups).map(kind => {
+            const g = groups[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: g.state };
+        });
     }
 
     // Returns true if damage was applied.
@@ -3392,18 +4404,23 @@ class Ship {
         const absorbed = Math.min(this.shield, amount);
         this.shield -= absorbed;
         const remaining = amount - absorbed;
-        if(absorbed > 0) this.shieldFlash = 0.25;
+        if(absorbed > 0) {
+            this.shieldFlash = 0.25;
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].shieldHit();
+        }
 
         if(remaining > 0) {
             this.hp -= remaining;
             this.hullFlash = 0.15;
             this.explode(particles, 10 + Math.round(remaining / 2));
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hullHit();
         }
 
         if(this.hp <= 0) {
             this.hp = 0;
             this.alive = false;
             this.explode(particles, 40 + this.radius * 2);
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].explosion(1);
         }
         return true;
     }
@@ -3449,10 +4466,11 @@ class Ship {
 
     drawThrusters(ctx) {
         const t = this.thrusters;
-        const flicker = () => 0.75 + Math.random() * 0.5;
-        const scale = this.jetScale();
+        const flicker = () => 0.8 + Math.random() * 0.4;
+        const jetScale = this.hullDef.jetScale || 1;
         const jetOuter = 'rgba(170, 210, 255, 0.85)';
         const jetInner = 'rgba(255, 255, 255, 0.95)';
+        const exhaust = this.hullDef.exhaust || '255,150,60';
 
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -3460,34 +4478,34 @@ class Ship {
         const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
         this.engines.forEach(engine => {
-            const size = engine.size * (1 + (scale - 1) * 0.6);
+            const size = engine.size;
 
-            // Idle engine glow, pulsing even when not thrusting.
-            const glowRadius = (3 + pulse * 1.5 + t.main * 4) * size * 2;
+            // Nozzle glow, pulsing even when idle.
+            const glowRadius = (2.5 + pulse + t.main * 3) * size * 1.6;
             const glow = ctx.createRadialGradient(engine.x, engine.y, 0, engine.x, engine.y, glowRadius);
-            glow.addColorStop(0, 'rgba(255, 200, 120, ' + (0.6 + t.main * 0.4) + ')');
-            glow.addColorStop(1, 'rgba(255, 120, 40, 0)');
+            glow.addColorStop(0, 'rgba(' + exhaust + ', ' + (0.55 + t.main * 0.45) + ')');
+            glow.addColorStop(1, 'rgba(' + exhaust + ', 0)');
             ctx.fillStyle = glow;
             ctx.beginPath();
             ctx.arc(engine.x, engine.y, glowRadius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Main engine plume.
-            const length = t.main * (18 + Math.random() * 12) * size;
+            // Plume straight out of the nozzle, as wide as the nozzle.
+            const length = t.main * (14 + Math.random() * 8) * size * 1.4;
             const plume = ctx.createLinearGradient(engine.x, engine.y, engine.x - length, engine.y);
-            plume.addColorStop(0, 'rgba(255, 220, 140, 0.95)');
-            plume.addColorStop(0.5, 'rgba(255, 130, 40, 0.8)');
-            plume.addColorStop(1, 'rgba(255, 60, 20, 0)');
-            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 4.5 * size * flicker(), plume, 'rgba(255, 255, 230, 0.95)');
+            plume.addColorStop(0, 'rgba(255, 235, 190, 0.95)');
+            plume.addColorStop(0.4, 'rgba(' + exhaust + ', 0.8)');
+            plume.addColorStop(1, 'rgba(' + exhaust + ', 0)');
+            this.drawFlame(ctx, engine.x, engine.y, -1, 0, length, 2.6 * size * flicker(), plume, 'rgba(255, 255, 235, 0.9)');
         });
 
-        // Manoeuvring jets: retro, strafe and attitude control.
-        const jets = this.jets();
+        // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
+        const jets = this.jetList;
         Object.keys(jets).forEach(key => {
             if(t[key] < 0.02) return;
-            const length = t[key] * 9 * scale;
+            const length = t[key] * 7 * jetScale;
             jets[key].forEach(jet => {
-                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.8 * scale, jetOuter, jetInner);
+                this.drawFlame(ctx, jet[0], jet[1], jet[2], jet[3], length * flicker(), 1.3 * jetScale, jetOuter, jetInner);
             });
         });
 
@@ -3499,18 +4517,49 @@ class Ship {
         const s = this.hullDef.shield;
         const strength = this.shield / this.maxShield;
         const alpha = 0.1 + 0.2 * strength + Math.max(0, this.shieldFlash) * 2.5;
+        const color = this.hullDef.shieldColor || '120,210,255';
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(120, 210, 255, ' + Math.min(1, alpha) + ')';
-        ctx.fillStyle = 'rgba(120, 210, 255, ' + Math.min(0.25, alpha * 0.25) + ')';
+        ctx.strokeStyle = 'rgba(' + color + ', ' + Math.min(1, alpha) + ')';
+        ctx.fillStyle = 'rgba(' + color + ', ' + Math.min(0.25, alpha * 0.25) + ')';
         ctx.lineWidth = 1.2;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(120, 210, 255)';
+        ctx.shadowColor = 'rgb(' + color + ')';
         ctx.beginPath();
         ctx.ellipse(s.x, 0, s.rx, s.ry, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+    }
+
+    // Beams are drawn in world space (after the ship transform is restored).
+    drawBeams(ctx) {
+        this.turrets.forEach(turret => {
+            const beam = turret.beam;
+            if(!beam) return;
+            const flicker = 0.75 + Math.random() * 0.25;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            [[9, 'rgba(90, 170, 255, 0.18)'], [4, 'rgba(140, 210, 255, 0.55)'], [1.6, 'rgba(240, 250, 255, 0.95)']].forEach(layer => {
+                ctx.lineWidth = layer[0] * flicker * this.hullDef.moduleScale;
+                ctx.strokeStyle = layer[1];
+                ctx.beginPath();
+                ctx.moveTo(beam.x1, beam.y1);
+                ctx.lineTo(beam.x2, beam.y2);
+                ctx.stroke();
+            });
+            if(beam.hit) {
+                const glow = ctx.createRadialGradient(beam.x2, beam.y2, 0, beam.x2, beam.y2, 16);
+                glow.addColorStop(0, 'rgba(220, 240, 255, 0.9)');
+                glow.addColorStop(1, 'rgba(120, 190, 255, 0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(beam.x2, beam.y2, 16, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        });
     }
 
     draw(ctx) {
@@ -3528,7 +4577,7 @@ class Ship {
         Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, this.hullDef, { color: this.hullFlash > 0 ? '255,120,120' : undefined });
 
         this.stats.modules.forEach(module => {
-            if(module.type === 'minigun') return;
+            if(TURRET_TYPES.indexOf(module.type) !== -1) return;
             ctx.save();
             ctx.translate(module.slot.x, module.slot.y);
             Object(__WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: u });
@@ -3538,11 +4587,16 @@ class Ship {
         this.turrets.forEach(turret => {
             ctx.save();
             ctx.translate(turret.module.slot.x, turret.module.slot.y);
-            Object(__WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["d" /* drawModule */])(ctx, 'minigun', turret.module.level, { scale: u, aim: turret.aim - this.angle });
+            Object(__WEBPACK_IMPORTED_MODULE_4__shipyard_modules__["d" /* drawModule */])(ctx, turret.kind, turret.module.level, {
+                scale: u,
+                aim: turret.aim - this.angle,
+                heat: turret.kind === 'minigun' ? turret.heat : 0
+            });
             if(turret.flash > 0) {
                 const tip = 9 * u;
+                const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
                 ctx.globalCompositeOperation = 'lighter';
-                ctx.fillStyle = 'rgba(255, 230, 150, 0.9)';
+                ctx.fillStyle = 'rgba(' + color + ', 0.9)';
                 ctx.beginPath();
                 ctx.arc(Math.cos(turret.aim - this.angle) * tip, Math.sin(turret.aim - this.angle) * tip,
                     (2 + Math.random() * 3) * Math.max(1, u), 0, Math.PI * 2);
@@ -3553,6 +4607,8 @@ class Ship {
 
         this.drawShield(ctx);
         ctx.restore();
+
+        this.drawBeams(ctx);
     }
 }
 
@@ -3560,22 +4616,25 @@ class Ship {
 
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-const BULLET_LIFE = 1.4;
+const LIFETIME = { bullet: 1.4, plasma: 2.2 };
 
+// Kinetic minigun rounds ('bullet') and Goa'uld staff plasma bolts ('plasma').
 class Bullet {
 
-    constructor(x, y, vx, vy, damage) {
+    constructor(x, y, vx, vy, damage, kind, splash) {
         this.x = x;
         this.y = y;
         this.vx = vx;
         this.vy = vy;
         this.damage = damage || 1;
-        this.mass = 4;
-        this.life = BULLET_LIFE;
+        this.kind = kind || 'bullet';
+        this.splash = splash || 0;
+        this.mass = this.kind === 'plasma' ? 30 : 4;
+        this.life = LIFETIME[this.kind];
         this.dead = false;
     }
 
@@ -3587,6 +4646,26 @@ class Bullet {
     }
 
     draw(ctx) {
+        if(this.kind === 'plasma') {
+            // Elongated glowing bolt with a hot core.
+            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy) || 1;
+            const dx = this.vx / speed;
+            const dy = this.vy / speed;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            ctx.shadowBlur = 0;
+            [[9, 'rgba(255, 120, 30, 0.25)', 16], [5, 'rgba(255, 170, 60, 0.7)', 12], [2.2, 'rgba(255, 245, 210, 0.95)', 8]].forEach(layer => {
+                ctx.lineWidth = layer[0];
+                ctx.strokeStyle = layer[1];
+                ctx.beginPath();
+                ctx.moveTo(this.x - dx * layer[2], this.y - dy * layer[2]);
+                ctx.lineTo(this.x, this.y);
+                ctx.stroke();
+            });
+            ctx.restore();
+            return;
+        }
         // Short tracer streak behind the bullet, along its actual velocity
         // (so you can see it bend in an asteroid's gravity well).
         ctx.beginPath();
@@ -3600,7 +4679,7 @@ class Bullet {
 
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3609,10 +4688,11 @@ class Bullet {
 
 
 
-const ACCELERATION = 520;
-const MAX_SPEED = 620;
-const LIFETIME = 4;
-const RETARGET_RANGE = 320;
+// Tau'ri missiles ('missile') and Ancient drones ('drone').
+const PROFILES = {
+    missile: { acceleration: 520, maxSpeed: 620, lifetime: 4, retarget: 320, trail: '255,150,70', trailRate: 0.02 },
+    drone: { acceleration: 900, maxSpeed: 760, lifetime: 6, retarget: 650, trail: '255,220,120', trailRate: 0.015 }
+};
 
 const angleDifference = (a, b) => {
     let d = b - a;
@@ -3624,6 +4704,8 @@ const angleDifference = (a, b) => {
 class Missile {
 
     constructor(options) {
+        this.kind = options.kind || 'missile';
+        this.profile = PROFILES[this.kind];
         this.x = options.x;
         this.y = options.y;
         this.vx = options.vx;
@@ -3633,21 +4715,28 @@ class Missile {
         this.blast = options.blast;
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
-        this.life = LIFETIME;
+        this.launchDelay = options.launchDelay || 0;
+        this.life = this.profile.lifetime;
         this.trailTimer = 0;
+        this.time = Math.random() * 10;
         this.dead = false;
         this.exploded = false;
     }
 
     update(dt, rocks, particles) {
         this.life -= dt;
+        this.time += dt;
         if(this.life <= 0) {
             this.dead = true;
             this.exploded = true;
             return;
         }
 
-        if(this.homing > 0) {
+        const profile = this.profile;
+        const armed = this.launchDelay <= 0;
+        if(!armed) this.launchDelay -= dt;
+
+        if(this.homing > 0 && armed) {
             if(!this.target || this.target.dead) this.target = this.findTarget(rocks);
             if(this.target) {
                 const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["a" /* delta */])(this, this.target);
@@ -3659,10 +4748,11 @@ class Missile {
 
         const dirX = Math.cos(this.angle);
         const dirY = Math.sin(this.angle);
-        this.vx += dirX * ACCELERATION * dt;
-        this.vy += dirY * ACCELERATION * dt;
+        const thrust = armed ? profile.acceleration : profile.acceleration * 0.3;
+        this.vx += dirX * thrust * dt;
+        this.vy += dirY * thrust * dt;
 
-        // Guided missiles use their side thrusters to bleed off sideways drift.
+        // Guided weapons use side thrust to bleed off sideways drift.
         if(this.homing > 0) {
             const forward = this.vx * dirX + this.vy * dirY;
             const damp = Math.min(1, this.homing * 0.8 * dt);
@@ -3671,9 +4761,9 @@ class Missile {
         }
 
         const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        if(speed > MAX_SPEED) {
-            this.vx *= MAX_SPEED / speed;
-            this.vy *= MAX_SPEED / speed;
+        if(speed > profile.maxSpeed) {
+            this.vx *= profile.maxSpeed / speed;
+            this.vy *= profile.maxSpeed / speed;
         }
 
         this.x += this.vx * dt;
@@ -3681,18 +4771,18 @@ class Missile {
 
         this.trailTimer -= dt;
         if(this.trailTimer <= 0) {
-            this.trailTimer = 0.02;
+            this.trailTimer = profile.trailRate;
             particles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */]({
-                x: this.x - dirX * 5, y: this.y - dirY * 5,
-                vx: this.vx * 0.2 - dirX * 60, vy: this.vy * 0.2 - dirY * 60,
-                life: 0.3 + Math.random() * 0.2, size: 2.5, color: '255,150,70'
+                x: this.x - dirX * 4, y: this.y - dirY * 4,
+                vx: this.vx * 0.2 - dirX * 50, vy: this.vy * 0.2 - dirY * 50,
+                life: 0.25 + Math.random() * 0.2, size: this.kind === 'drone' ? 2 : 2.5, color: profile.trail
             }));
         }
     }
 
     findTarget(rocks) {
         let best = null;
-        let bestDist = RETARGET_RANGE * RETARGET_RANGE;
+        let bestDist = this.profile.retarget * this.profile.retarget;
         rocks.forEach(rock => {
             if(rock.dead) return;
             const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["a" /* delta */])(this, rock);
@@ -3709,6 +4799,28 @@ class Missile {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
+
+        if(this.kind === 'drone') {
+            // Golden squid-like drone with a pulsing glow.
+            const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
+            ctx.globalCompositeOperation = 'lighter';
+            const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 9);
+            glow.addColorStop(0, 'rgba(255, 240, 180, ' + pulse + ')');
+            glow.addColorStop(1, 'rgba(255, 200, 80, 0)');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(0, 0, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(4, 0); ctx.lineTo(-1, -2); ctx.lineTo(-4, -1.2);
+            ctx.moveTo(4, 0); ctx.lineTo(-1, 2); ctx.lineTo(-4, 1.2);
+            ctx.stroke();
+            ctx.restore();
+            return;
+        }
+
         ctx.strokeStyle = 'rgb(255, 160, 140)';
         ctx.lineWidth = 1.3;
         ctx.shadowBlur = 6;
@@ -3728,7 +4840,7 @@ class Missile {
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3805,7 +4917,7 @@ class Ore {
 
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3918,94 +5030,11 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 15 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// All game sounds live here so they are created and wired up exactly once.
-
-const createLoop = (src, volume) => {
-    const audio = new Audio(src);
-    audio.loop = true;
-    audio.volume = volume;
-    return audio;
-};
-
-const thrusterSound = createLoop('./assets/sounds/thrust.mp3', 0.6);
-const minigunSound = createLoop('./assets/sounds/minigun.mp3', 0.5);
-const engineSound = createLoop('./assets/sounds/engine.mp3', 0.2);
-
-const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
-const explosionSound = new Audio('./assets/sounds/explosion2.mp3');
-
-// play() returns a promise that rejects when autoplay is blocked; ignore it.
-const safePlay = (audio) => {
-    const result = audio.play();
-    if(result && result.catch) result.catch(() => {});
-};
-
-const setLooping = (audio, on) => {
-    if(on && audio.paused) safePlay(audio);
-    if(!on && !audio.paused) {
-        audio.pause();
-        audio.currentTime = 0;
-    }
-};
-
-const playOneShot = (audio, volume) => {
-    audio.volume = volume;
-    audio.currentTime = 0;
-    safePlay(audio);
-};
-
-// Short synthesized blip for ore pickups (no extra asset needed).
-let audioContext = null;
-let lastBlip = 0;
-const blip = (frequency) => {
-    try {
-        if(!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const now = audioContext.currentTime;
-        if(now - lastBlip < 0.04) return;
-        lastBlip = now;
-        const osc = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(frequency, now);
-        osc.frequency.exponentialRampToValueAtTime(frequency * 1.6, now + 0.08);
-        gain.gain.setValueAtTime(0.08, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-        osc.connect(gain);
-        gain.connect(audioContext.destination);
-        osc.start(now);
-        osc.stop(now + 0.13);
-    } catch(e) {
-        // Web Audio unavailable: stay silent.
-    }
-};
-
-const sounds = {
-    pickup(value) { blip(500 + Math.min(700, value * 8)); },
-    startEngine() { setLooping(engineSound, true); },
-    setThrust(on) { setLooping(thrusterSound, on); },
-    setFiring(on) { setLooping(minigunSound, on); },
-    rockHit() { playOneShot(rockHitSound, 0.5); },
-    explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
-    stopAll() {
-        setLooping(engineSound, false);
-        setLooping(thrusterSound, false);
-        setLooping(minigunSound, false);
-    }
-};
-
-/* harmony default export */ __webpack_exports__["a"] = (sounds);
-
-
-/***/ }),
 /* 16 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(0);
 // Endless asteroid fields. Space is divided into square sectors that are generated
 // deterministically from a seed the first time the ship comes near. Sectors that

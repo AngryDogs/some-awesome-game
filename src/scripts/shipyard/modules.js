@@ -10,8 +10,38 @@ const MODULES = {
         description: 'Rapid-fire turret. Aims at the cursor, or auto-targets with a targeting computer.',
         cost: 250,
         color: '255,200,120',
-        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7] },
-        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg'
+        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7], heatShots: [60, 85, 120] },
+        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg, overheats after ' + s.heatShots + ' rounds'
+    },
+    staff: {
+        id: 'staff',
+        name: 'Staff cannon',
+        short: 'Staff',
+        description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
+        cost: 900,
+        color: '255,175,70',
+        stats: { fireRate: [2.2, 2.8, 3.5], damage: [5, 7, 9.5], splash: [18, 24, 30] },
+        describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
+    },
+    beam: {
+        id: 'beam',
+        name: 'Asgard ion beam',
+        short: 'Ion beam',
+        description: 'Instant-hit energy beam that carves through rock. Fires in bursts, then recharges.',
+        cost: 2200,
+        color: '140,215,255',
+        stats: { dps: [28, 40, 56], range: [600, 700, 820], burst: [1.2, 1.4, 1.7], cooldown: [2.6, 2.2, 1.8] },
+        describe: (s) => s.dps + ' dmg/s, ' + s.burst + 's burst, recharge ' + s.cooldown + 's'
+    },
+    drones: {
+        id: 'drones',
+        name: 'Drone launcher',
+        short: 'Drones',
+        description: 'Ancient drone weapons (F / right click). Self-guided swarms that hunt targets.',
+        cost: 2800,
+        color: '255,225,130',
+        stats: { count: [3, 4, 5], damage: [14, 18, 24], cooldown: [4, 3.3, 2.6] },
+        describe: (s) => s.count + ' drones x ' + s.damage + ' dmg, reload ' + s.cooldown + 's'
     },
     missile: {
         id: 'missile',
@@ -85,7 +115,7 @@ const MODULES = {
     }
 };
 
-export const MODULE_ORDER = ['minigun', 'missile', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
+export const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
 
 export const moduleStats = (type, level) => {
     const def = MODULES[type];
@@ -150,10 +180,54 @@ export const drawModule = (ctx, type, level, options) => {
         ctx.save();
         ctx.rotate(aim);
         const offsets = level === 1 ? [0] : level === 2 ? [-1.3, 1.3] : [-2, 0, 2];
+        if(opts.heat > 0.5) {
+            ctx.strokeStyle = 'rgb(255,' + Math.round(200 - (opts.heat - 0.5) * 300) + ',' + Math.round(120 - (opts.heat - 0.5) * 200) + ')';
+        }
         offsets.forEach(o => line(0, o, 9, o));
+        ctx.strokeStyle = 'rgb(' + color + ')';
         ctx.restore();
         circle(3.6, true);
         circle(1.2);
+    }
+
+    if(type === 'staff') {
+        // Long ribbed plasma cannon on a disc mount.
+        ctx.save();
+        ctx.rotate(aim);
+        shape([[0, -1.6], [10, -1], [10, 1], [0, 1.6]]);
+        for(let i = 0; i < level + 1; i++) line(3 + i * 2, -1.4, 3 + i * 2, 1.4);
+        ctx.restore();
+        shape([[0, -4], [3.5, -2], [3.5, 2], [0, 4], [-3.5, 2], [-3.5, -2]]);
+    }
+
+    if(type === 'beam') {
+        // Asgard emitter: crystal dish with a focusing prong.
+        ctx.save();
+        ctx.rotate(aim);
+        line(0, 0, 8, 0);
+        line(5, -2, 8, 0); line(5, 2, 8, 0);
+        ctx.restore();
+        circle(4, true);
+        ctx.beginPath();
+        ctx.arc(0, 0, 2.2 * u, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 1; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4 + i * 1.4) * u, Math.PI * 0.6, Math.PI * 1.4);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'drones') {
+        // Hexagonal drone bay with glowing drone cells.
+        shape([[4.5, 0], [2.2, -4], [-2.2, -4], [-4.5, 0], [-2.2, 4], [2.2, 4]]);
+        const cells = level + 2;
+        for(let i = 0; i < cells; i++) {
+            const a = (i / cells) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * 2.2 * u, Math.sin(a) * 2.2 * u, 0.7 * u, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
 
     if(type === 'missile') {

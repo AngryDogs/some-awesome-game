@@ -163,7 +163,7 @@ export const computeShipStats = (hullId) => {
     stats.acceleration = stats.thrustForce / stats.mass;
     stats.angularAcceleration = stats.torqueForce / stats.mass;
     stats.maxTurn = hull.maxTurn * Math.min(1.6, Math.sqrt(stats.angularAcceleration / hull.torque));
-    stats.weapons = stats.modules.filter(m => m.type === 'minigun' || m.type === 'missile').length;
+    stats.weapons = stats.modules.filter(m => ['minigun', 'missile', 'staff', 'beam', 'drones'].indexOf(m.type) !== -1).length;
 
     return stats;
 };

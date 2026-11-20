@@ -61,6 +61,8 @@ const createState = () => {
         missiles: [],
         particles: [],
         ores: [],
+        beamHits: [],
+        mergeGhosts: [],
         floatingTexts: [],
         sectors: new SectorManager(getProfile().seed),
         sectorTimer: 0,
@@ -180,19 +182,32 @@ const hitRock = (rock, damage, hitX, hitY) => {
     Particle.burst(state.particles, hitX, hitY, rock.vx + outX * 40, rock.vy + outY * 40, 2, {
         minSpeed: 20, maxSpeed: 90, minLife: 0.2, maxLife: 0.5, size: 2, color: MATERIALS[rock.material].color
     });
+    if(Math.random() < Math.min(1, damage * 0.6)) {
+        Particle.burst(state.particles, hitX, hitY, rock.vx + outX * 25, rock.vy + outY * 25, 1, {
+            minSpeed: 5, maxSpeed: 30, minLife: 0.8, maxLife: 1.6, size: 6, color: '170,160,150', dust: true, alpha: 0.25
+        });
+    }
 
     if(result.fragment) {
         state.newRocks.push(result.fragment);
-        Particle.burst(state.particles, (rock.x + result.fragment.x) / 2, (rock.y + result.fragment.y) / 2,
+        const midX = (rock.x + result.fragment.x) / 2;
+        const midY = (rock.y + result.fragment.y) / 2;
+        Particle.burst(state.particles, midX, midY,
             rock.vx, rock.vy, 16, { minSpeed: 30, maxSpeed: 130, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230' });
-        sounds.explosion(0.35);
+        Particle.burst(state.particles, midX, midY, rock.vx, rock.vy, 8, {
+            minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+        });
+        sounds.rockCrack();
     }
 
     if(result.crumbled) {
         Particle.burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
             minSpeed: 20, maxSpeed: 100, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '200,200,210'
         });
-        sounds.explosion(0.3);
+        Particle.burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 6, {
+            minSpeed: 5, maxSpeed: 40, minLife: 1, maxLife: 2, size: 7, color: '170,160,150', dust: true, alpha: 0.22
+        });
+        sounds.rockCrack();
     }
 };
 
@@ -231,21 +246,45 @@ const bulletCollisions = () => {
             if(dx * dx + dy * dy > rock.radius * rock.radius) continue;
 
             bullet.dead = true;
-            // Bullets carry momentum and nudge the rock.
+            // Projectiles carry momentum and nudge the rock.
             rock.vx += bullet.vx * bullet.mass / rock.mass;
             rock.vy += bullet.vy * bullet.mass / rock.mass;
-            sounds.rockHit();
             hitRock(rock, bullet.damage, bullet.x, bullet.y);
+
+            if(bullet.kind === 'plasma') {
+                // Staff blast: fiery splash that also scorches nearby rocks.
+                Particle.burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 14, {
+                    minSpeed: 30, maxSpeed: 160, minLife: 0.2, maxLife: 0.5, size: 3, color: '255,170,60'
+                });
+                rocks.forEach(other => {
+                    if(other === rock || other.dead) return;
+                    const ox = other.x - bullet.x;
+                    const oy = other.y - bullet.y;
+                    const reach = bullet.splash + other.radius;
+                    if(ox * ox + oy * oy < reach * reach) hitRock(other, bullet.damage * 0.5, bullet.x, bullet.y);
+                });
+                sounds.plasmaImpact();
+            } else {
+                sounds.rockHit();
+            }
             return;
         }
     });
 };
 
 const explodeMissile = (missile) => {
-    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, 30, {
-        minSpeed: 40, maxSpeed: missile.blast * 3, minLife: 0.2, maxLife: 0.6, size: 3, color: '255,160,80'
+    const drone = missile.kind === 'drone';
+    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, drone ? 16 : 30, {
+        minSpeed: 40, maxSpeed: missile.blast * 3 + 60, minLife: 0.2, maxLife: 0.6, size: drone ? 2.5 : 3,
+        color: drone ? '255,230,150' : '255,160,80'
     });
-    sounds.explosion(0.5);
+    if(!drone) {
+        Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 6, {
+            minSpeed: 10, maxSpeed: 40, minLife: 1, maxLife: 1.8, size: 10, color: '150,140,130', dust: true, alpha: 0.2
+        });
+    }
+    if(drone) sounds.droneImpact();
+    else sounds.missileExplosion();
 
     state.rocks.forEach(rock => {
         if(rock.dead) return;
@@ -321,10 +360,18 @@ const rockCollisions = () => {
             const smaller = bigger === a ? b : a;
             bigger.merge(smaller);
 
-            Particle.burst(particles, contactX, contactY, bigger.vx, bigger.vy, 18, {
-                minSpeed: 20, maxSpeed: 110, minLife: 0.3, maxLife: 0.9, size: 2.5, color: '210,200,190'
+            // The smaller body sinks into the bigger one while a dust cloud
+            // billows out and swirls back in, settling on the surface.
+            state.mergeGhosts.push({
+                rock: smaller, host: bigger, life: 0.9, maxLife: 0.9,
+                offsetX: smaller.x - bigger.x, offsetY: smaller.y - bigger.y
             });
-            sounds.explosion(0.25);
+            Particle.mergeCloud(particles, contactX, contactY, bigger,
+                Math.round(14 + smaller.radius * 1.2), smaller.radius * 1.3, '175,165,150');
+            Particle.burst(particles, contactX, contactY, bigger.vx, bigger.vy, 8, {
+                minSpeed: 10, maxSpeed: 60, minLife: 0.3, maxLife: 0.7, size: 2, color: '230,215,190'
+            });
+            sounds.merge(bigger.radius);
             if(a.dead) break;
         }
     }
@@ -398,6 +445,28 @@ const step = (dt) => {
     input.aimY = input.mouseY - world.height / 2 + state.camera.y;
 
     ship.update(dt, input, state);
+    state.beamHits.forEach(hit => {
+        hit.rock.vx += hit.dirX * 900 * hit.damage / hit.rock.mass;
+        hit.rock.vy += hit.dirY * 900 * hit.damage / hit.rock.mass;
+        hitRock(hit.rock, hit.damage, hit.x, hit.y);
+        if(Math.random() < 0.35) {
+            Particle.burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
+                minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
+            });
+        }
+        sounds.beamImpact();
+    });
+    state.beamHits = [];
+    state.mergeGhosts.forEach(ghost => {
+        ghost.life -= dt;
+        const t = Math.max(0, ghost.life / ghost.maxLife);
+        ghost.rock.x = ghost.host.x + ghost.offsetX * t;
+        ghost.rock.y = ghost.host.y + ghost.offsetY * t;
+        ghost.rock.angle += ghost.rock.spin * dt;
+        ghost.rock.renderScale = 0.25 + 0.75 * t;
+        ghost.rock.renderAlpha = t;
+    });
+    state.mergeGhosts = state.mergeGhosts.filter(ghost => ghost.life > 0);
     applyGravity(dt);
 
     state.rocks.forEach(rock => rock.update(dt));
@@ -615,6 +684,45 @@ const drawStationPointer = () => {
     ctx.restore();
 };
 
+// Weapon readiness: heat for miniguns, recharge for beams, reload for launchers.
+const drawWeaponPanel = () => {
+    const weapons = state.ship.weaponStatus();
+    if(!weapons.length) return;
+    const left = 16;
+    const rowHeight = 22;
+    const top = world.height - 16 - weapons.length * rowHeight - 18;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.4)';
+    ctx.fillRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.strokeRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+    ctx.fillText('WEAPONS', left + 8, top + 14);
+
+    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
+    weapons.forEach((w, i) => {
+        const y = top + 22 + i * rowHeight;
+        ctx.fillStyle = 'rgb(' + w.color + ')';
+        ctx.font = '11px Bungee, sans-serif';
+        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + 8, y + 11);
+
+        const barX = left + 108;
+        const barW = 70;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeRect(barX, y + 3, barW, 8);
+        const warn = w.state === 'overheated' || w.state === 'hot';
+        ctx.fillStyle = warn ? (w.state === 'overheated' ? 'rgb(255, 80, 60)' : 'rgb(255, 170, 70)') : 'rgb(' + w.color + ')';
+        ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
+
+        ctx.font = '9px Bungee, sans-serif';
+        ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
+        ctx.fillText(labels[w.state], barX + barW + 6, y + 11);
+    });
+    ctx.restore();
+};
+
 const drawMinimap = () => {
     const size = MINIMAP_SIZE;
     const left = world.width - size - 16;
@@ -692,13 +800,15 @@ const render = () => {
 
     const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
     visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
-    visibleRocks.forEach(rock => rock.draw(ctx));
+    state.mergeGhosts.forEach(ghost => ghost.rock.draw(ctx, time));
+    visibleRocks.forEach(rock => rock.draw(ctx, time));
+    state.particles.forEach(particle => { if(particle.dust && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    state.particles.forEach(particle => { if(isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if(!particle.dust && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
     ctx.save();
@@ -716,6 +826,7 @@ const render = () => {
 
     drawStationPointer();
     drawMinimap();
+    drawWeaponPanel();
     drawDockPrompt();
     if(!state.paused) drawCrosshair();
     drawBanner();
@@ -752,6 +863,7 @@ const dock = () => {
     ship.vy = 0;
     ship.angularVelocity = 0;
 
+    sounds.dock();
     getShipyard().open({
         tab: cargoUsed() > 0 ? 'market' : 'ship',
         closeLabel: 'Undock',
@@ -801,7 +913,8 @@ const frame = (now) => {
         if(steps === MAX_STEPS_PER_FRAME) accumulator = 0;
 
         sounds.setThrust(state.ship.alive && state.ship.thrusting);
-        sounds.setFiring(state.ship.alive && state.ship.firing);
+        sounds.setFiring(state.ship.alive && state.ship.minigunFiring);
+        sounds.setBeam(state.ship.alive && state.ship.beaming);
     }
 
     render();
@@ -859,6 +972,7 @@ const constructGameBoard = () => {
     if(!initialized) initialize();
     if(frameId) cancelAnimationFrame(frameId);
 
+    sounds.unlock();
     resize();
     state = createState();
     state.rocks = state.sectors.update(state.ship.x, state.ship.y, []);
