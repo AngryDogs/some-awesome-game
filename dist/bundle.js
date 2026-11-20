@@ -391,6 +391,9 @@ class Particle {
         this.shrink = options.shrink !== false;
         this.dust = !!options.dust;
         this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
+        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
+        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
+        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
         this.alpha = options.alpha === undefined ? 1 : options.alpha;
         this.attractor = options.attractor || null;
         this.swirl = options.swirl || 0;
@@ -411,6 +414,9 @@ class Particle {
                 color: options.color,
                 dust: options.dust,
                 solid: options.solid,
+                pixel: options.pixel,
+                glow: options.glow,
+                drag: options.drag,
                 alpha: options.alpha
             }));
         }
@@ -455,6 +461,11 @@ class Particle {
             if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
         }
 
+        if(this.drag) {
+            const keep = Math.max(0, 1 - this.drag * dt);
+            this.vx *= keep;
+            this.vy *= keep;
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.life -= dt;
@@ -470,6 +481,15 @@ class Particle {
             ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
             ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
             ctx.globalAlpha = 1;
+            return;
+        }
+        if(this.pixel) {
+            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
+            if(t < 0.35 && Math.random() < 0.35) return;
+            const stepped = Math.ceil(t * 4) / 4;
+            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
+            ctx.fillStyle = 'rgba(' + this.color + ',' + (stepped * this.alpha).toFixed(2) + ')';
+            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
             return;
         }
         if(this.solid) {
@@ -3926,8 +3946,8 @@ openShipyard.addEventListener('click', () => {
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
-const MAX_PARTICLES = 900;
-const MAX_DUST = 250;              // soft dust puffs are large; keep only the newest
+const MAX_PARTICLES = 1800;     // pixel particles are cheap (one small fillRect each)
+const MAX_DUST = 320;              // soft dust puffs are large; keep only the newest
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
 const ROCK_BOUNCE = 0.2;
@@ -4113,6 +4133,10 @@ const applyGravity = (dt) => {
 
 // Weapon damage chips the asteroid: area turns into ore, stress cracks chunks off.
 const colorString = (c) => c.map(v => Math.round(v)).join(',');
+const shadeString = (c, f) => c.map(v => Math.round(Math.max(0, Math.min(255, v * f)))).join(',');
+
+// Dust, debris chips and unlit pixels are drawn normally; sparks and glowing pixels add light.
+const isUnlit = (particle) => particle.dust || particle.solid || (particle.pixel && !particle.glow);
 
 // Spawn particles in a cone around (dirX, dirY).
 const spray = (x, y, baseVx, baseVy, dirX, dirY, cone, count, options) => {
@@ -4129,6 +4153,9 @@ const spray = (x, y, baseVx, baseVy, dirX, dirY, cone, count, options) => {
             color: options.color,
             dust: options.dust,
             solid: options.solid,
+            pixel: options.pixel,
+            glow: options.glow,
+            drag: options.drag,
             alpha: options.alpha
         }));
     }
@@ -4160,29 +4187,47 @@ const hitRock = (rock, damage, hitX, hitY, inX, inY, kind) => {
     const ry = dy - 2 * dot * normal.y;
     const continuous = kind === 'beam';
 
+    const light = shadeString(rock.dustColor, 1.25);
+    const darkDust = shadeString(rock.dustColor, 0.7);
+    const coreColor = colorString(rock.coreColor);
+
     if(result.hard) {
-        // Hard core: sparks skipping off the surface, a few glowing fragments, a bright flash.
-        if(!continuous || Math.random() < 0.5) {
-            spray(hitX, hitY, rock.vx, rock.vy, rx, ry, 0.6, continuous ? 2 : Math.round(5 + 4 * intensity), {
-                minSpeed: 140, maxSpeed: 360, minLife: 0.12, maxLife: 0.35, size: 1.8, color: '255,235,180'
+        // Hard core: a shower of spark pixels skipping off the surface, glowing embers,
+        // shards of dark core rock, a puff of pulverised stone and a bright flash.
+        if(!continuous || Math.random() < 0.55) {
+            spray(hitX, hitY, rock.vx, rock.vy, rx, ry, 0.55, continuous ? 3 : Math.round(8 + 6 * intensity), {
+                minSpeed: 160, maxSpeed: 420, minLife: 0.12, maxLife: 0.4, size: 1.6, color: '255,235,180', pixel: true, glow: true
             });
-            spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.9, continuous ? 1 : 2, {
-                minSpeed: 40, maxSpeed: 120, minLife: 0.3, maxLife: 0.7, size: 2.4, color: '255,150,60'
+            spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 1, continuous ? 1 : Math.round(2 + 2 * intensity), {
+                minSpeed: 40, maxSpeed: 140, minLife: 0.35, maxLife: 0.9, size: 2.2, color: '255,140,50', pixel: true, glow: true, drag: 1.5
             });
-            flash(hitX, hitY, continuous ? 14 : 16 + 10 * intensity, '255,220,160', 0.08);
+            spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.9, continuous ? 1 : Math.round(3 + 3 * intensity), {
+                minSpeed: 50, maxSpeed: 170, minLife: 0.4, maxLife: 1, size: 2, color: coreColor, pixel: true, drag: 0.6
+            });
+            spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.6, continuous ? 0 : 1, {
+                minSpeed: 10, maxSpeed: 40, minLife: 0.8, maxLife: 1.6, size: 5, color: darkDust, dust: true, alpha: 0.3, drag: 0.8
+            });
+            flash(hitX, hitY, continuous ? 16 : 20 + 12 * intensity, '255,220,160', 0.09);
         }
-    } else if(!continuous || Math.random() < 0.6) {
-        // Soft regolith: a puff of dust and grit kicked up off the surface, plus debris.
-        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.7, continuous ? 1 : Math.round(1 + intensity * 2), {
-            minSpeed: 15, maxSpeed: 60, minLife: 0.8, maxLife: 1.8, size: 7, color: dust, dust: true, alpha: 0.28
+    } else if(!continuous || Math.random() < 0.7) {
+        // Soft regolith: a billowing plume of dust, a spray of grit pixels in light and
+        // dark shades, a few bigger clods, and a dim flash.
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.8, continuous ? 1 : Math.round(2 + intensity * 2), {
+            minSpeed: 15, maxSpeed: 70, minLife: 1, maxLife: 2.2, size: 8, color: dust, dust: true, alpha: 0.32, drag: 0.7
         });
-        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 1, continuous ? 2 : Math.round(3 + 3 * intensity), {
-            minSpeed: 40, maxSpeed: 150, minLife: 0.3, maxLife: 0.8, size: 1.6, color: dust, solid: true
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 1.1, continuous ? 3 : Math.round(6 + 6 * intensity), {
+            minSpeed: 40, maxSpeed: 200, minLife: 0.35, maxLife: 1, size: 1.4, color: light, pixel: true, drag: 0.5
         });
-        flash(hitX, hitY, continuous ? 8 : 10 + 6 * intensity, '255,230,200', 0.06);
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 1.1, continuous ? 2 : Math.round(4 + 4 * intensity), {
+            minSpeed: 30, maxSpeed: 150, minLife: 0.4, maxLife: 1.1, size: 1.4, color: darkDust, pixel: true, drag: 0.5
+        });
+        spray(hitX, hitY, rock.vx, rock.vy, normal.x, normal.y, 0.7, continuous ? 0 : Math.round(1 + intensity), {
+            minSpeed: 30, maxSpeed: 90, minLife: 0.6, maxLife: 1.4, size: 3, color: dust, solid: true
+        });
+        flash(hitX, hitY, continuous ? 9 : 12 + 6 * intensity, '255,230,200', 0.06);
     }
 
-    // Ore pops out of the hole, flashing in its metal colour and trailing a glow.
+    // Ore pops out of the hole, flashing in its metal colour with a burst of glinting pixels.
     result.ore.forEach(material => {
         const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][material].color;
         const a = Math.atan2(normal.y, normal.x) + (Math.random() - 0.5) * 1.1;
@@ -4194,40 +4239,56 @@ const hitRock = (rock, damage, hitX, hitY, inX, inY, kind) => {
             rock.vy + Math.sin(a) * speed,
             material
         );
-        ore.trail = 0.7;
+        ore.trail = 0.8;
         state.ores.push(ore);
-        flash(hitX, hitY, 26, color, 0.2);
-        spray(hitX, hitY, rock.vx, rock.vy, Math.cos(a), Math.sin(a), 0.5, 4, {
-            minSpeed: 60, maxSpeed: 160, minLife: 0.2, maxLife: 0.45, size: 2, color: color
+        flash(hitX, hitY, 32, color, 0.22);
+        spray(hitX, hitY, rock.vx, rock.vy, Math.cos(a), Math.sin(a), 0.6, 10, {
+            minSpeed: 60, maxSpeed: 200, minLife: 0.25, maxLife: 0.6, size: 1.6, color: color, pixel: true, glow: true
+        });
+        spray(hitX, hitY, rock.vx, rock.vy, Math.cos(a), Math.sin(a), 0.5, 2, {
+            minSpeed: 10, maxSpeed: 40, minLife: 0.8, maxLife: 1.4, size: 5, color: dust, dust: true, alpha: 0.25
         });
     });
 
     if(result.pieces) {
-        // Cut clean through: the two halves replace the asteroid, with dust along the cut.
+        // Cut clean through: the halves replace the asteroid, with a long dust cloud and a
+        // spray of rubble pixels along the cut, plus a crack of sparks from the core.
         result.pieces.forEach(piece => state.newRocks.push(piece));
         const a = result.pieces[0];
         const b = result.pieces[1];
-        for(let i = 0; i < 10; i++) {
-            const t = Math.random();
-            const x = a.x + (b.x - a.x) * t + (Math.random() - 0.5) * rock.radius * 0.6;
-            const y = a.y + (b.y - a.y) * t + (Math.random() - 0.5) * rock.radius * 0.6;
+        const cutX = -(b.y - a.y);
+        const cutY = b.x - a.x;
+        const cutLength = Math.sqrt(cutX * cutX + cutY * cutY) || 1;
+        for(let i = 0; i < 16; i++) {
+            const t = (Math.random() - 0.5) * 1.6;
+            const x = rock.x + cutX / cutLength * rock.radius * t;
+            const y = rock.y + cutY / cutLength * rock.radius * t;
             __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 1, {
-                minSpeed: 5, maxSpeed: 30, minLife: 1, maxLife: 2.2, size: 8, color: '170,160,150', dust: true, alpha: 0.22
+                minSpeed: 5, maxSpeed: 35, minLife: 1.2, maxLife: 2.6, size: 9, color: dust, dust: true, alpha: 0.26
+            });
+            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 3, {
+                minSpeed: 20, maxSpeed: 110, minLife: 0.5, maxLife: 1.3, size: 1.8, color: i % 2 ? light : coreColor, pixel: true
             });
         }
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx, rock.vy, 12, {
-            minSpeed: 20, maxSpeed: 90, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230'
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx, rock.vy, 16, {
+            minSpeed: 60, maxSpeed: 260, minLife: 0.2, maxLife: 0.6, size: 1.6, color: '255,230,170', pixel: true, glow: true
         });
+        flash(rock.x, rock.y, rock.radius * 1.6, '255,225,190', 0.25);
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
     }
 
     if(result.crumbled) {
+        // Falls apart into a cloud of rubble pixels and dust.
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 24, {
+            minSpeed: 20, maxSpeed: 140, minLife: 0.5, maxLife: 1.3, size: 1.8, color: light, pixel: true, drag: 0.4
+        });
         __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
-            minSpeed: 20, maxSpeed: 100, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '200,200,210'
+            minSpeed: 20, maxSpeed: 120, minLife: 0.5, maxLife: 1.3, size: 2, color: coreColor, pixel: true, drag: 0.4
         });
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 6, {
-            minSpeed: 5, maxSpeed: 40, minLife: 1, maxLife: 2, size: 7, color: '170,160,150', dust: true, alpha: 0.22
+        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 10, {
+            minSpeed: 5, maxSpeed: 45, minLife: 1.2, maxLife: 2.4, size: 8, color: dust, dust: true, alpha: 0.26, drag: 0.5
         });
+        flash(rock.x, rock.y, rock.radius * 2.2, '255,225,190', 0.2);
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
     }
 };
@@ -4289,6 +4350,9 @@ const bulletCollisions = () => {
                 __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 10, {
                     minSpeed: 10, maxSpeed: 80, minLife: 0.15, maxLife: 0.35, size: 7, color: '255,240,200'
                 });
+                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 20, {
+                    minSpeed: 60, maxSpeed: 260, minLife: 0.25, maxLife: 0.7, size: 1.8, color: '255,180,70', pixel: true, glow: true, drag: 0.8
+                });
                 __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 5, {
                     minSpeed: 5, maxSpeed: 35, minLife: 1, maxLife: 2, size: 9, color: '120,100,90', dust: true, alpha: 0.25
                 });
@@ -4322,6 +4386,16 @@ const explodeMissile = (missile) => {
         minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 11, color: '150,140,130', dust: true, alpha: 0.2
     });
     state.shockwaves.push({ x: missile.x, y: missile.y, radius: 4, maxRadius: missile.blast * 1.6, life: 1, color: drone ? '255,220,140' : '255,170,90' });
+    // Pixel shrapnel and glowing embers flung out of the blast, plus a lingering smoke cloud.
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 34 : 28, {
+        minSpeed: 80, maxSpeed: missile.blast * 6 + 120, minLife: 0.3, maxLife: 0.9, size: 1.8, color: color, pixel: true, glow: true, drag: 0.8
+    });
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 14, {
+        minSpeed: 20, maxSpeed: 90, minLife: 0.6, maxLife: 1.4, size: 2.4, color: '255,120,40', pixel: true, glow: true, drag: 1.2
+    });
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 6, {
+        minSpeed: 5, maxSpeed: 30, minLife: 1.5, maxLife: 2.8, size: 12, color: '110,100,95', dust: true, alpha: 0.22, drag: 0.6
+    });
     if(drone) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].droneImpact();
     else __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].missileExplosion();
 
@@ -4397,6 +4471,9 @@ const startMerge = (a, b) => {
     __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(state.particles, contactX, contactY, host,
         Math.round(12 + guest.radius), guest.radius * 1.1, colorString(host.dustColor));
     flash(contactX, contactY, 30 + guest.radius, '255,220,180', 0.25);
+    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, contactX, contactY, host.vx, host.vy, 22, {
+        minSpeed: 20, maxSpeed: 110, minLife: 0.6, maxLife: 1.5, size: 1.8, color: shadeString(host.dustColor, 1.2), pixel: true, drag: 0.4
+    });
     const nx = link.offsetX / distance;
     const ny = link.offsetY / distance;
     spray(contactX, contactY, host.vx, host.vy, -ny, nx, 0.6, 8, {
@@ -5359,14 +5436,14 @@ const render = () => {
     // Merging guests are drawn first so they sink beneath their host.
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
-    state.particles.forEach(particle => { if((particle.dust || particle.solid) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if(isUnlit(particle) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    state.particles.forEach(particle => { if(!particle.dust && !particle.solid && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
+    state.particles.forEach(particle => { if(!isUnlit(particle) && isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
     // Kinetic tracers: a long faint orange tail, a yellow body and a short white-hot
@@ -6136,6 +6213,14 @@ class Ship {
                     size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
                     color: this.hullDef.exhaust || '255,150,60'
                 }));
+                if(Math.random() < 0.35 * t.main) {
+                    particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                        x: nozzle.x, y: nozzle.y,
+                        vx: this.vx - Math.cos(this.angle + spread * 2) * speed * 1.2,
+                        vy: this.vy - Math.sin(this.angle + spread * 2) * speed * 1.2,
+                        life: 0.3 + Math.random() * 0.4, size: 1.6, color: '255,220,160', pixel: true, glow: true
+                    }));
+                }
             });
         }
 
@@ -6533,6 +6618,22 @@ class Ship {
                 color: '255,200,120'
             }));
         }
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 60 + Math.random() * 260;
+            particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: this.x + (Math.random() - 0.5) * spread,
+                y: this.y + (Math.random() - 0.5) * spread,
+                vx: this.vx + Math.cos(angle) * speed,
+                vy: this.vy + Math.sin(angle) * speed,
+                life: 0.4 + Math.random() * 0.9,
+                size: 1.8,
+                color: i % 3 ? '255,170,80' : '200,210,230',
+                pixel: true,
+                glow: i % 3 !== 0,
+                drag: 0.6
+            }));
+        }
     }
 
     drawThrusters(ctx) {
@@ -6897,6 +6998,21 @@ class Missile {
                 vx: this.vx * 0.2 - dirX * 50, vy: this.vy * 0.2 - dirY * 50,
                 life: 0.25 + Math.random() * 0.2, size: this.kind === 'drone' ? 2 : 2.5, color: profile.trail
             }));
+            // Glittering pixel sparks shed along the trail.
+            if(Math.random() < 0.5) {
+                particles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */]({
+                    x: this.x - dirX * 4, y: this.y - dirY * 4,
+                    vx: this.vx * 0.3 + (Math.random() - 0.5) * 80, vy: this.vy * 0.3 + (Math.random() - 0.5) * 80,
+                    life: 0.3 + Math.random() * 0.3, size: 1.4, color: profile.trail, pixel: true, glow: true
+                }));
+            }
+            // Missiles also leave a thin smoke trail.
+            if(this.kind === 'missile' && Math.random() < 0.4) {
+                particles.push(new __WEBPACK_IMPORTED_MODULE_0__particle_particle__["a" /* default */]({
+                    x: this.x - dirX * 6, y: this.y - dirY * 6, vx: this.vx * 0.05, vy: this.vy * 0.05,
+                    life: 0.8 + Math.random() * 0.6, size: 4, color: '190,185,180', dust: true, alpha: 0.14
+                }));
+            }
         }
     }
 

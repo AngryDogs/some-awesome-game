@@ -91,6 +91,21 @@ class Missile {
                 vx: this.vx * 0.2 - dirX * 50, vy: this.vy * 0.2 - dirY * 50,
                 life: 0.25 + Math.random() * 0.2, size: this.kind === 'drone' ? 2 : 2.5, color: profile.trail
             }));
+            // Glittering pixel sparks shed along the trail.
+            if(Math.random() < 0.5) {
+                particles.push(new Particle({
+                    x: this.x - dirX * 4, y: this.y - dirY * 4,
+                    vx: this.vx * 0.3 + (Math.random() - 0.5) * 80, vy: this.vy * 0.3 + (Math.random() - 0.5) * 80,
+                    life: 0.3 + Math.random() * 0.3, size: 1.4, color: profile.trail, pixel: true, glow: true
+                }));
+            }
+            // Missiles also leave a thin smoke trail.
+            if(this.kind === 'missile' && Math.random() < 0.4) {
+                particles.push(new Particle({
+                    x: this.x - dirX * 6, y: this.y - dirY * 6, vx: this.vx * 0.05, vy: this.vy * 0.05,
+                    life: 0.8 + Math.random() * 0.6, size: 4, color: '190,185,180', dust: true, alpha: 0.14
+                }));
+            }
         }
     }
 

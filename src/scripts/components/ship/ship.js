@@ -443,6 +443,14 @@ class Ship {
                     size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
                     color: this.hullDef.exhaust || '255,150,60'
                 }));
+                if(Math.random() < 0.35 * t.main) {
+                    particles.push(new Particle({
+                        x: nozzle.x, y: nozzle.y,
+                        vx: this.vx - Math.cos(this.angle + spread * 2) * speed * 1.2,
+                        vy: this.vy - Math.sin(this.angle + spread * 2) * speed * 1.2,
+                        life: 0.3 + Math.random() * 0.4, size: 1.6, color: '255,220,160', pixel: true, glow: true
+                    }));
+                }
             });
         }
 
@@ -838,6 +846,22 @@ class Ship {
                 life: 0.4 + Math.random() * 0.8,
                 size: 3 * (0.6 + Math.random() * 0.8),
                 color: '255,200,120'
+            }));
+        }
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 60 + Math.random() * 260;
+            particles.push(new Particle({
+                x: this.x + (Math.random() - 0.5) * spread,
+                y: this.y + (Math.random() - 0.5) * spread,
+                vx: this.vx + Math.cos(angle) * speed,
+                vy: this.vy + Math.sin(angle) * speed,
+                life: 0.4 + Math.random() * 0.9,
+                size: 1.8,
+                color: i % 3 ? '255,170,80' : '200,210,230',
+                pixel: true,
+                glow: i % 3 !== 0,
+                drag: 0.6
             }));
         }
     }

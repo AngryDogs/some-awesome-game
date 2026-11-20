@@ -17,6 +17,9 @@ class Particle {
         this.shrink = options.shrink !== false;
         this.dust = !!options.dust;
         this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
+        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
+        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
+        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
         this.alpha = options.alpha === undefined ? 1 : options.alpha;
         this.attractor = options.attractor || null;
         this.swirl = options.swirl || 0;
@@ -37,6 +40,9 @@ class Particle {
                 color: options.color,
                 dust: options.dust,
                 solid: options.solid,
+                pixel: options.pixel,
+                glow: options.glow,
+                drag: options.drag,
                 alpha: options.alpha
             }));
         }
@@ -81,6 +87,11 @@ class Particle {
             if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
         }
 
+        if(this.drag) {
+            const keep = Math.max(0, 1 - this.drag * dt);
+            this.vx *= keep;
+            this.vy *= keep;
+        }
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.life -= dt;
@@ -96,6 +107,15 @@ class Particle {
             ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
             ctx.drawImage(dustSprite(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
             ctx.globalAlpha = 1;
+            return;
+        }
+        if(this.pixel) {
+            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
+            if(t < 0.35 && Math.random() < 0.35) return;
+            const stepped = Math.ceil(t * 4) / 4;
+            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
+            ctx.fillStyle = 'rgba(' + this.color + ',' + (stepped * this.alpha).toFixed(2) + ')';
+            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
             return;
         }
         if(this.solid) {
