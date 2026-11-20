@@ -26,6 +26,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Dock at Atlantis (shipyard) | B (inside the dashed ring, slowly) |
 | Shields on / off | H (or the button at the top of the screen) |
 | Cargo hold (view / eject ore) | C (or the cargo button, top right) |
+| Zoom | Mouse wheel |
 | Pause | Esc |
 
 ## Mining
@@ -40,6 +41,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 - Shields protect the hull, but while they're up the tractor beam is offline and ore that touches them
   burns up (costing a little shield energy). Lower shields (H) to collect ore with the tractor beam.
 - Open the cargo hold (C) to see what you carry and eject unwanted ore to make room.
+- An ore scanner colours the scanner map by metal, pings the area and guides you to the richest asteroid nearby.
 - Atlantis is protected by a city shield that deflects asteroids but lets ships through.
 - Dock at Atlantis (B) to sell ore in the Market tab and repair your hull.
   If your ship is destroyed, the cargo is lost.
@@ -51,7 +53,7 @@ Spend credits on:
 - **Hulls**: F-302, X-303, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields.
 - **Modules** placed on mounts by drag & drop (or select one and click a mount):
   minigun turrets, Goa'uld staff cannons, Asgard ion beams, missile pods, Ancient drone launchers,
-  sublight engines, shield emitters, targeting computers, cargo pods, ore tractors and armor.
+  sublight engines, shield emitters, targeting computers, ore scanners, cargo pods, ore tractors and armor.
   Each module upgrades from Mk I to Mk III and can be sold for half its value.
 
 Every weapon has a cooldown, shown in the weapon panel (bottom left): miniguns overheat, ion beams fire

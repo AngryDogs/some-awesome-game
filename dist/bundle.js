@@ -4778,8 +4778,8 @@ const render = () => {
     ctx.restore();
 
     drawStationPointer();
-    drawScannerPointer();
     drawMinimap();
+    drawScannerPointer();
     drawWeaponPanel();
     drawDockPrompt();
     if(!state.paused) drawCrosshair();
