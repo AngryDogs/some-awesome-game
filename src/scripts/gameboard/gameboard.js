@@ -1319,7 +1319,12 @@ const render = () => {
 
     if(isVisible(STATION.x, STATION.y, 300)) drawStation(ctx, time, state.canDock);
 
-    const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
+    const visibleRocks = state.rocks.filter(rock => {
+        if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
+        // Free the cached image of rocks well off screen.
+        if(rock.sprite && !isVisible(rock.x, rock.y, 900)) rock.releaseSprite();
+        return false;
+    });
     // Merging guests are drawn first so they sink beneath their host.
     visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
     visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
