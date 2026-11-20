@@ -902,3 +902,23 @@ body.playing canvas {
     box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);
     cursor: pointer;
 }
+
+/* Backdrop behind the game canvas: system nebula tint and the distant planet. */
+.backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+#gameboard > canvas {
+    z-index: 1;
+}
+
+.backdrop canvas.backdrop-planet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    will-change: transform;
+}

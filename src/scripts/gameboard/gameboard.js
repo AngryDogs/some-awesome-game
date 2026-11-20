@@ -1575,24 +1575,40 @@ const drawWeaponPanel = () => {
     ctx.restore();
 };
 
-// Distant planet and coloured nebula for the current system (slow parallax).
+// Distant planet and coloured nebula for the current system (slow parallax). These live
+// in a layer behind the game canvas: the nebula is a CSS gradient and the planet a
+// pre-rendered canvas moved with a CSS transform, so the browser composites them on the
+// GPU instead of the game repainting large images every frame.
+const backdrop = document.createElement('div');
+backdrop.className = 'backdrop';
+let backdropSystem = null;
+let planetEl = null;
+
+const setBackdrop = (system) => {
+    if(backdropSystem === system.id) return;
+    backdropSystem = system.id;
+    backdrop.style.background = 'radial-gradient(ellipse at 30% 35%, rgba(' + system.tint + ', 0.22), transparent 60%), ' +
+        'radial-gradient(ellipse at 75% 70%, rgba(' + system.tint + ', 0.16), transparent 55%)';
+    if(planetEl) planetEl.remove();
+    planetEl = planetSprite(system).canvas;
+    planetEl.className = 'backdrop-planet';
+    backdrop.appendChild(planetEl);
+};
+
 const drawBackdrop = () => {
     const system = state.system;
+    setBackdrop(system);
     const w = world.width;
     const h = world.height;
-    const nebula = nebulaSprite(system);
-    const nx = -((state.camera.x * 0.03) % w) - w * 0.25;
-    const ny = -((state.camera.y * 0.03) % h) - h * 0.25;
-    ctx.drawImage(nebula.canvas, nx, ny, w * 1.5, h * 1.5);
-
     const planet = planetSprite(system);
     const parallax = 0.12;
     const px = w / 2 + (system.planet.x - state.camera.x) * parallax;
     const py = h / 2 + (system.planet.y - state.camera.y) * parallax;
     const size = system.planet.radius * 0.55 * (0.8 + 0.2 * zoom);
     const full = size * planet.width / (planet.R * 2);
-    if(px + full / 2 < 0 || px - full / 2 > w || py + full / 2 < 0 || py - full / 2 > h) return;
-    ctx.drawImage(planet.canvas, px - full / 2, py - full / 2, full, full);
+    planetEl.style.width = full + 'px';
+    planetEl.style.height = full + 'px';
+    planetEl.style.transform = 'translate3d(' + (px - full / 2).toFixed(1) + 'px, ' + (py - full / 2).toFixed(1) + 'px, 0)';
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
@@ -1931,6 +1947,7 @@ const freeze = (frozen) => {
     shieldButton.style.display = state && !frozen ? '' : 'none';
     cargoButton.style.display = state && !frozen ? '' : 'none';
     starmapButton.style.display = state && !frozen ? '' : 'none';
+    backdrop.style.display = state ? '' : 'none';
     if(frozen) toggleCargoPanel(false);
     if(frozen) {
         sounds.stopAll();
@@ -1989,6 +2006,7 @@ const endGame = (message) => {
     if(menuMessage) menuMessage.textContent = message || '';
     menu.style.visibility = 'visible';
     state = null;
+    backdrop.style.display = 'none';
 };
 
 const frame = (now) => {
@@ -2049,6 +2067,7 @@ let initialized = false;
 
 const initialize = () => {
     initialized = true;
+    gameboard.appendChild(backdrop);
     gameboard.appendChild(canvas);
     window.addEventListener('resize', resize);
     loadInputHandlers();

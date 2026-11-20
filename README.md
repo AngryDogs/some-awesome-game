@@ -23,11 +23,31 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Guns | Left click / Space |
 | Missiles | Right click / F |
 | Toggle auto-targeting | G (needs a targeting computer) |
-| Dock at Atlantis (shipyard) | B (inside the dashed ring, slowly) |
+| Dock at Atlantis (shipyard) / use the DHD | B |
+| Starmap (addresses, hyperspace) | M (J engages the hyperdrive) |
 | Shields on / off | H (or the button at the top of the screen) |
 | Cargo hold (view / eject ore) | C (or the cargo button, top right) |
 | Zoom | Mouse wheel or + / - (0 resets) |
 | Pause | Esc |
+
+## Travel
+
+The galaxy has several star systems: **Lantea** (Atlantis, the shipyard and ore market), **Earth**,
+**Abydos**, **Chulak**, **Dakara**, **Langara** and **Othala**. Each has its own planet, asteroid
+fields and ore mix (Abydos is rich in naquadah, Dakara in gold, and so on).
+
+- **Stargate**: every system has a gate with a DHD next to it. Fly to the DHD and press **B**, enter
+  the six symbols of the destination address and then this gate's point of origin, and press the
+  dome. The gate dials (chevrons lock one by one), opens with the kawoosh, and you fly through the
+  event horizon. Only ships small enough to fit can use a gate.
+- **Starmap (M)**: a 3D map of the constellations and worlds. Click a world to see its address: the
+  six symbols are three pairs, and the line through each pair passes through the destination.
+- **Hyperdrive**: the X-304, Ha'tak, Asgard and Aurora have one built in, and cruiser-sized ships can
+  fit a hyperdrive module. Pick a destination on the starmap and engage: a hyperspace window opens,
+  and the trip takes longer the further you go.
+
+The Stargate and hyperspace sounds are synthesized. To use your own recordings instead, see
+`assets/sounds/stargate/README.txt`.
 
 ## Debug mode
 
