@@ -287,7 +287,9 @@ class Ship {
     // Ore that hits raised shields burns up and costs a sliver of shield energy.
     absorbOre(worldX, worldY) {
         this.shield = Math.max(0, this.shield - 0.25);
-        this.shieldImpact(worldX, worldY, 0.35);
+        this.sinceHit = 0;
+        this.shieldImpact(worldX, worldY, 0.8);
+        sounds.shieldHit(0.5);
     }
 
     // Where the tractor beam comes from: the ore tractor module if fitted, else the hull centre.
@@ -579,6 +581,7 @@ class Ship {
         this.vx -= dirX * recoil;
         this.vy -= dirY * recoil;
         turret.flash = 0.04;
+        sounds.minigunShot();
 
         // Each round adds enough heat to outpace cooling, so sustained fire
         // overheats after `heatShots` rounds.

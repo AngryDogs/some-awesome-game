@@ -1,5 +1,9 @@
-// All game sounds. The engine, thruster and minigun loops use the recorded samples;
-// everything else is synthesized with the Web Audio API so each weapon has its own voice.
+// All game sounds. The engine and thruster loops use the recorded samples; weapons,
+// impacts and effects are synthesized with the Web Audio API.
+//
+// Every sound is layered (a sub-bass "body", a mid punch and a noisy transient) and
+// runs through a compressor; heavy weapons also send into a generated reverb so shots
+// and explosions have a big, rolling tail instead of a thin "toy" blip.
 
 const createLoop = (src, volume) => {
     const audio = new Audio(src);
@@ -9,10 +13,7 @@ const createLoop = (src, volume) => {
 };
 
 const thrusterSound = createLoop('./assets/sounds/thrust.mp3', 0.5);
-const minigunSound = createLoop('./assets/sounds/minigun.mp3', 0.45);
 const engineSound = createLoop('./assets/sounds/engine.mp3', 0.18);
-
-const rockHitSound = new Audio('./assets/sounds/explosion1.mp3');
 const explosionSound = new Audio('./assets/sounds/explosion2.mp3');
 
 // play() returns a promise that rejects when autoplay is blocked; ignore it.
@@ -35,20 +36,51 @@ const playOneShot = (audio, volume) => {
     safePlay(audio);
 };
 
-// ------------------------------------------------------------ Web Audio synth
+// ------------------------------------------------------------ Web Audio graph
 
 let ac = null;
-let master = null;
+let master = null;      // dry bus -> compressor -> speakers
+let reverb = null;      // wet bus -> convolver -> compressor
 let noiseBuffer = null;
 const lastPlayed = {};
+
+// Decaying stereo noise: a cheap but convincing "big hangar / space" reverb.
+const createImpulse = (c, seconds, decay) => {
+    const length = Math.floor(c.sampleRate * seconds);
+    const impulse = c.createBuffer(2, length, c.sampleRate);
+    for(let channel = 0; channel < 2; channel++) {
+        const data = impulse.getChannelData(channel);
+        for(let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+    return impulse;
+};
 
 const context = () => {
     if(ac) return ac;
     try {
         ac = new (window.AudioContext || window.webkitAudioContext)();
+
+        const compressor = ac.createDynamicsCompressor();
+        compressor.threshold.value = -20;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 5;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        const output = ac.createGain();
+        output.gain.value = 0.9;
+        compressor.connect(output);
+        output.connect(ac.destination);
+
         master = ac.createGain();
-        master.gain.value = 0.55;
-        master.connect(ac.destination);
+        master.gain.value = 0.7;
+        master.connect(compressor);
+
+        const convolver = ac.createConvolver();
+        convolver.buffer = createImpulse(ac, 2.4, 3);
+        reverb = ac.createGain();
+        reverb.gain.value = 0.55;
+        reverb.connect(convolver);
+        convolver.connect(compressor);
 
         noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const data = noiseBuffer.getChannelData(0);
@@ -68,13 +100,20 @@ const throttle = (name, seconds) => {
     return c;
 };
 
-const envelope = (c, peak, attack, decay) => {
+// Gain envelope feeding the dry bus, plus an optional reverb send (`wet` 0..1).
+const envelope = (c, peak, attack, decay, wet) => {
     const gain = c.createGain();
     const now = c.currentTime;
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.exponentialRampToValueAtTime(peak, now + attack);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay);
     gain.connect(master);
+    if(wet) {
+        const send = c.createGain();
+        send.gain.value = wet;
+        gain.connect(send);
+        send.connect(reverb);
+    }
     return gain;
 };
 
@@ -105,100 +144,153 @@ const noise = (c, duration, filterType, from, to, output, q) => {
     source.stop(now + duration + 0.05);
 };
 
-// Continuous Asgard beam hum (two detuned saws through a sweeping band-pass).
-let beamVoice = null;
-const startBeam = () => {
-    const c = context();
-    if(!c || beamVoice) return;
+// Deep layered detonation used by missiles, drones and big impacts.
+const boom = (c, size, wet) => {
+    tone(c, 'sine', 95 + 30 / size, 26, 1.1 * size, envelope(c, 0.55, 0.004, 1.1 * size, wet));
+    tone(c, 'triangle', 180, 45, 0.35, envelope(c, 0.25, 0.002, 0.35, wet * 0.5));
+    noise(c, 1.3 * size, 'lowpass', 2600, 60, envelope(c, 0.5, 0.003, 1.3 * size, wet));
+    noise(c, 0.5, 'bandpass', 4500, 900, envelope(c, 0.12, 0.002, 0.45, wet), 1.5);
+};
+
+// ------------------------------------------------------------ sustained voices
+
+const createVoice = (build) => {
+    let voice = null;
+    return {
+        start(level) {
+            const c = context();
+            if(!c) return;
+            if(!voice) voice = build(c);
+            const target = Math.max(0.0001, level === undefined ? 1 : level) * voice.peak;
+            voice.gain.gain.cancelScheduledValues(c.currentTime);
+            voice.gain.gain.setTargetAtTime(target, c.currentTime, 0.08);
+        },
+        stop() {
+            if(!voice || !ac) return;
+            const v = voice;
+            voice = null;
+            const now = ac.currentTime;
+            v.gain.gain.cancelScheduledValues(now);
+            v.gain.gain.setTargetAtTime(0.0001, now, 0.06);
+            v.nodes.forEach(n => n.stop(now + 0.4));
+        }
+    };
+};
+
+// Asgard beam: detuned saws through a wobbling band-pass, a sub-bass drone and crackle.
+const beamVoice = createVoice(c => {
     const gain = c.createGain();
-    gain.gain.setValueAtTime(0.0001, c.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.16, c.currentTime + 0.08);
+    gain.gain.value = 0.0001;
+    gain.connect(master);
+    const send = c.createGain();
+    send.gain.value = 0.3;
+    gain.connect(send);
+    send.connect(reverb);
+
     const filter = c.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 3;
+    filter.frequency.value = 800;
+    filter.Q.value = 2.5;
+    filter.connect(gain);
     const lfo = c.createOscillator();
     const lfoGain = c.createGain();
-    lfo.frequency.value = 9;
-    lfoGain.gain.value = 400;
+    lfo.frequency.value = 11;
+    lfoGain.gain.value = 380;
     lfo.connect(lfoGain);
     lfoGain.connect(filter.frequency);
+
     const a = c.createOscillator();
     const b = c.createOscillator();
-    a.type = 'sawtooth';
-    b.type = 'sawtooth';
-    a.frequency.value = 220;
-    b.frequency.value = 223.5;
+    a.type = b.type = 'sawtooth';
+    a.frequency.value = 196;
+    b.frequency.value = 199.5;
     a.connect(filter);
     b.connect(filter);
-    filter.connect(gain);
-    gain.connect(master);
-    [a, b, lfo].forEach(o => o.start());
-    beamVoice = { gain: gain, oscillators: [a, b, lfo] };
-};
 
-const stopBeam = () => {
-    if(!beamVoice || !ac) return;
-    const voice = beamVoice;
-    beamVoice = null;
-    const now = ac.currentTime;
-    voice.gain.gain.cancelScheduledValues(now);
-    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
-    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
-    voice.oscillators.forEach(o => o.stop(now + 0.2));
-};
+    const sub = c.createOscillator();
+    const subGain = c.createGain();
+    sub.type = 'sine';
+    sub.frequency.value = 55;
+    subGain.gain.value = 0.9;
+    sub.connect(subGain);
+    subGain.connect(gain);
 
-// Soft warbling hum while the tractor beam holds ore.
-let tractorVoice = null;
-const startTractor = () => {
-    const c = context();
-    if(!c || tractorVoice) return;
+    const crackle = c.createBufferSource();
+    crackle.buffer = noiseBuffer;
+    crackle.loop = true;
+    const crackleFilter = c.createBiquadFilter();
+    crackleFilter.type = 'highpass';
+    crackleFilter.frequency.value = 3500;
+    const crackleGain = c.createGain();
+    crackleGain.gain.value = 0.25;
+    crackle.connect(crackleFilter);
+    crackleFilter.connect(crackleGain);
+    crackleGain.connect(gain);
+
+    const nodes = [a, b, lfo, sub, crackle];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.2 };
+});
+
+// Tractor beam: a soft shimmering chord over a breathy, slowly sweeping "air" layer.
+const tractorVoice = createVoice(c => {
     const gain = c.createGain();
-    gain.gain.setValueAtTime(0.0001, c.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.07, c.currentTime + 0.2);
-    const a = c.createOscillator();
-    const b = c.createOscillator();
+    gain.gain.value = 0.0001;
+    gain.connect(master);
+    const send = c.createGain();
+    send.gain.value = 0.4;
+    gain.connect(send);
+    send.connect(reverb);
+
+    const tremolo = c.createGain();
+    tremolo.gain.value = 0.7;
+    tremolo.connect(gain);
     const lfo = c.createOscillator();
     const lfoGain = c.createGain();
-    a.type = 'sine';
-    b.type = 'triangle';
-    a.frequency.value = 330;
-    b.frequency.value = 495;
-    lfo.frequency.value = 5;
-    lfoGain.gain.value = 18;
+    lfo.frequency.value = 6;
+    lfoGain.gain.value = 0.3;
     lfo.connect(lfoGain);
-    lfoGain.connect(a.frequency);
-    lfoGain.connect(b.frequency);
-    a.connect(gain);
-    b.connect(gain);
-    gain.connect(master);
-    [a, b, lfo].forEach(o => o.start());
-    tractorVoice = { gain: gain, oscillators: [a, b, lfo] };
-};
+    lfoGain.connect(tremolo.gain);
 
-const stopTractor = () => {
-    if(!tractorVoice || !ac) return;
-    const voice = tractorVoice;
-    tractorVoice = null;
-    const now = ac.currentTime;
-    voice.gain.gain.cancelScheduledValues(now);
-    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
-    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
-    voice.oscillators.forEach(o => o.stop(now + 0.3));
-};
+    const nodes = [lfo];
+    [[220, 0.5], [330, 0.35], [440.8, 0.25], [659, 0.12]].forEach(pair => {
+        const osc = c.createOscillator();
+        const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = pair[0];
+        g.gain.value = pair[1];
+        osc.connect(g);
+        g.connect(tremolo);
+        nodes.push(osc);
+    });
+
+    const air = c.createBufferSource();
+    air.buffer = noiseBuffer;
+    air.loop = true;
+    const airFilter = c.createBiquadFilter();
+    airFilter.type = 'bandpass';
+    airFilter.Q.value = 6;
+    airFilter.frequency.value = 900;
+    const sweep = c.createOscillator();
+    const sweepGain = c.createGain();
+    sweep.frequency.value = 0.7;
+    sweepGain.gain.value = 500;
+    sweep.connect(sweepGain);
+    sweepGain.connect(airFilter.frequency);
+    const airGain = c.createGain();
+    airGain.gain.value = 0.35;
+    air.connect(airFilter);
+    airFilter.connect(airGain);
+    airGain.connect(gain);
+    nodes.push(air, sweep);
+
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.09 };
+});
+
+// ------------------------------------------------------------ public API
 
 const sounds = {
-    setTractor(on) { if(on) startTractor(); else stopTractor(); },
-
-    // Asteroid glancing off the Atlantis city shield.
-    cityShield(volume) {
-        const c = throttle('cityShield', 0.12);
-        if(!c) return;
-        const v = Math.max(0.02, Math.min(0.25, volume));
-        tone(c, 'sine', 700, 180, 0.6, envelope(c, v, 0.005, 0.6));
-        tone(c, 'triangle', 1400, 500, 0.4, envelope(c, v * 0.4, 0.005, 0.4));
-    },
-
     // Must be called from a user gesture (e.g. the launch click) so audio can start.
     unlock() {
         const c = context();
@@ -207,64 +299,82 @@ const sounds = {
 
     startEngine() { setLooping(engineSound, true); },
     setThrust(on) { setLooping(thrusterSound, on); },
-    setFiring(on) { setLooping(minigunSound, on); },
-    setBeam(on) { if(on) startBeam(); else stopBeam(); },
+    setFiring() { /* minigun rounds are synthesized per shot (minigunShot) */ },
+    setBeam(on) { if(on) beamVoice.start(); else beamVoice.stop(); },
+    // `level` 0..1 grows with the number of ore pieces held.
+    setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
 
-    rockHit() { playOneShot(rockHitSound, 0.35); },
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
+
+    // Heavy kinetic minigun: sharp crack, chest thump and a short metallic ring.
+    minigunShot() {
+        const c = throttle('minigun', 0.035);
+        if(!c) return;
+        noise(c, 0.06, 'bandpass', 2600, 1200, envelope(c, 0.28, 0.001, 0.06, 0.12), 0.9);
+        tone(c, 'triangle', 170, 55, 0.08, envelope(c, 0.32, 0.001, 0.08));
+        tone(c, 'square', 1250 + Math.random() * 200, 700, 0.03, envelope(c, 0.03, 0.001, 0.03));
+    },
+
+    // Kinetic round striking rock: gritty crack with a low knock.
+    rockHit() {
+        const c = throttle('rockHit', 0.03);
+        if(!c) return;
+        noise(c, 0.09, 'bandpass', 1800, 500, envelope(c, 0.16, 0.001, 0.09), 1.2);
+        tone(c, 'sine', 140, 60, 0.07, envelope(c, 0.12, 0.001, 0.07));
+    },
 
     // Goa'uld staff cannon: a deep concussive "thoom" with a crackling plasma tail.
     staffShot() {
         const c = throttle('staff', 0.08);
         if(!c) return;
-        tone(c, 'sine', 140, 38, 0.45, envelope(c, 0.5, 0.004, 0.45));
-        tone(c, 'sawtooth', 380, 70, 0.32, envelope(c, 0.16, 0.004, 0.3));
-        noise(c, 0.5, 'lowpass', 2200, 140, envelope(c, 0.35, 0.003, 0.5));
-        noise(c, 0.35, 'bandpass', 4000, 1200, envelope(c, 0.07, 0.02, 0.33), 3);
+        tone(c, 'sine', 150, 34, 0.55, envelope(c, 0.6, 0.003, 0.55, 0.35));
+        tone(c, 'sawtooth', 420, 70, 0.35, envelope(c, 0.18, 0.003, 0.33, 0.35));
+        noise(c, 0.55, 'lowpass', 2400, 120, envelope(c, 0.4, 0.002, 0.55, 0.4));
+        noise(c, 0.4, 'bandpass', 4200, 1100, envelope(c, 0.08, 0.02, 0.38, 0.3), 3);
     },
 
     plasmaImpact() {
         const c = throttle('plasmaImpact', 0.06);
         if(!c) return;
-        tone(c, 'sine', 110, 30, 0.6, envelope(c, 0.45, 0.004, 0.6));
-        noise(c, 0.7, 'lowpass', 1800, 90, envelope(c, 0.45, 0.004, 0.7));
-        noise(c, 0.4, 'bandpass', 3000, 600, envelope(c, 0.1, 0.01, 0.4), 2);
+        boom(c, 0.6, 0.35);
     },
 
+    // Missile ignition: thump, then a roaring whoosh that climbs as it leaves.
     missileLaunch() {
         const c = throttle('missile', 0.05);
         if(!c) return;
-        noise(c, 0.6, 'bandpass', 600, 2500, envelope(c, 0.25, 0.02, 0.6), 1.5);
-        tone(c, 'triangle', 120, 60, 0.4, envelope(c, 0.15, 0.005, 0.35));
-    },
-
-    droneLaunch() {
-        const c = throttle('drones', 0.1);
-        if(!c) return;
-        // Rising, shimmering Ancient whine.
-        tone(c, 'sine', 320, 1500, 0.7, envelope(c, 0.16, 0.05, 0.7));
-        tone(c, 'sine', 480, 2200, 0.7, envelope(c, 0.08, 0.05, 0.7));
-        tone(c, 'triangle', 640, 900, 0.5, envelope(c, 0.05, 0.1, 0.5));
-    },
-
-    droneImpact() {
-        const c = throttle('droneImpact', 0.04);
-        if(!c) return;
-        tone(c, 'sine', 1800, 200, 0.2, envelope(c, 0.12, 0.002, 0.2));
-        noise(c, 0.25, 'highpass', 2000, 500, envelope(c, 0.12, 0.002, 0.22));
+        tone(c, 'sine', 110, 45, 0.25, envelope(c, 0.4, 0.002, 0.25, 0.2));
+        noise(c, 0.9, 'bandpass', 500, 2600, envelope(c, 0.3, 0.03, 0.85, 0.4), 1.2);
+        noise(c, 0.5, 'lowpass', 900, 300, envelope(c, 0.2, 0.01, 0.5, 0.3));
     },
 
     missileExplosion() {
         const c = throttle('boom', 0.05);
         if(!c) return;
-        noise(c, 0.9, 'lowpass', 1800, 80, envelope(c, 0.45, 0.005, 0.9));
-        tone(c, 'sine', 120, 35, 0.7, envelope(c, 0.35, 0.005, 0.7));
+        boom(c, 1, 0.55);
+    },
+
+    // Ancient drone leaving its bay: a bright, rising energy whine with a soft pulse.
+    droneLaunch() {
+        const c = throttle('drones', 0.07);
+        if(!c) return;
+        tone(c, 'sine', 520, 1900, 0.4, envelope(c, 0.14, 0.01, 0.4, 0.45));
+        tone(c, 'triangle', 780, 2600, 0.35, envelope(c, 0.05, 0.01, 0.35, 0.45));
+        tone(c, 'sine', 180, 90, 0.18, envelope(c, 0.22, 0.002, 0.18, 0.2));
+    },
+
+    // Drone detonation: deep energy blast with a shimmering high tail.
+    droneImpact() {
+        const c = throttle('droneImpact', 0.05);
+        if(!c) return;
+        boom(c, 0.9, 0.55);
+        tone(c, 'sine', 2600, 700, 0.6, envelope(c, 0.08, 0.004, 0.6, 0.6));
     },
 
     beamImpact() {
         const c = throttle('beamImpact', 0.09);
         if(!c) return;
-        noise(c, 0.08, 'highpass', 4000, 2500, envelope(c, 0.06, 0.002, 0.08));
+        noise(c, 0.1, 'bandpass', 3000, 1500, envelope(c, 0.08, 0.002, 0.1), 2);
     },
 
     overheat() {
@@ -272,50 +382,45 @@ const sounds = {
         if(!c) return;
         tone(c, 'square', 880, 880, 0.08, envelope(c, 0.08, 0.002, 0.08));
         setTimeout(() => { if(ac) tone(ac, 'square', 660, 660, 0.12, envelope(ac, 0.08, 0.002, 0.12)); }, 120);
-        noise(c, 0.6, 'highpass', 3000, 1500, envelope(c, 0.05, 0.05, 0.6));
+        noise(c, 0.7, 'highpass', 3000, 1200, envelope(c, 0.07, 0.05, 0.7, 0.3));
     },
 
-    shieldHit() {
-        const c = throttle('shield', 0.08);
+    // Something striking raised shields: an electric zap with a resonant hum.
+    shieldHit(strength) {
+        const c = throttle('shield', 0.07);
         if(!c) return;
-        tone(c, 'sine', 1600, 300, 0.3, envelope(c, 0.2, 0.002, 0.3));
-        tone(c, 'triangle', 2400, 600, 0.2, envelope(c, 0.08, 0.002, 0.2));
+        const s = Math.max(0.3, Math.min(1.5, strength || 1));
+        tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
+        tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
+        noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
     },
 
     shieldUp() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
-        tone(c, 'sine', 180, 900, 0.5, envelope(c, 0.16, 0.02, 0.5));
-        tone(c, 'triangle', 360, 1800, 0.45, envelope(c, 0.06, 0.02, 0.45));
+        tone(c, 'sine', 160, 900, 0.55, envelope(c, 0.2, 0.02, 0.55, 0.5));
+        tone(c, 'triangle', 320, 1800, 0.5, envelope(c, 0.07, 0.02, 0.5, 0.5));
     },
 
     shieldDown() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
-        tone(c, 'sine', 900, 120, 0.45, envelope(c, 0.14, 0.01, 0.45));
-        noise(c, 0.4, 'bandpass', 2000, 300, envelope(c, 0.05, 0.01, 0.4), 2);
-    },
-
-    // Ore burning up against raised shields.
-    oreZap() {
-        const c = throttle('oreZap', 0.05);
-        if(!c) return;
-        tone(c, 'square', 2400, 900, 0.07, envelope(c, 0.035, 0.001, 0.07));
-        noise(c, 0.08, 'highpass', 5000, 3000, envelope(c, 0.04, 0.001, 0.08));
+        tone(c, 'sine', 900, 110, 0.5, envelope(c, 0.18, 0.01, 0.5, 0.5));
+        noise(c, 0.45, 'bandpass', 2000, 300, envelope(c, 0.06, 0.01, 0.45, 0.3), 2);
     },
 
     hullHit() {
         const c = throttle('hull', 0.1);
         if(!c) return;
-        noise(c, 0.4, 'lowpass', 900, 100, envelope(c, 0.4, 0.002, 0.4));
+        boom(c, 0.5, 0.25);
         tone(c, 'square', 90, 40, 0.25, envelope(c, 0.15, 0.002, 0.25));
     },
 
     rockCrack() {
         const c = throttle('crack', 0.06);
         if(!c) return;
-        noise(c, 0.25, 'bandpass', 1500, 300, envelope(c, 0.35, 0.001, 0.25), 0.8);
-        tone(c, 'triangle', 200, 70, 0.2, envelope(c, 0.15, 0.001, 0.2));
+        noise(c, 0.35, 'bandpass', 1500, 250, envelope(c, 0.4, 0.001, 0.35, 0.35), 0.8);
+        tone(c, 'triangle', 200, 55, 0.3, envelope(c, 0.22, 0.001, 0.3, 0.3));
     },
 
     // Deep rumble as asteroids grind together and merge.
@@ -323,30 +428,56 @@ const sounds = {
         const c = throttle('merge', 0.15);
         if(!c) return;
         const volume = Math.min(0.5, 0.15 + size / 200);
-        noise(c, 1.4, 'lowpass', 400, 60, envelope(c, volume, 0.15, 1.3));
-        tone(c, 'sine', 70, 40, 1.2, envelope(c, volume * 0.6, 0.1, 1.2));
+        noise(c, 1.4, 'lowpass', 400, 60, envelope(c, volume, 0.15, 1.3, 0.4));
+        tone(c, 'sine', 70, 40, 1.2, envelope(c, volume * 0.6, 0.1, 1.2, 0.3));
     },
 
-    pickup(value) {
-        const c = throttle('pickup', 0.04);
+    // Asteroid glancing off the Atlantis city shield.
+    cityShield(volume) {
+        const c = throttle('cityShield', 0.12);
         if(!c) return;
-        const f = 500 + Math.min(700, value * 8);
-        tone(c, 'triangle', f, f * 1.6, 0.1, envelope(c, 0.08, 0.002, 0.12));
+        const v = Math.max(0.02, Math.min(0.3, volume));
+        tone(c, 'sine', 700, 160, 0.7, envelope(c, v, 0.004, 0.7, 0.6));
+        tone(c, 'triangle', 1400, 480, 0.45, envelope(c, v * 0.4, 0.004, 0.45, 0.6));
+        noise(c, 0.3, 'highpass', 4000, 1800, envelope(c, v * 0.3, 0.002, 0.3, 0.4));
+    },
+
+    // Tractor beam latching onto a new piece of ore.
+    tractorLock() {
+        const c = throttle('tractorLock', 0.06);
+        if(!c) return;
+        tone(c, 'sine', 700, 1150, 0.14, envelope(c, 0.07, 0.005, 0.14, 0.4));
+    },
+
+    // Ore stowed in the hold: a little two-note chime, higher for valuable ore.
+    pickup(value) {
+        const c = throttle('pickup', 0.05);
+        if(!c) return;
+        const f = 620 + Math.min(600, value * 6);
+        tone(c, 'triangle', f, f, 0.09, envelope(c, 0.09, 0.002, 0.09, 0.3));
+        setTimeout(() => { if(ac) tone(ac, 'sine', f * 1.5, f * 1.5, 0.16, envelope(ac, 0.07, 0.002, 0.16, 0.3)); }, 60);
+    },
+
+    // Scanner sweep ping.
+    scanPing() {
+        const c = throttle('scan', 0.5);
+        if(!c) return;
+        tone(c, 'sine', 1320, 1240, 0.5, envelope(c, 0.08, 0.004, 0.5, 0.7));
+        tone(c, 'sine', 660, 640, 0.6, envelope(c, 0.05, 0.004, 0.6, 0.7));
     },
 
     dock() {
         const c = context();
         if(!c) return;
-        tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25));
-        setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4)); }, 160);
+        tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25, 0.4));
+        setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4, 0.4)); }, 160);
     },
 
     stopAll() {
         setLooping(engineSound, false);
         setLooping(thrusterSound, false);
-        setLooping(minigunSound, false);
-        stopBeam();
-        stopTractor();
+        beamVoice.stop();
+        tractorVoice.stop();
     }
 };
 

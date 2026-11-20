@@ -609,10 +609,14 @@ const collectOre = (dt) => {
             if(contact) {
                 ore.dead = true;
                 ship.absorbOre(contact.x, contact.y);
-                Particle.burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 5, {
-                    minSpeed: 20, maxSpeed: 90, minLife: 0.15, maxLife: 0.35, size: 2, color: MATERIALS[ore.material].color
+                // Same impact as an asteroid striking the shield, just smaller.
+                const shieldColor = ship.hullDef.shieldColor || '120,210,255';
+                Particle.burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 6, {
+                    minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2, color: shieldColor
                 });
-                sounds.oreZap();
+                Particle.burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 4, {
+                    minSpeed: 20, maxSpeed: 80, minLife: 0.2, maxLife: 0.45, size: 2, color: MATERIALS[ore.material].color
+                });
                 if(state.shieldHintTimer <= 0) {
                     state.shieldHintTimer = 8;
                     banner('Shields up: ore burns up! Lower shields (H) to collect.', 2.5);
@@ -621,7 +625,10 @@ const collectOre = (dt) => {
             return;
         }
 
-        if(!ore.update(dt, ship, !cargoFull)) return;
+        const wasHeld = ore.tractored;
+        const collected = ore.update(dt, ship, !cargoFull);
+        if(ore.tractored && !wasHeld) sounds.tractorLock();
+        if(!collected) return;
 
         if(storeOre(ore.material, ship.cargoCapacity)) {
             ore.dead = true;
@@ -825,79 +832,119 @@ const drawTargeting = (time) => {
     ctx.restore();
 };
 
-// Tractor beam: tapered energy beams from the emitter to every ore piece it holds,
-// with pulses flowing towards the ship and a pulsing range ring.
+// Tractor beam: a soft cone from the emitter to each ore piece it holds, with energy
+// rings travelling down the beam, glowing motes flowing in, a spinning containment
+// ring around the ore, and a pulsing aura and scan arcs around the ship.
+const TRACTOR = '120,255,230';
+
 const drawTractor = (time) => {
     const ship = state.ship;
     const held = state.ores.filter(ore => ore.tractored && !ore.dead);
     state.tractorActive = held.length > 0;
+    state.tractorCount = held.length;
     if(!held.length || !ship.alive) return;
 
     const emitter = ship.tractorEmitter();
-    const color = '120,255,230';
+    const glow = glowSprite(TRACTOR);
+    const pulse = 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    // Range ring.
-    const pulse = 0.5 + 0.5 * Math.sin(time * 4);
-    ctx.setLineDash([6, 10]);
-    ctx.lineDashOffset = -time * 30;
-    ctx.strokeStyle = 'rgba(' + color + ', ' + (0.12 + 0.1 * pulse) + ')';
-    ctx.lineWidth = 1.2;
+    // Range ring with rotating scan arcs.
+    ctx.strokeStyle = 'rgba(' + TRACTOR + ', ' + (0.08 + 0.06 * pulse) + ')';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.arc(ship.x, ship.y, ship.magnetRange, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.35)';
+    ctx.lineWidth = 2;
+    for(let i = 0; i < 3; i++) {
+        const a = time * 1.4 + i * Math.PI * 2 / 3;
+        ctx.beginPath();
+        ctx.arc(ship.x, ship.y, ship.magnetRange, a, a + 0.5);
+        ctx.stroke();
+    }
 
     held.forEach(ore => {
         const dx = ore.x - emitter.x;
         const dy = ore.y - emitter.y;
         const length = Math.sqrt(dx * dx + dy * dy) || 1;
-        const nx = -dy / length;
-        const ny = dx / length;
-        const wide = 7;   // beam spreads out towards the ore
+        const ux = dx / length;
+        const uy = dy / length;
+        const nx = -uy;
+        const ny = ux;
+        const angle = Math.atan2(dy, dx);
+        const wide = 9;
 
+        // Cone.
         const cone = ctx.createLinearGradient(emitter.x, emitter.y, ore.x, ore.y);
-        cone.addColorStop(0, 'rgba(' + color + ', 0.45)');
-        cone.addColorStop(1, 'rgba(' + color + ', 0.08)');
+        cone.addColorStop(0, 'rgba(' + TRACTOR + ', 0.4)');
+        cone.addColorStop(1, 'rgba(' + TRACTOR + ', 0.06)');
         ctx.fillStyle = cone;
         ctx.beginPath();
-        ctx.moveTo(emitter.x + nx * 1.5, emitter.y + ny * 1.5);
+        ctx.moveTo(emitter.x + nx * 2, emitter.y + ny * 2);
         ctx.lineTo(ore.x + nx * wide, ore.y + ny * wide);
         ctx.lineTo(ore.x - nx * wide, ore.y - ny * wide);
-        ctx.lineTo(emitter.x - nx * 1.5, emitter.y - ny * 1.5);
+        ctx.lineTo(emitter.x - nx * 2, emitter.y - ny * 2);
         ctx.closePath();
         ctx.fill();
-
-        // Energy pulses travelling inwards.
-        ctx.setLineDash([3, 9]);
-        ctx.lineDashOffset = time * 70;
-        ctx.strokeStyle = 'rgba(210, 255, 245, 0.8)';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.35)';
+        ctx.lineWidth = 0.8;
         ctx.beginPath();
-        ctx.moveTo(ore.x, ore.y);
-        ctx.lineTo(emitter.x, emitter.y);
+        ctx.moveTo(emitter.x + nx * 2, emitter.y + ny * 2);
+        ctx.lineTo(ore.x + nx * wide, ore.y + ny * wide);
+        ctx.moveTo(emitter.x - nx * 2, emitter.y - ny * 2);
+        ctx.lineTo(ore.x - nx * wide, ore.y - ny * wide);
+        ctx.stroke();
+
+        // Energy rings travelling towards the ship.
+        ctx.strokeStyle = 'rgba(200, 255, 245, 0.55)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 3; i++) {
+            const t = 1 - ((time * 1.6 + i / 3 + ore.angle) % 1);
+            const x = emitter.x + dx * t;
+            const y = emitter.y + dy * t;
+            const r = 2 + (wide - 2) * t;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 1.6, r, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Motes flowing inwards with a slight weave.
+        ctx.fillStyle = 'rgba(220, 255, 250, 0.9)';
+        for(let i = 0; i < 5; i++) {
+            const t = 1 - ((time * 2.3 + i / 5 + ore.angle * 0.5) % 1);
+            const weave = Math.sin(time * 9 + i * 2) * (wide * 0.5) * t;
+            ctx.fillRect(emitter.x + dx * t + nx * weave - 1, emitter.y + dy * t + ny * weave - 1, 2, 2);
+        }
+
+        // Containment field around the captured ore.
+        ctx.globalAlpha = 0.5 + 0.3 * pulse;
+        stamp(ctx, glow, ore.x, ore.y, 26, 26);
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.lineDashOffset = -time * 20;
+        ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(ore.x, ore.y, 7 + pulse * 1.5, 0, Math.PI * 2);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        // Containment glow around the captured ore.
-        const glow = ctx.createRadialGradient(ore.x, ore.y, 0, ore.x, ore.y, 11);
-        glow.addColorStop(0, 'rgba(' + color + ', ' + (0.35 + 0.25 * pulse) + ')');
-        glow.addColorStop(1, 'rgba(' + color + ', 0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(ore.x, ore.y, 11, 0, Math.PI * 2);
-        ctx.fill();
     });
 
-    // Emitter flare.
-    const flare = ctx.createRadialGradient(emitter.x, emitter.y, 0, emitter.x, emitter.y, 9);
-    flare.addColorStop(0, 'rgba(230, 255, 250, 0.9)');
-    flare.addColorStop(1, 'rgba(' + color + ', 0)');
-    ctx.fillStyle = flare;
+    // Emitter aura.
+    ctx.globalAlpha = 0.7 + 0.3 * pulse;
+    stamp(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.7)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(emitter.x, emitter.y, 9, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(emitter.x, emitter.y, 9, time * 3, time * 3 + Math.PI * 1.2);
+    ctx.stroke();
     ctx.restore();
 };
 
@@ -1302,7 +1349,7 @@ const frame = (now) => {
         sounds.setThrust(state.ship.alive && state.ship.thrusting);
         sounds.setFiring(state.ship.alive && state.ship.minigunFiring);
         sounds.setBeam(state.ship.alive && state.ship.beaming);
-        sounds.setTractor(state.ship.alive && !!state.tractorActive);
+        sounds.setTractor(state.ship.alive && !!state.tractorActive, Math.min(1, (state.tractorCount || 0) / 6));
     }
 
     render();
