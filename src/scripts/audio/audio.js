@@ -405,6 +405,298 @@ const tractorVoice = createVoice(c => {
 
 // ------------------------------------------------------------ public API
 
+// ------------------------------------------------------------ Stargate & hyperspace
+//
+// These are synthesized stand-ins. If you own recordings you'd rather use, put them in
+// assets/sounds/stargate/ with these names (mp3), list the names in manifest.json there,
+// and they are played instead:
+//   dhd_press, dhd_dome, dial_fail, gate_spin (loop), chevron, kawoosh, horizon (loop),
+//   wormhole, gate_close, hyper_open, hyper_travel (loop), hyper_exit
+
+const SAMPLE_NAMES = ['dhd_press', 'dhd_dome', 'dial_fail', 'gate_spin', 'chevron', 'kawoosh', 'horizon',
+    'wormhole', 'gate_close', 'hyper_open', 'hyper_travel', 'hyper_exit'];
+const LOOPING_SAMPLES = { gate_spin: true, horizon: true, hyper_travel: true };
+const samples = {};
+
+// Only the files listed in manifest.json are loaded (so missing files don't cause errors).
+const loadSample = (name) => {
+    if(SAMPLE_NAMES.indexOf(name) === -1 || samples[name]) return;
+    const audio = new Audio();
+    const entry = { audio: audio, ready: false };
+    audio.preload = 'auto';
+    audio.loop = !!LOOPING_SAMPLES[name];
+    audio.addEventListener('canplaythrough', () => { entry.ready = true; }, { once: true });
+    audio.src = './assets/sounds/stargate/' + name + '.mp3';
+    samples[name] = entry;
+};
+
+if(window.fetch) {
+    window.fetch('./assets/sounds/stargate/manifest.json')
+        .then(response => (response.ok ? response.json() : []))
+        .then(list => { if(Array.isArray(list)) list.forEach(loadSample); })
+        .catch(() => {});
+}
+
+// Play a user-supplied sample if present. Returns true if it played.
+const playSample = (name, volume) => {
+    const entry = samples[name];
+    if(!entry || !entry.ready) return false;
+    if(LOOPING_SAMPLES[name]) {
+        entry.audio.volume = volume === undefined ? 0.8 : volume;
+        if(entry.audio.paused) safePlay(entry.audio);
+    } else {
+        const clip = entry.audio.cloneNode();
+        clip.volume = volume === undefined ? 0.9 : volume;
+        safePlay(clip);
+    }
+    return true;
+};
+
+const stopSample = (name) => {
+    const entry = samples[name];
+    if(entry && entry.ready && !entry.audio.paused) {
+        entry.audio.pause();
+        entry.audio.currentTime = 0;
+    }
+};
+
+// Grinding rumble of the inner ring turning.
+const gateSpinVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+    const grind = c.createBufferSource();
+    grind.buffer = noiseBuffer;
+    grind.loop = true;
+    const band = c.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 220;
+    band.Q.value = 1.5;
+    grind.connect(band);
+    band.connect(gain);
+    const motor = c.createOscillator();
+    const motorGain = c.createGain();
+    motor.type = 'sawtooth';
+    motor.frequency.value = 46;
+    motorGain.gain.value = 0.35;
+    motor.connect(motorGain);
+    motorGain.connect(gain);
+    const wobble = c.createOscillator();
+    const wobbleGain = c.createGain();
+    wobble.frequency.value = 7;
+    wobbleGain.gain.value = 60;
+    wobble.connect(wobbleGain);
+    wobbleGain.connect(band.frequency);
+    const nodes = [grind, motor, wobble];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.35 };
+});
+
+// Deep, watery hum of an open event horizon.
+const horizonVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(master);
+    const send = c.createGain();
+    send.gain.value = 0.5;
+    gain.connect(send);
+    send.connect(reverb);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = 'sine';
+    b.type = 'triangle';
+    a.frequency.value = 62;
+    b.frequency.value = 93.5;
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = 0.8;
+    lfoGain.gain.value = 0.35;
+    const mod = c.createGain();
+    mod.gain.value = 0.65;
+    lfo.connect(lfoGain);
+    lfoGain.connect(mod.gain);
+    a.connect(mod);
+    b.connect(mod);
+    mod.connect(gain);
+    const water = c.createBufferSource();
+    water.buffer = noiseBuffer;
+    water.loop = true;
+    const waterFilter = c.createBiquadFilter();
+    waterFilter.type = 'bandpass';
+    waterFilter.frequency.value = 500;
+    waterFilter.Q.value = 4;
+    const sweep2 = c.createOscillator();
+    const sweepGain = c.createGain();
+    sweep2.frequency.value = 0.35;
+    sweepGain.gain.value = 250;
+    sweep2.connect(sweepGain);
+    sweepGain.connect(waterFilter.frequency);
+    const waterGain = c.createGain();
+    waterGain.gain.value = 0.25;
+    water.connect(waterFilter);
+    waterFilter.connect(waterGain);
+    waterGain.connect(gain);
+    const nodes = [a, b, lfo, water, sweep2];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.3 };
+});
+
+// Roaring rumble while travelling in hyperspace.
+const hyperVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+    const roar = c.createBufferSource();
+    roar.buffer = noiseBuffer;
+    roar.loop = true;
+    const low = c.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = 380;
+    roar.connect(low);
+    low.connect(gain);
+    const tone1 = c.createOscillator();
+    const toneGain = c.createGain();
+    tone1.type = 'sine';
+    tone1.frequency.value = 55;
+    toneGain.gain.value = 0.5;
+    tone1.connect(toneGain);
+    toneGain.connect(gain);
+    const nodes = [roar, tone1];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.3 };
+});
+
+const gateSounds = {
+    // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
+    dhdPress(index) {
+        if(playSample('dhd_press', 0.8)) return;
+        const c = context();
+        if(!c) return;
+        const f = 520 + (index % 13) * 22;
+        tone(c, 'sine', f * 1.25, f, 0.18, envelope(c, 0.16, 0.004, 0.18, 0.3));
+        tone(c, 'triangle', f * 0.5, f * 0.48, 0.12, envelope(c, 0.08, 0.002, 0.12, 0.2));
+        noise(c, 0.02, 'highpass', 5000, 4000, envelope(c, 0.05, 0.001, 0.02));
+    },
+
+    // Pressing the big dome: a heavy, rising activation tone.
+    dhdDome() {
+        if(playSample('dhd_dome', 0.9)) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'sine', 140, 320, 0.5, heavy(c, 0.4, 0.01, 0.5, 0.5));
+        tone(c, 'triangle', 560, 880, 0.4, envelope(c, 0.08, 0.01, 0.4, 0.5));
+        noise(c, 0.08, 'lowpass', 1200, 300, heavy(c, 0.25, 0.001, 0.08));
+    },
+
+    dialFail() {
+        if(playSample('dial_fail', 0.9)) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'square', 160, 150, 0.45, heavy(c, 0.18, 0.005, 0.45, 0.3));
+        tone(c, 'square', 113, 110, 0.45, heavy(c, 0.14, 0.005, 0.45, 0.3));
+    },
+
+    gateSpin(on) {
+        if(!on) {
+            stopSample('gate_spin');
+            gateSpinVoice.stop();
+            return;
+        }
+        if(!playSample('gate_spin', 0.7)) gateSpinVoice.start();
+    },
+
+    // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
+    chevronLock(final) {
+        if(playSample('chevron', final ? 1 : 0.85)) return;
+        const c = context();
+        if(!c) return;
+        noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
+        tone(c, 'sine', 120, 45, 0.35, heavy(c, 0.7, 0.002, 0.35, 0.4));
+        [310, 467, 692, 1010].forEach((f, i) => {
+            tone(c, 'sine', f, f * 0.995, 0.9 - i * 0.15, envelope(c, 0.06 / (i + 1), 0.003, 0.9 - i * 0.15, 0.6));
+        });
+        setTimeout(() => {
+            if(!ac) return;
+            noise(ac, 0.06, 'lowpass', 1800, 300, heavy(ac, 0.35, 0.001, 0.06, 0.3));
+            tone(ac, 'sine', 95, 40, 0.25, heavy(ac, 0.5, 0.002, 0.25, 0.3));
+        }, 140);
+        if(final) tone(c, 'sine', 70, 35, 0.9, heavy(c, 0.6, 0.01, 0.9, 0.6));
+    },
+
+    // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
+    kawoosh() {
+        if(playSample('kawoosh', 1)) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
+        noise(c, 1.6, 'lowpass', 900, 120, heavy(c, 0.5, 0.25, 1.4, 0.7));
+        tone(c, 'sine', 55, 30, 1.5, heavy(c, 0.7, 0.2, 1.4, 0.6));
+        for(let i = 0; i < 14; i++) {
+            setTimeout(() => {
+                if(!ac) return;
+                const f = 200 + Math.random() * 700;
+                tone(ac, 'sine', f, f * (0.4 + Math.random() * 0.4), 0.12, envelope(ac, 0.05, 0.005, 0.12, 0.6));
+            }, 300 + i * 55);
+        }
+    },
+
+    horizon(on) {
+        if(!on) {
+            stopSample('horizon');
+            horizonVoice.stop();
+            return;
+        }
+        if(!playSample('horizon', 0.6)) horizonVoice.start();
+    },
+
+    // Riding the wormhole: a long, roaring, flanging rush.
+    wormhole() {
+        if(playSample('wormhole', 1)) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
+        sweep(c, 3.4, 2400, 400, 2, envelope(c, 0.18, 0.4, 3, 0.6));
+        noise(c, 3.4, 'lowpass', 600, 150, heavy(c, 0.45, 0.2, 3.2, 0.5));
+        tone(c, 'sine', 48, 70, 3.2, heavy(c, 0.5, 0.3, 3, 0.4));
+    },
+
+    gateClose() {
+        if(playSample('gate_close', 0.9)) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 0.8, 1800, 200, 2, envelope(c, 0.25, 0.01, 0.8, 0.6));
+        tone(c, 'sine', 180, 40, 0.7, heavy(c, 0.35, 0.005, 0.7, 0.5));
+    },
+
+    // Hyperspace window opening: a deep "whoomph" and a swirling rising rush.
+    hyperOpen() {
+        if(playSample('hyper_open', 1)) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'sine', 70, 28, 1.2, heavy(c, 0.8, 0.01, 1.2, 0.6));
+        sweep(c, 1.5, 200, 3000, 1.3, heavy(c, 0.45, 0.2, 1.3, 0.7));
+        ringTone(c, 'sawtooth', 120, 600, 40, 1.2, heavy(c, 0.18, 0.2, 1, 0.6));
+    },
+
+    hyperTravel(on) {
+        if(!on) {
+            stopSample('hyper_travel');
+            hyperVoice.stop();
+            return;
+        }
+        if(!playSample('hyper_travel', 0.6)) hyperVoice.start();
+    },
+
+    hyperExit() {
+        if(playSample('hyper_exit', 1)) return;
+        const c = context();
+        if(!c) return;
+        noise(c, 0.1, 'lowpass', 3000, 800, heavy(c, 0.4, 0.001, 0.1));
+        tone(c, 'sine', 90, 30, 1, heavy(c, 0.7, 0.005, 1, 0.6));
+        sweep(c, 1, 2500, 250, 1.5, heavy(c, 0.3, 0.01, 1, 0.6));
+    }
+};
+
 let beamOn = false;
 
 const sounds = {
@@ -625,7 +917,13 @@ const sounds = {
         beamVoice.stop();
         tractorVoice.stop();
         minigunVoice.stop();
+        gateSpinVoice.stop();
+        horizonVoice.stop();
+        hyperVoice.stop();
+        ['gate_spin', 'horizon', 'hyper_travel'].forEach(stopSample);
     }
 };
+
+Object.assign(sounds, gateSounds);
 
 export default sounds;
