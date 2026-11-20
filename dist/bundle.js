@@ -1414,7 +1414,7 @@ const save = () => {
 };
 
 const onProfileChange = (fn) => listeners.push(fn);
-/* harmony export (immutable) */ __webpack_exports__["j"] = onProfileChange;
+/* harmony export (immutable) */ __webpack_exports__["k"] = onProfileChange;
 
 
 const getProfile = () => profile;
@@ -1425,7 +1425,7 @@ const loadoutFor = (hullId) => {
     if(!profile.loadouts[hullId]) profile.loadouts[hullId] = {};
     return profile.loadouts[hullId];
 };
-/* harmony export (immutable) */ __webpack_exports__["h"] = loadoutFor;
+/* harmony export (immutable) */ __webpack_exports__["i"] = loadoutFor;
 
 
 const addCredits = (amount) => {
@@ -1444,8 +1444,28 @@ const recordScore = (score) => {
 /* unused harmony export recordScore */
 
 
-const ownsHull = (hullId) => profile.ownedHulls.indexOf(hullId) !== -1;
-/* harmony export (immutable) */ __webpack_exports__["k"] = ownsHull;
+// ------------------------------------------------------------ debug mode
+// Debug mode unlocks every hull and makes every purchase, upgrade and repair free.
+// Selling gives nothing back while it's on, so it can't be used to farm credits.
+
+const isDebug = () => !!profile.debug;
+/* harmony export (immutable) */ __webpack_exports__["h"] = isDebug;
+
+
+const setDebug = (on) => {
+    profile.debug = !!on;
+    save();
+};
+/* harmony export (immutable) */ __webpack_exports__["r"] = setDebug;
+
+
+// What something costs right now (0 in debug mode).
+const priceOf = (cost) => (profile.debug ? 0 : cost);
+/* harmony export (immutable) */ __webpack_exports__["m"] = priceOf;
+
+
+const ownsHull = (hullId) => !!profile.debug || profile.ownedHulls.indexOf(hullId) !== -1;
+/* harmony export (immutable) */ __webpack_exports__["l"] = ownsHull;
 
 
 const selectHull = (hullId) => {
@@ -1454,13 +1474,13 @@ const selectHull = (hullId) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["m"] = selectHull;
+/* harmony export (immutable) */ __webpack_exports__["o"] = selectHull;
 
 
 const buyHull = (hullId) => {
     const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId];
-    if(ownsHull(hullId) || profile.credits < hull.cost) return false;
-    profile.credits -= hull.cost;
+    if(ownsHull(hullId) || profile.credits < priceOf(hull.cost)) return false;
+    profile.credits -= priceOf(hull.cost);
     profile.ownedHulls.push(hullId);
     profile.hull = hullId;
     save();
@@ -1471,8 +1491,8 @@ const buyHull = (hullId) => {
 
 const installModule = (hullId, slotId, type) => {
     const loadout = loadoutFor(hullId);
-    if(loadout[slotId] || profile.credits < __WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost) return false;
-    profile.credits -= __WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost;
+    if(loadout[slotId] || profile.credits < priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost)) return false;
+    profile.credits -= priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost);
     loadout[slotId] = { type: type, level: 1 };
     save();
     return true;
@@ -1483,26 +1503,26 @@ const installModule = (hullId, slotId, type) => {
 const upgradeModule = (hullId, slotId) => {
     const module = loadoutFor(hullId)[slotId];
     if(!module || module.level >= __WEBPACK_IMPORTED_MODULE_1__modules__["a" /* MAX_LEVEL */]) return false;
-    const cost = Object(__WEBPACK_IMPORTED_MODULE_1__modules__["g" /* upgradeCost */])(module.type, module.level);
+    const cost = priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["g" /* upgradeCost */])(module.type, module.level));
     if(profile.credits < cost) return false;
     profile.credits -= cost;
     module.level++;
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["r"] = upgradeModule;
+/* harmony export (immutable) */ __webpack_exports__["u"] = upgradeModule;
 
 
 const sellModule = (hullId, slotId) => {
     const loadout = loadoutFor(hullId);
     const module = loadout[slotId];
     if(!module) return false;
-    profile.credits += Object(__WEBPACK_IMPORTED_MODULE_1__modules__["f" /* sellValue */])(module.type, module.level);
+    profile.credits += priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["f" /* sellValue */])(module.type, module.level));
     delete loadout[slotId];
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["o"] = sellModule;
+/* harmony export (immutable) */ __webpack_exports__["q"] = sellModule;
 
 
 // Combine hull + modules into the numbers the ship flies with.
@@ -1576,7 +1596,7 @@ const storeOre = (material, capacity) => {
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["q"] = storeOre;
+/* harmony export (immutable) */ __webpack_exports__["t"] = storeOre;
 
 
 const cargoValue = () => Object.keys(profile.cargo)
@@ -1595,7 +1615,7 @@ const sellCargo = (material) => {
     save();
     return earned;
 };
-/* harmony export (immutable) */ __webpack_exports__["n"] = sellCargo;
+/* harmony export (immutable) */ __webpack_exports__["p"] = sellCargo;
 
 
 // Jettison ore from the hold. Returns how many units were removed.
@@ -1608,23 +1628,23 @@ const removeCargo = (material, count) => {
     save();
     return removed;
 };
-/* harmony export (immutable) */ __webpack_exports__["l"] = removeCargo;
+/* harmony export (immutable) */ __webpack_exports__["n"] = removeCargo;
 
 
 const loseCargo = () => {
     profile.cargo = {};
     save();
 };
-/* harmony export (immutable) */ __webpack_exports__["i"] = loseCargo;
+/* harmony export (immutable) */ __webpack_exports__["j"] = loseCargo;
 
 
 const spendCredits = (amount) => {
-    if(profile.credits < amount) return false;
-    profile.credits -= amount;
+    if(profile.credits < priceOf(amount)) return false;
+    profile.credits -= priceOf(amount);
     save();
     return true;
 };
-/* harmony export (immutable) */ __webpack_exports__["p"] = spendCredits;
+/* harmony export (immutable) */ __webpack_exports__["s"] = spendCredits;
 
 
 
@@ -3069,6 +3089,8 @@ const el = (tag, className, text) => {
 };
 
 const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
+// Prices read "FREE" in debug mode.
+const formatPrice = (value) => (Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'FREE' : formatCredits(value));
 
 const setupCanvas = (canvas, width, height) => {
     const ratio = window.devicePixelRatio || 1;
@@ -3118,6 +3140,14 @@ class Shipyard {
             this.tabButtons[tab[0]] = button;
         });
         header.appendChild(tabs);
+        this.debugButton = el('button', 'sy-tab debug-toggle', 'Debug');
+        this.debugButton.title = 'Debug mode: unlock everything and make it free';
+        this.debugButton.addEventListener('click', () => {
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])());
+            this.flash(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
+            this.refresh();
+        });
+        header.appendChild(this.debugButton);
         this.creditsLabel = el('div', 'shipyard-credits');
         header.appendChild(this.creditsLabel);
         this.closeButton = el('button', 'sy-button primary', 'Launch');
@@ -3234,7 +3264,9 @@ class Shipyard {
 
     refresh() {
         const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])();
-        this.creditsLabel.textContent = formatCredits(profile.credits);
+        this.creditsLabel.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'DEBUG · everything free' : formatCredits(profile.credits);
+        this.debugButton.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Debug: ON' : 'Debug: OFF';
+        this.debugButton.classList.toggle('active', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])());
         Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
         this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
         this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
@@ -3283,7 +3315,7 @@ class Shipyard {
             const sell = el('button', 'sy-button small', 'Sell');
             sell.disabled = amount === 0 || !canTrade;
             sell.addEventListener('click', () => {
-                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* sellCargo */])(id);
+                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* sellCargo */])(id);
                 this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
                 this.refresh();
             });
@@ -3297,7 +3329,7 @@ class Shipyard {
         const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
         sellAll.disabled = total === 0 || !canTrade;
         sellAll.addEventListener('click', () => {
-            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* sellCargo */])();
+            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* sellCargo */])();
             this.flash('Cargo sold for ' + formatCredits(earned));
             this.refresh();
         });
@@ -3311,16 +3343,16 @@ class Shipyard {
             if(missing <= 0) {
                 panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
             } else {
-                const cost = missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */];
-                const affordable = Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
+                const cost = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]);
+                const affordable = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? missing : Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
                 panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
                     ' · ' + __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */] + ' cr per point'));
                 const repair = el('button', 'sy-button', affordable < missing
-                    ? 'Repair ' + affordable + ' points  ' + formatCredits(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])
-                    : 'Full repair  ' + formatCredits(cost));
+                    ? 'Repair ' + affordable + ' points  ' + formatPrice(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])
+                    : 'Full repair  ' + formatPrice(cost));
                 repair.disabled = affordable <= 0;
                 repair.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["s" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
                         this.options.repair(affordable);
                         this.flash('Hull repaired.');
                     }
@@ -3339,7 +3371,7 @@ class Shipyard {
 
         __WEBPACK_IMPORTED_MODULE_0__hulls__["a" /* HULL_ORDER */].forEach(id => {
             const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][id];
-            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["k" /* ownsHull */])(id);
+            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["l" /* ownsHull */])(id);
             const active = profile.hull === id;
             const card = el('div', 'hull-card' + (active ? ' active' : '') + (owned ? ' owned' : ''));
 
@@ -3363,13 +3395,13 @@ class Shipyard {
             } else if(owned) {
                 action = el('button', 'sy-button small', 'Fly this');
                 action.addEventListener('click', () => {
-                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* selectHull */])(id);
+                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["o" /* selectHull */])(id);
                     this.selectedSlot = null;
                     this.refresh();
                 });
             } else {
-                action = el('button', 'sy-button small buy', 'Buy ' + formatCredits(hull.cost));
-                action.disabled = profile.credits < hull.cost;
+                action = el('button', 'sy-button small buy', 'Buy ' + formatPrice(hull.cost));
+                action.disabled = profile.credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(hull.cost);
                 action.addEventListener('click', () => {
                     if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["b" /* buyHull */])(id)) {
                         this.selectedSlot = null;
@@ -3447,7 +3479,8 @@ class Shipyard {
         __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
             const entry = this.paletteItems[type];
             entry.item.classList.toggle('armed', this.armedModule === type);
-            entry.item.classList.toggle('unaffordable', credits < __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost);
+            entry.item.classList.toggle('unaffordable', credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost));
+            entry.price.textContent = formatPrice(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost);
         });
     }
 
@@ -3461,7 +3494,7 @@ class Shipyard {
             return;
         }
 
-        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* loadoutFor */])(hull.id)[this.selectedSlot];
+        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id)[this.selectedSlot];
         if(!module) {
             box.appendChild(el('p', '', 'Empty mount'));
             box.appendChild(el('p', 'muted', this.armedModule
@@ -3480,10 +3513,10 @@ class Shipyard {
         if(cost !== null) {
             const next = Object(__WEBPACK_IMPORTED_MODULE_2__modules__["e" /* moduleStats */])(module.type, module.level + 1);
             box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(next)));
-            const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatCredits(cost));
-            upgrade.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < cost;
+            const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatPrice(cost));
+            upgrade.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(cost);
             upgrade.addEventListener('click', () => {
-                if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* upgradeModule */])(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
+                if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["u" /* upgradeModule */])(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
                 this.refresh();
             });
             actions.appendChild(upgrade);
@@ -3491,9 +3524,9 @@ class Shipyard {
             box.appendChild(el('div', 'inspector-next', 'Max level (Mk ' + ['I', 'II', 'III'][__WEBPACK_IMPORTED_MODULE_2__modules__["a" /* MAX_LEVEL */] - 1] + ')'));
         }
 
-        const sell = el('button', 'sy-button small danger', 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level)));
+        const sell = el('button', 'sy-button small danger', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Remove' : 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level)));
         sell.addEventListener('click', () => {
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["o" /* sellModule */])(hull.id, this.selectedSlot);
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellModule */])(hull.id, this.selectedSlot);
             this.refresh();
         });
         actions.appendChild(sell);
@@ -3557,7 +3590,7 @@ class Shipyard {
                 this.refresh();
                 return;
             }
-            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* loadoutFor */])(this.hull.id)[slotId];
+            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(this.hull.id)[slotId];
             if(this.armedModule && !occupied) {
                 this.install(slotId, this.armedModule);
             } else {
@@ -3569,18 +3602,18 @@ class Shipyard {
 
     install(slotId, type) {
         const hull = this.hull;
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* loadoutFor */])(hull.id)[slotId]) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id)[slotId]) {
             this.flash('That mount is taken. Sell its module first.');
             return;
         }
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) {
             this.flash('Not enough credits for ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '.');
             return;
         }
         Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* installModule */])(hull.id, slotId, type);
         this.selectedSlot = slotId;
         this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + ' installed.');
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost) this.armedModule = null;
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) this.armedModule = null;
         this.refresh();
     }
 
@@ -3643,7 +3676,7 @@ class Shipyard {
         const hull = this.hull;
         const layout = this.layout();
         const fit = layout.fit;
-        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* loadoutFor */])(hull.id);
+        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id);
         const time = performance.now() / 1000;
         const placing = !!(this.armedModule || (this.drag && this.drag.moved));
 
@@ -3752,8 +3785,22 @@ const renderMenuCredits = () => {
         (cargo ? ' · Ore in hold: ' + cargo : '');
 };
 
+const debugToggle = document.getElementById('debugToggle');
+const renderDebug = () => {
+    debugToggle.textContent = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
+    debugToggle.classList.toggle('on', Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])());
+};
+debugToggle.addEventListener('click', () => Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["r" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])()));
+
+// Debug mode can also be switched on from the address bar: index.html?debug
+if(/[?&]debug\b/.test(window.location.search) && !Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])()) Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["r" /* setDebug */])(true);
+
 renderMenuCredits();
-Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["j" /* onProfileChange */])(renderMenuCredits);
+renderDebug();
+Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["k" /* onProfileChange */])(() => {
+    renderMenuCredits();
+    renderDebug();
+});
 
 startGame.addEventListener('click', () => {
     menu.style.visibility = 'hidden';
@@ -4518,7 +4565,7 @@ const collectOre = (dt) => {
         if(ore.tractored && !wasHeld) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].tractorLock();
         if(!collected) return;
 
-        if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["q" /* storeOre */])(ore.material, ship.cargoCapacity)) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["t" /* storeOre */])(ore.material, ship.cargoCapacity)) {
             ore.dead = true;
             const material = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material];
             __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].pickup(material.price);
@@ -5288,7 +5335,7 @@ const render = () => {
 const ejectOre = (material, count) => {
     if(!state || !state.ship.alive) return;
     const ship = state.ship;
-    const removed = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["l" /* removeCargo */])(material, count);
+    const removed = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["n" /* removeCargo */])(material, count);
     const cos = Math.cos(ship.angle);
     const sin = Math.sin(ship.angle);
     const stern = ship.localToWorld(-ship.radius * 0.7, 0);
@@ -5446,7 +5493,7 @@ const frame = (now) => {
     renderInfo();
 
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
-        Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["i" /* loseCargo */])();
+        Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["j" /* loseCargo */])();
         endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
         return;
     }
@@ -5518,7 +5565,7 @@ const initialize = () => {
             ejectOre(material, button.dataset.count === 'all' ? Infinity : 1);
         }
     });
-    Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["j" /* onProfileChange */])(() => renderCargoPanel());
+    Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["k" /* onProfileChange */])(() => renderCargoPanel());
     shieldButton.addEventListener('click', () => toggleShields());
 
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyB', () => {
@@ -7527,7 +7574,7 @@ exports = module.exports = __webpack_require__(21)(undefined);
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n", ""]);
 
 // exports
 

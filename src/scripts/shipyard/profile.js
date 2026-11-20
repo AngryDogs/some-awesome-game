@@ -67,7 +67,21 @@ export const recordScore = (score) => {
     }
 };
 
-export const ownsHull = (hullId) => profile.ownedHulls.indexOf(hullId) !== -1;
+// ------------------------------------------------------------ debug mode
+// Debug mode unlocks every hull and makes every purchase, upgrade and repair free.
+// Selling gives nothing back while it's on, so it can't be used to farm credits.
+
+export const isDebug = () => !!profile.debug;
+
+export const setDebug = (on) => {
+    profile.debug = !!on;
+    save();
+};
+
+// What something costs right now (0 in debug mode).
+export const priceOf = (cost) => (profile.debug ? 0 : cost);
+
+export const ownsHull = (hullId) => !!profile.debug || profile.ownedHulls.indexOf(hullId) !== -1;
 
 export const selectHull = (hullId) => {
     if(!ownsHull(hullId)) return false;
@@ -78,8 +92,8 @@ export const selectHull = (hullId) => {
 
 export const buyHull = (hullId) => {
     const hull = HULLS[hullId];
-    if(ownsHull(hullId) || profile.credits < hull.cost) return false;
-    profile.credits -= hull.cost;
+    if(ownsHull(hullId) || profile.credits < priceOf(hull.cost)) return false;
+    profile.credits -= priceOf(hull.cost);
     profile.ownedHulls.push(hullId);
     profile.hull = hullId;
     save();
@@ -88,8 +102,8 @@ export const buyHull = (hullId) => {
 
 export const installModule = (hullId, slotId, type) => {
     const loadout = loadoutFor(hullId);
-    if(loadout[slotId] || profile.credits < MODULES[type].cost) return false;
-    profile.credits -= MODULES[type].cost;
+    if(loadout[slotId] || profile.credits < priceOf(MODULES[type].cost)) return false;
+    profile.credits -= priceOf(MODULES[type].cost);
     loadout[slotId] = { type: type, level: 1 };
     save();
     return true;
@@ -98,7 +112,7 @@ export const installModule = (hullId, slotId, type) => {
 export const upgradeModule = (hullId, slotId) => {
     const module = loadoutFor(hullId)[slotId];
     if(!module || module.level >= MAX_LEVEL) return false;
-    const cost = upgradeCost(module.type, module.level);
+    const cost = priceOf(upgradeCost(module.type, module.level));
     if(profile.credits < cost) return false;
     profile.credits -= cost;
     module.level++;
@@ -110,7 +124,7 @@ export const sellModule = (hullId, slotId) => {
     const loadout = loadoutFor(hullId);
     const module = loadout[slotId];
     if(!module) return false;
-    profile.credits += sellValue(module.type, module.level);
+    profile.credits += priceOf(sellValue(module.type, module.level));
     delete loadout[slotId];
     save();
     return true;
@@ -216,8 +230,8 @@ export const loseCargo = () => {
 };
 
 export const spendCredits = (amount) => {
-    if(profile.credits < amount) return false;
-    profile.credits -= amount;
+    if(profile.credits < priceOf(amount)) return false;
+    profile.credits -= priceOf(amount);
     save();
     return true;
 };

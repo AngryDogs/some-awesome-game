@@ -1,6 +1,6 @@
 import constructGameBoard from './scripts/gameboard/gameboard';
 import { getShipyard } from './scripts/shipyard/shipyard';
-import { getProfile, onProfileChange } from './scripts/shipyard/profile';
+import { getProfile, onProfileChange, isDebug, setDebug } from './scripts/shipyard/profile';
 import './styles/main.css';
 
 const startGame = document.getElementById('startGame');
@@ -15,8 +15,22 @@ const renderMenuCredits = () => {
         (cargo ? ' · Ore in hold: ' + cargo : '');
 };
 
+const debugToggle = document.getElementById('debugToggle');
+const renderDebug = () => {
+    debugToggle.textContent = isDebug() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
+    debugToggle.classList.toggle('on', isDebug());
+};
+debugToggle.addEventListener('click', () => setDebug(!isDebug()));
+
+// Debug mode can also be switched on from the address bar: index.html?debug
+if(/[?&]debug\b/.test(window.location.search) && !isDebug()) setDebug(true);
+
 renderMenuCredits();
-onProfileChange(renderMenuCredits);
+renderDebug();
+onProfileChange(() => {
+    renderMenuCredits();
+    renderDebug();
+});
 
 startGame.addEventListener('click', () => {
     menu.style.visibility = 'hidden';

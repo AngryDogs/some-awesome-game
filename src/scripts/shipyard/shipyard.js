@@ -6,7 +6,7 @@ import MODULES, { MODULE_ORDER, MAX_LEVEL, drawModule, moduleStats, upgradeCost,
 import {
     getProfile, loadoutFor, ownsHull, selectHull, buyHull,
     installModule, upgradeModule, sellModule, computeShipStats,
-    cargoUsed, cargoValue, sellCargo, spendCredits, REPAIR_COST_PER_HP
+    cargoUsed, cargoValue, sellCargo, spendCredits, REPAIR_COST_PER_HP, isDebug, setDebug, priceOf
 } from './profile';
 
 const SLOT_HIT_RADIUS = 16;
@@ -19,6 +19,8 @@ const el = (tag, className, text) => {
 };
 
 const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
+// Prices read "FREE" in debug mode.
+const formatPrice = (value) => (isDebug() ? 'FREE' : formatCredits(value));
 
 const setupCanvas = (canvas, width, height) => {
     const ratio = window.devicePixelRatio || 1;
@@ -68,6 +70,14 @@ class Shipyard {
             this.tabButtons[tab[0]] = button;
         });
         header.appendChild(tabs);
+        this.debugButton = el('button', 'sy-tab debug-toggle', 'Debug');
+        this.debugButton.title = 'Debug mode: unlock everything and make it free';
+        this.debugButton.addEventListener('click', () => {
+            setDebug(!isDebug());
+            this.flash(isDebug() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
+            this.refresh();
+        });
+        header.appendChild(this.debugButton);
         this.creditsLabel = el('div', 'shipyard-credits');
         header.appendChild(this.creditsLabel);
         this.closeButton = el('button', 'sy-button primary', 'Launch');
@@ -184,7 +194,9 @@ class Shipyard {
 
     refresh() {
         const profile = getProfile();
-        this.creditsLabel.textContent = formatCredits(profile.credits);
+        this.creditsLabel.textContent = isDebug() ? 'DEBUG · everything free' : formatCredits(profile.credits);
+        this.debugButton.textContent = isDebug() ? 'Debug: ON' : 'Debug: OFF';
+        this.debugButton.classList.toggle('active', isDebug());
         Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
         this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
         this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
@@ -261,13 +273,13 @@ class Shipyard {
             if(missing <= 0) {
                 panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
             } else {
-                const cost = missing * REPAIR_COST_PER_HP;
-                const affordable = Math.min(missing, Math.floor(profile.credits / REPAIR_COST_PER_HP));
+                const cost = priceOf(missing * REPAIR_COST_PER_HP);
+                const affordable = isDebug() ? missing : Math.min(missing, Math.floor(profile.credits / REPAIR_COST_PER_HP));
                 panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
                     ' · ' + REPAIR_COST_PER_HP + ' cr per point'));
                 const repair = el('button', 'sy-button', affordable < missing
-                    ? 'Repair ' + affordable + ' points  ' + formatCredits(affordable * REPAIR_COST_PER_HP)
-                    : 'Full repair  ' + formatCredits(cost));
+                    ? 'Repair ' + affordable + ' points  ' + formatPrice(affordable * REPAIR_COST_PER_HP)
+                    : 'Full repair  ' + formatPrice(cost));
                 repair.disabled = affordable <= 0;
                 repair.addEventListener('click', () => {
                     if(spendCredits(affordable * REPAIR_COST_PER_HP)) {
@@ -318,8 +330,8 @@ class Shipyard {
                     this.refresh();
                 });
             } else {
-                action = el('button', 'sy-button small buy', 'Buy ' + formatCredits(hull.cost));
-                action.disabled = profile.credits < hull.cost;
+                action = el('button', 'sy-button small buy', 'Buy ' + formatPrice(hull.cost));
+                action.disabled = profile.credits < priceOf(hull.cost);
                 action.addEventListener('click', () => {
                     if(buyHull(id)) {
                         this.selectedSlot = null;
@@ -397,7 +409,8 @@ class Shipyard {
         MODULE_ORDER.forEach(type => {
             const entry = this.paletteItems[type];
             entry.item.classList.toggle('armed', this.armedModule === type);
-            entry.item.classList.toggle('unaffordable', credits < MODULES[type].cost);
+            entry.item.classList.toggle('unaffordable', credits < priceOf(MODULES[type].cost));
+            entry.price.textContent = formatPrice(MODULES[type].cost);
         });
     }
 
@@ -430,8 +443,8 @@ class Shipyard {
         if(cost !== null) {
             const next = moduleStats(module.type, module.level + 1);
             box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(next)));
-            const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatCredits(cost));
-            upgrade.disabled = getProfile().credits < cost;
+            const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatPrice(cost));
+            upgrade.disabled = getProfile().credits < priceOf(cost);
             upgrade.addEventListener('click', () => {
                 if(upgradeModule(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
                 this.refresh();
@@ -441,7 +454,7 @@ class Shipyard {
             box.appendChild(el('div', 'inspector-next', 'Max level (Mk ' + ['I', 'II', 'III'][MAX_LEVEL - 1] + ')'));
         }
 
-        const sell = el('button', 'sy-button small danger', 'Sell +' + formatCredits(sellValue(module.type, module.level)));
+        const sell = el('button', 'sy-button small danger', isDebug() ? 'Remove' : 'Sell +' + formatCredits(sellValue(module.type, module.level)));
         sell.addEventListener('click', () => {
             sellModule(hull.id, this.selectedSlot);
             this.refresh();
@@ -523,14 +536,14 @@ class Shipyard {
             this.flash('That mount is taken. Sell its module first.');
             return;
         }
-        if(getProfile().credits < MODULES[type].cost) {
+        if(getProfile().credits < priceOf(MODULES[type].cost)) {
             this.flash('Not enough credits for ' + MODULES[type].name + '.');
             return;
         }
         installModule(hull.id, slotId, type);
         this.selectedSlot = slotId;
         this.flash(MODULES[type].name + ' installed.');
-        if(getProfile().credits < MODULES[type].cost) this.armedModule = null;
+        if(getProfile().credits < priceOf(MODULES[type].cost)) this.armedModule = null;
         this.refresh();
     }
 

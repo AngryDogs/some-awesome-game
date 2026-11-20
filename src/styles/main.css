@@ -709,3 +709,21 @@ body.playing canvas {
     margin: 6px 0 0;
     padding: 5px;
 }
+
+/* ---------------------------------------------------------------- Debug mode */
+
+.debug-menu {
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+.debug-menu.on {
+    opacity: 1;
+    color: #ff7a6a;
+}
+
+.sy-tab.debug-toggle.active {
+    color: #ffb0a0;
+    border-color: rgba(255, 120, 100, 0.9);
+    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);
+}
