@@ -14,11 +14,14 @@ const MATERIALS = {
 export const MATERIAL_ORDER = ['rock', 'iron', 'copper', 'titanium', 'gold', 'naquadah'];
 
 // Main material of an asteroid at a given distance (in sectors) from base.
-export const rollMaterial = (rng, sectorDistance) => {
+// `bias` multiplies material weights (each star system has its own ore mix).
+export const rollMaterial = (rng, sectorDistance, bias) => {
+    // Materials a system is rich in (2x or more) start appearing 4 sectors closer in.
+    const minSector = (m) => Math.max(0, m.minSector - (bias && bias[m.id] >= 2 ? 4 : 0));
     const options = MATERIAL_ORDER
         .map(id => MATERIALS[id])
-        .filter(m => sectorDistance >= m.minSector)
-        .map(m => ({ id: m.id, weight: m.weight + m.growth * (sectorDistance - m.minSector) }));
+        .filter(m => sectorDistance >= minSector(m))
+        .map(m => ({ id: m.id, weight: (m.weight + m.growth * (sectorDistance - minSector(m))) * ((bias && bias[m.id]) || 1) }));
 
     const total = options.reduce((sum, o) => sum + o.weight, 0);
     let roll = rng() * total;

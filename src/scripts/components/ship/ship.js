@@ -996,7 +996,7 @@ class Ship {
     }
 
     draw(ctx) {
-        if(!this.alive) return;
+        if(!this.alive || this.hidden) return;
         // Blink while invulnerable after launch.
         if(this.immunity > 0 && Math.floor(this.immunity * 10) % 2 === 0) return;
 

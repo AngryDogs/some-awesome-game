@@ -80,6 +80,12 @@ class Starmap {
         }, { passive: false });
         window.addEventListener('keydown', (event) => {
             if(!this.isOpen) return;
+            if(event.code === 'KeyJ') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.engage();
+                return;
+            }
             if(event.code === 'Escape' || event.code === 'KeyM') {
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -217,9 +223,8 @@ class Starmap {
     engage() {
         if(!this.selected || !this.options.hyperdrive || this.selected === this.options.systemId) return;
         const target = systemById(this.selected);
-        const onEngage = this.options.onEngage;
+        this.options.onEngage(target);
         this.close();
-        onEngage(target);
     }
 
     render() {

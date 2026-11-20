@@ -887,3 +887,18 @@ body.playing canvas {
         max-height: 45vh;
     }
 }
+
+.starmap-button {
+    position: fixed;
+    top: 12px;
+    right: 200px;
+    z-index: 6;
+    font-family: Bungee, sans-serif;
+    font-size: 13px;
+    padding: 6px 14px;
+    color: #dfe9ff;
+    background: rgba(10, 25, 60, 0.75);
+    border: 1px solid rgba(140, 190, 255, 0.8);
+    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);
+    cursor: pointer;
+}

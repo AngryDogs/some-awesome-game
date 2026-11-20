@@ -10,6 +10,12 @@ import { SectorManager, sectorOf } from '../world/sectors';
 import { STATION, drawStation } from '../world/station';
 import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo, removeCargo, onProfileChange } from '../shipyard/profile';
 import { getShipyard } from '../shipyard/shipyard';
+import { SYSTEMS, systemById, distanceBetween } from '../world/systems';
+import Stargate, { GATE_INNER, GATE_RADIUS, DHD_RANGE } from '../world/stargate';
+import { getDHD, isDHDOpen } from '../ui/dhd';
+import { getStarmap, isStarmapOpen, hyperTravelTime } from '../ui/starmap';
+import { planetSprite, nebulaSprite } from '../render/planets';
+import { drawWormhole, drawHyperspace, drawHyperWindow } from './travel';
 import { glowSprite, stamp } from '../render/sprites';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
@@ -30,6 +36,7 @@ const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
 const shieldButton = document.getElementById('shieldButton');
 const cargoButton = document.getElementById('cargoButton');
+const starmapButton = document.getElementById('starmapButton');
 const cargoPanel = document.getElementById('cargoPanel');
 const hudElements = {
     credits: document.getElementById('credits'),
@@ -56,10 +63,25 @@ let accumulator = 0;
 let fps = 60;
 const hud = {};
 
+// Each star system has its own asteroid fields: seed derived from the profile seed and
+// the system id, ore mix from the system, and the station/gate kept clear of rocks.
+const systemSeed = (id) => {
+    let h = 2166136261;
+    for(let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+    return (getProfile().seed ^ h) >>> 0;
+};
+const makeSectors = (system) => new SectorManager(systemSeed(system.id), system.materials, [{ x: 0, y: 0 }, system.gate]);
+const originIndex = (system) => SYSTEMS.indexOf(system);
+
 const createState = () => {
+    const system = systemById('lantea');
     const ship = new Ship(STATION.x + STATION.dockRadius + 80, STATION.y, computeShipStats(getProfile().hull));
     ship.angle = 0;
     return {
+        system: system,
+        gate: new Stargate(system.gate.x, system.gate.y),
+        transition: null,
+        tooBigTimer: 0,
         ship: ship,
         rocks: [],
         newRocks: [],
@@ -73,7 +95,7 @@ const createState = () => {
         scan: { timer: 1, target: null, value: 0, pings: [] },
         mergeLinks: [],
         floatingTexts: [],
-        sectors: new SectorManager(getProfile().seed),
+        sectors: makeSectors(system),
         sectorTimer: 0,
         camera: { x: ship.x, y: ship.y },
         time: 0,
@@ -139,7 +161,8 @@ const renderInfo = () => {
     const used = cargoUsed();
     const sector = sectorOf(ship.x, ship.y);
     setText('credits', 'Credits: ' + Math.round(getProfile().credits).toLocaleString('en-US'));
-    setText('location', 'Sector ' + sector.sx + ', ' + sector.sy + ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k');
+    setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
+        (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
     setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + ' (G)' : '');
     setBar('hullBar', ship.hp / ship.maxHull);
@@ -664,7 +687,7 @@ const rockCollisions = () => {
 
 const shipCollisions = () => {
     const { ship, rocks, particles } = state;
-    if(!ship.alive) return;
+    if(!ship.alive || state.transition) return;
 
     rocks.forEach(rock => {
         if(rock.dead) return;
@@ -848,7 +871,9 @@ const step = (dt) => {
         }
     });
     updateScanner(dt);
-    cityShield(dt);
+    if(state.system.station) cityShield(dt);
+    state.gate.update(dt);
+    checkGateTravel(dt);
     bullets.forEach(bullet => {
         if(bullet.kind === 'plasma' && Math.random() < 0.6) {
             state.particles.push(new Particle({
@@ -905,9 +930,160 @@ const step = (dt) => {
     state.camera.x += (ship.x + ship.vx * 0.25 - state.camera.x) * followRate;
     state.camera.y += (ship.y + ship.vy * 0.25 - state.camera.y) * followRate;
 
-    state.canDock = ship.alive && distanceToStation() < STATION.dockRadius;
+    state.canDock = !!state.system.station && ship.alive && distanceToStation() < STATION.dockRadius;
+    const dhd = state.gate.dhd;
+    state.nearDHD = ship.alive && Math.sqrt((ship.x - dhd.x) * (ship.x - dhd.x) + (ship.y - dhd.y) * (ship.y - dhd.y)) < DHD_RANGE;
     if(state.bannerTimer > 0) state.bannerTimer -= dt;
     if(!ship.alive) state.gameOverTimer += dt;
+};
+
+// ---------------------------------------------------------------- star systems & travel
+
+// Load a star system: new fields, gate and backdrop. `how` is 'gate' (emerge from the
+// destination gate) or 'hyper' (drop out of hyperspace near the gate).
+const enterSystem = (system, how) => {
+    state.system = system;
+    state.gate = new Stargate(system.gate.x, system.gate.y);
+    state.sectors = makeSectors(system);
+    ['rocks', 'newRocks', 'bullets', 'missiles', 'particles', 'ores', 'mergeLinks', 'flashes', 'shockwaves', 'beamHits', 'floatingTexts']
+        .forEach(key => { state[key] = []; });
+    state.scan.target = null;
+    state.scan.pings = [];
+    STATION.impacts = [];
+
+    const ship = state.ship;
+    const gate = state.gate;
+    if(how === 'gate') {
+        ship.x = gate.x;
+        ship.y = gate.y;
+        ship.angle = -Math.PI / 2;
+        ship.vx = 0;
+        ship.vy = -150;
+        gate.incoming();
+    } else {
+        const a = Math.random() * Math.PI * 2;
+        ship.x = gate.x + Math.cos(a) * 1300;
+        ship.y = gate.y + Math.sin(a) * 1300;
+        ship.angle = a + Math.PI;
+        ship.vx = Math.cos(ship.angle) * 220;
+        ship.vy = Math.sin(ship.angle) * 220;
+    }
+    ship.angularVelocity = 0;
+    state.camera.x = ship.x;
+    state.camera.y = ship.y;
+    state.rocks = state.sectors.update(ship.x, ship.y, []);
+    banner('Arrived at ' + system.name, 2.5);
+};
+
+// Flying into an open, outgoing wormhole starts the trip (if the ship fits).
+const checkGateTravel = (dt) => {
+    const ship = state.ship;
+    const gate = state.gate;
+    if(state.tooBigTimer > 0) state.tooBigTimer -= dt;
+    if(state.transition || !ship.alive || !gate.isOpen || !gate.outgoing) return;
+    const dx = ship.x - gate.x;
+    const dy = ship.y - gate.y;
+    if(dx * dx + dy * dy > Math.pow(GATE_INNER * 0.8, 2)) return;
+    if(ship.radius > GATE_INNER * 0.95) {
+        if(state.tooBigTimer <= 0) {
+            state.tooBigTimer = 3;
+            banner('Ship too large for the Stargate: use a hyperdrive.', 2.5);
+        }
+        return;
+    }
+    startTransition({ type: 'gate', phase: 'enter', t: 0, target: systemById(gate.target) });
+};
+
+const startTransition = (transition) => {
+    state.transition = transition;
+    input.reset();
+    input.enabled = false;
+    if(transition.type === 'hyper') sounds.hyperOpen();
+};
+
+const startHyperjump = (target) => {
+    const ship = state.ship;
+    const distance = distanceBetween(state.system.id, target.id);
+    const duration = hyperTravelTime(distance, ship.hyperdrive.speed);
+    startTransition({
+        type: 'hyper', phase: 'window', t: 0, target: target, duration: duration, distance: distance,
+        wx: ship.x + Math.cos(ship.angle) * (ship.radius + 260),
+        wy: ship.y + Math.sin(ship.angle) * (ship.radius + 260),
+        size: Math.max(90, ship.radius * 2.4)
+    });
+    banner('Hyperdrive engaged: ' + target.name, 2);
+};
+
+const TUNNEL_PHASES = { tunnel: true, travel: true };
+
+// Advance a gate trip or hyperspace jump. Returns true while the world is hidden.
+const updateTransition = (dt) => {
+    const tr = state.transition;
+    const ship = state.ship;
+    tr.t += dt;
+
+    if(tr.type === 'gate') {
+        if(tr.phase === 'enter') {
+            // Pulled into the horizon.
+            ship.vx += (state.gate.x - ship.x) * dt * 6;
+            ship.vy += (state.gate.y - ship.y) * dt * 6;
+            if(tr.t > 0.25) ship.hidden = true;
+            if(tr.t >= 0.5) {
+                tr.phase = 'tunnel';
+                tr.t = 0;
+                state.gate.close();
+                sounds.stopAll();
+                sounds.wormhole();
+            }
+        } else if(tr.phase === 'tunnel' && tr.t >= 3.4) {
+            enterSystem(tr.target, 'gate');
+            ship.hidden = false;
+            tr.phase = 'exit';
+            tr.t = 0;
+            sounds.startEngine();
+            sounds.horizon(true);
+        } else if(tr.phase === 'exit' && tr.t >= 0.8) {
+            state.transition = null;
+            input.enabled = true;
+        }
+    } else {
+        if(tr.phase === 'window') {
+            // The window opens ahead; the ship surges into it.
+            tr.open = Math.min(1, tr.t / 1);
+            if(tr.t > 0.7) {
+                const dx = tr.wx - ship.x;
+                const dy = tr.wy - ship.y;
+                const d = Math.sqrt(dx * dx + dy * dy) || 1;
+                ship.vx += dx / d * 900 * dt;
+                ship.vy += dy / d * 900 * dt;
+                if(d < tr.size * 0.4) ship.hidden = true;
+            }
+            if(tr.t >= 2.2) {
+                ship.hidden = true;
+                tr.phase = 'travel';
+                tr.t = 0;
+                sounds.stopAll();
+                sounds.hyperTravel(true);
+            }
+        } else if(tr.phase === 'travel' && tr.t >= tr.duration) {
+            sounds.hyperTravel(false);
+            sounds.hyperExit();
+            enterSystem(tr.target, 'hyper');
+            tr.phase = 'exit';
+            tr.t = 0;
+            tr.wx = ship.x - Math.cos(ship.angle) * 30;
+            tr.wy = ship.y - Math.sin(ship.angle) * 30;
+            ship.hidden = false;
+            sounds.startEngine();
+        } else if(tr.phase === 'exit') {
+            tr.open = Math.max(0, 1 - tr.t / 1.6);
+            if(tr.t >= 1.6) {
+                state.transition = null;
+                input.enabled = true;
+            }
+        }
+    }
+    return !!TUNNEL_PHASES[tr.phase];
 };
 
 // ---------------------------------------------------------------- render
@@ -1399,6 +1575,79 @@ const drawWeaponPanel = () => {
     ctx.restore();
 };
 
+// Distant planet and coloured nebula for the current system (slow parallax).
+const drawBackdrop = () => {
+    const system = state.system;
+    const w = world.width;
+    const h = world.height;
+    const nebula = nebulaSprite(system);
+    const nx = -((state.camera.x * 0.03) % w) - w * 0.25;
+    const ny = -((state.camera.y * 0.03) % h) - h * 0.25;
+    ctx.drawImage(nebula.canvas, nx, ny, w * 1.5, h * 1.5);
+
+    const planet = planetSprite(system);
+    const parallax = 0.12;
+    const px = w / 2 + (system.planet.x - state.camera.x) * parallax;
+    const py = h / 2 + (system.planet.y - state.camera.y) * parallax;
+    const size = system.planet.radius * 0.55 * (0.8 + 0.2 * zoom);
+    const full = size * planet.width / (planet.R * 2);
+    if(px + full / 2 < 0 || px - full / 2 > w || py + full / 2 < 0 || py - full / 2 > h) return;
+    ctx.drawImage(planet.canvas, px - full / 2, py - full / 2, full, full);
+};
+
+// Full-screen wormhole or hyperspace tunnel while travelling.
+const renderTunnel = () => {
+    const tr = state.transition;
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const time = state.transitionClock || 0;
+    if(tr.type === 'gate') drawWormhole(ctx, world.width, world.height, time, Math.min(1, tr.t / 3.4));
+    else {
+        const remaining = Math.max(0, tr.duration - tr.t);
+        drawHyperspace(ctx, world.width, world.height, time, Math.min(1, tr.t / tr.duration),
+            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s');
+    }
+};
+
+// White flash entering and leaving a wormhole.
+const drawTravelOverlay = () => {
+    const tr = state.transition;
+    if(!tr || tr.type !== 'gate') return;
+    let flash = 0;
+    if(tr.phase === 'enter') flash = Math.max(0, (tr.t - 0.2) / 0.3);
+    if(tr.phase === 'exit') flash = Math.max(0, 1 - tr.t / 0.8);
+    if(flash <= 0) return;
+    ctx.fillStyle = 'rgba(225, 238, 255, ' + Math.min(1, flash) + ')';
+    ctx.fillRect(0, 0, world.width, world.height);
+};
+
+// Edge-of-screen pointer to this system's Stargate.
+const drawGatePointer = () => {
+    const gate = state.gate;
+    const sx = (gate.x - state.camera.x) * zoom + world.width / 2;
+    const sy = (gate.y - state.camera.y) * zoom + world.height / 2;
+    if(sx > -60 && sx < world.width + 60 && sy > -60 && sy < world.height + 60) return;
+    const margin = 40;
+    const cx = world.width / 2;
+    const cy = world.height / 2;
+    const angle = Math.atan2(sy - cy, sx - cx);
+    const scale = Math.min(Math.abs((cx - margin) / Math.cos(angle) || Infinity), Math.abs((cy - margin) / Math.sin(angle) || Infinity));
+    const px = cx + Math.cos(angle) * scale;
+    const py = cy + Math.sin(angle) * scale;
+    const distance = Math.sqrt(Math.pow(gate.x - state.ship.x, 2) + Math.pow(gate.y - state.ship.y, 2));
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.fillStyle = 'rgba(255, 170, 110, 0.95)';
+    ctx.font = '11px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('GATE ' + (distance / 1000).toFixed(1) + 'k', -Math.cos(angle) * 26, -Math.sin(angle) * 26 + 18);
+    ctx.strokeStyle = 'rgba(255, 170, 110, 0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+};
+
 const drawMinimap = () => {
     const size = MINIMAP_SIZE;
     const left = world.width - size - 16;
@@ -1453,18 +1702,29 @@ const drawMinimap = () => {
         ctx.stroke();
     }
 
-    // Station (clamped to the edge when far away).
-    let stx = (STATION.x - ship.x) * scale;
-    let sty = (STATION.y - ship.y) * scale;
+    // Station (Lantea only) and Stargate, clamped to the edge when far away.
     const limit = size / 2 - 6;
-    const furthest = Math.max(Math.abs(stx), Math.abs(sty));
-    if(furthest > limit) {
-        stx *= limit / furthest;
-        sty *= limit / furthest;
-    }
-    ctx.strokeStyle = 'rgb(140, 200, 255)';
+    const marker = (x, y) => {
+        let mx = (x - ship.x) * scale;
+        let my = (y - ship.y) * scale;
+        const furthest = Math.max(Math.abs(mx), Math.abs(my));
+        if(furthest > limit) {
+            mx *= limit / furthest;
+            my *= limit / furthest;
+        }
+        return { x: cx + mx, y: cy + my };
+    };
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(cx + stx - 4, cy + sty - 4, 8, 8);
+    if(state.system.station) {
+        const st = marker(STATION.x, STATION.y);
+        ctx.strokeStyle = 'rgb(140, 200, 255)';
+        ctx.strokeRect(st.x - 4, st.y - 4, 8, 8);
+    }
+    const gm = marker(state.gate.x, state.gate.y);
+    ctx.strokeStyle = 'rgb(255, 170, 110)';
+    ctx.beginPath();
+    ctx.arc(gm.x, gm.y, 4.5, 0, Math.PI * 2);
+    ctx.stroke();
 
     ctx.translate(cx, cy);
     ctx.rotate(ship.angle);
@@ -1488,6 +1748,7 @@ const render = () => {
     resetRebuildBudget();
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, world.width, world.height);
+    drawBackdrop();
     drawStarfield();
 
     ctx.save();
@@ -1495,7 +1756,11 @@ const render = () => {
     ctx.scale(zoom, zoom);
     ctx.translate(-state.camera.x, -state.camera.y);
 
-    if(isVisible(STATION.x, STATION.y, 300)) drawStation(ctx, time, state.canDock);
+    if(state.system.station && isVisible(STATION.x, STATION.y, 460)) drawStation(ctx, time, state.canDock);
+    if(isVisible(state.gate.x, state.gate.y, 300)) {
+        state.gate.draw(ctx, time);
+        state.gate.drawDHD(ctx, time, state.nearDHD);
+    }
 
     const visibleRocks = state.rocks.filter(rock => {
         if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
@@ -1540,11 +1805,15 @@ const render = () => {
     drawShockwaves();
     drawFlashes();
     drawScanner(time);
+    const tr = state.transition;
+    if(tr && tr.type === 'hyper' && tr.open > 0) drawHyperWindow(ctx, tr.wx, tr.wy, tr.size, time, tr.open);
     state.ship.draw(ctx);
     drawFloatingTexts();
     ctx.restore();
 
-    drawStationPointer();
+    if(state.system.station) drawStationPointer();
+    drawGatePointer();
+    drawTravelOverlay();
     drawMinimap();
     drawScannerPointer();
     drawWeaponPanel();
@@ -1611,6 +1880,48 @@ const toggleCargoPanel = (show) => {
     renderCargoPanel();
 };
 
+// ---------------------------------------------------------------- DHD & starmap
+
+const openDHD = () => {
+    const gate = state.gate;
+    state.paused = true;
+    freeze(true);
+    getDHD().open({
+        systemId: state.system.id,
+        systemName: state.system.name,
+        originIndex: originIndex(state.system),
+        originName: state.system.origin,
+        busy: gate.busy,
+        onDial: (target, symbols) => {
+            gate.dial(target.id, symbols);
+            banner('Dialling ' + target.name + '...', 2.5);
+        },
+        onClose: () => {
+            if(!state) return;
+            state.paused = false;
+            freeze(false);
+        }
+    });
+};
+
+const openStarmap = () => {
+    state.paused = true;
+    freeze(true);
+    let engageTarget = null;
+    getStarmap().open({
+        systemId: state.system.id,
+        originIndex: originIndex(state.system),
+        hyperdrive: state.ship.hyperdrive,
+        onEngage: (target) => { engageTarget = target; },
+        onClose: () => {
+            if(!state) return;
+            state.paused = false;
+            freeze(false);
+            if(engageTarget) startHyperjump(engageTarget);
+        }
+    });
+};
+
 // ---------------------------------------------------------------- loop & menus
 
 const freeze = (frozen) => {
@@ -1619,6 +1930,7 @@ const freeze = (frozen) => {
     document.body.classList.toggle('playing', !frozen);
     shieldButton.style.display = state && !frozen ? '' : 'none';
     cargoButton.style.display = state && !frozen ? '' : 'none';
+    starmapButton.style.display = state && !frozen ? '' : 'none';
     if(frozen) toggleCargoPanel(false);
     if(frozen) {
         sounds.stopAll();
@@ -1696,7 +2008,15 @@ const frame = (now) => {
         slowTime = 0;
     }
 
-    if(!state.paused) {
+    // Travelling between systems: the world is hidden during the tunnel phases.
+    let inTunnel = false;
+    if(state.transition && !state.paused) {
+        state.transitionClock = (state.transitionClock || 0) + elapsed;
+        inTunnel = updateTransition(elapsed);
+        if(inTunnel) accumulator = 0;
+    }
+
+    if(!state.paused && !inTunnel) {
         accumulator += elapsed;
         let steps = 0;
         while(accumulator >= STEP && steps < MAX_STEPS_PER_FRAME) {
@@ -1712,7 +2032,8 @@ const frame = (now) => {
         sounds.setTractor(state.ship.alive && !!state.tractorActive, Math.min(1, (state.tractorCount || 0) / 6));
     }
 
-    render();
+    if(inTunnel) renderTunnel();
+    else render();
     renderInfo();
 
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
@@ -1733,7 +2054,7 @@ const initialize = () => {
     loadInputHandlers();
 
     onKeyPress('Escape', () => {
-        if(!state || state.docked || !state.ship.alive) return false;
+        if(!state || state.docked || !state.ship.alive || state.transition || isDHDOpen() || isStarmapOpen()) return false;
         setPaused(!state.paused);
         return true;
     });
@@ -1791,17 +2112,34 @@ const initialize = () => {
     onProfileChange(() => renderCargoPanel());
     shieldButton.addEventListener('click', () => toggleShields());
 
+    // B: dock at Atlantis, or use the DHD when standing next to it.
     onKeyPress('KeyB', () => {
-        if(!state || state.paused || !state.canDock) return false;
-        const ship = state.ship;
-        const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-        if(speed > STATION.maxDockSpeed) {
-            banner('Too fast to dock', 1.2);
-        } else {
-            dock();
+        if(!state || state.paused || state.transition) return false;
+        if(state.canDock) {
+            const ship = state.ship;
+            const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+            if(speed > STATION.maxDockSpeed) banner('Too fast to dock', 1.2);
+            else dock();
+            return true;
         }
-        return true;
+        if(state.nearDHD) {
+            openDHD();
+            return true;
+        }
+        return false;
     });
+
+    // M: starmap. J: open the starmap to pick a hyperspace destination.
+    const toggleStarmap = () => {
+        if(!state || state.transition || state.docked || isDHDOpen()) return false;
+        if(isStarmapOpen()) return false;
+        if(state.paused) return false;
+        openStarmap();
+        return true;
+    };
+    onKeyPress('KeyM', toggleStarmap);
+    onKeyPress('KeyJ', toggleStarmap);
+    starmapButton.addEventListener('click', () => toggleStarmap());
 
     document.getElementById('resumeGame').addEventListener('click', () => setPaused(false));
     document.getElementById('abandonGame').addEventListener('click', () => {

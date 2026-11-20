@@ -8,7 +8,7 @@ import { rollMaterial } from './materials';
 
 export const SECTOR_SIZE = 1400;
 const ACTIVE_RADIUS = 2;          // sectors around the ship that are simulated
-const SAFE_RADIUS = 700;          // no asteroids spawn this close to the station
+const SAFE_RADIUS = 700;          // no asteroids spawn this close to the station or the gate
 
 // Small deterministic PRNG (mulberry32).
 const createRandom = (seed) => {
@@ -40,7 +40,7 @@ export const sectorDistance = (sx, sy) => {
     return Math.floor(Math.sqrt(cx * cx + cy * cy));
 };
 
-const generateSector = (seed, sx, sy) => {
+const generateSector = (seed, sx, sy, bias, safePoints) => {
     const random = createRandom(hashSector(seed, sx, sy));
     const distance = sectorDistance(sx, sy);
     const rocks = [];
@@ -60,17 +60,17 @@ const generateSector = (seed, sx, sy) => {
         const spread = SECTOR_SIZE * (count > 6 ? 0.3 : 0.5);
         const x = fieldX + (random() - 0.5) * 2 * spread;
         const y = fieldY + (random() - 0.5) * 2 * spread;
-        if(Math.sqrt(x * x + y * y) < SAFE_RADIUS) continue;
+        if(safePoints.some(p => Math.sqrt((x - p.x) * (x - p.x) + (y - p.y) * (y - p.y)) < SAFE_RADIUS)) continue;
 
         const giant = random() < 0.04 + distance * 0.004;
         const radius = giant ? 60 + random() * 35 : 14 + random() * 38;
-        const main = rollMaterial(random, distance);
+        const main = rollMaterial(random, distance, bias);
         const purity = main === 'rock' ? 1 : 0.45 + random() * 0.45;
         const composition = { rock: 1 - purity };
         composition[main] = (composition[main] || 0) + purity;
 
         // Sometimes a trace of a second metal.
-        const trace = rollMaterial(random, distance);
+        const trace = rollMaterial(random, distance, bias);
         if(trace !== main && trace !== 'rock') {
             const share = 0.05 + random() * 0.15;
             composition[trace] = (composition[trace] || 0) + share;
@@ -94,8 +94,12 @@ const generateSector = (seed, sx, sy) => {
 
 export class SectorManager {
 
-    constructor(seed) {
+    // `bias`: per-material weight multipliers for this star system; `safePoints`: places
+    // (station, gate) kept clear of asteroids.
+    constructor(seed, bias, safePoints) {
         this.seed = seed;
+        this.bias = bias || {};
+        this.safePoints = safePoints || [{ x: 0, y: 0 }];
         this.dormant = {};    // key -> sleeping rocks
         this.active = {};     // key -> true
         this.seen = {};       // key -> true once generated
@@ -138,7 +142,7 @@ export class SectorManager {
                 delete this.dormant[key];
             } else if(!this.seen[key]) {
                 this.seen[key] = true;
-                generateSector(this.seed, wanted[key][0], wanted[key][1]).forEach(rock => keep.push(rock));
+                generateSector(this.seed, wanted[key][0], wanted[key][1], this.bias, this.safePoints).forEach(rock => keep.push(rock));
             }
         });
 
