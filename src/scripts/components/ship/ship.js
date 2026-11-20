@@ -16,7 +16,7 @@ const MASS_UNIT = 300;            // physics mass per hull mass point
 const BULLET_SPEED = 1100;
 const BULLET_SPREAD = 0.022;
 const PLASMA_SPEED = 520;
-const RECOIL = 3.5;               // px/s per bullet for a mass-1 hull
+const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
 const TURRET_TURN_RATE = 14;      // rad/s
 const SALVO_GAP = 0.12;           // s between launchers firing
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
@@ -587,7 +587,7 @@ class Ship {
             world.particles.push(new Particle({
                 x: p.x + Math.cos(turret.aim) * barrel, y: p.y + Math.sin(turret.aim) * barrel,
                 vx: this.vx + dirX * 30 + (Math.random() - 0.5) * 20, vy: this.vy + dirY * 30 + (Math.random() - 0.5) * 20,
-                life: 0.5 + Math.random() * 0.4, size: 4, color: '190,190,200', dust: true, alpha: 0.18
+                life: 0.4 + Math.random() * 0.3, size: 3, color: '230,225,215', dust: true, alpha: 0.08
             }));
         }
 

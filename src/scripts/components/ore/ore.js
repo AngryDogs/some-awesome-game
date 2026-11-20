@@ -1,4 +1,5 @@
 import MATERIALS from '../../world/materials';
+import { glowSprite } from '../../render/sprites';
 
 const ORE_LIFETIME = 90;
 
@@ -63,11 +64,12 @@ class Ore {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Soft halo in the metal colour.
-        ctx.fillStyle = 'rgba(' + color + ', ' + (0.16 + 0.08 * sparkle).toFixed(2) + ')';
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 2.4, 0, Math.PI * 2);
-        ctx.fill();
+        // Soft glow in the metal colour.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.35 + 0.15 * sparkle;
+        ctx.drawImage(glowSprite(color).canvas, -r * 3, -r * 3, r * 6, r * 6);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
 
         // Faceted nugget: dark body, lit facet, bright edge.
         ctx.rotate(this.angle);

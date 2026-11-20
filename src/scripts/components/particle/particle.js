@@ -1,3 +1,5 @@
+import { dustSprite } from '../../render/sprites';
+
 // Small glowing sparks, plus soft dust that can be drawn into an asteroid
 // (used when asteroids merge: the dust cloud spirals in and settles on the surface).
 
@@ -88,12 +90,12 @@ class Particle {
     draw(ctx) {
         const t = Math.max(this.life / this.maxLife, 0);
         if(this.dust) {
-            // Soft puff: fade in quickly, fade out slowly.
+            // Soft puff: fades in quickly, swells, then thins out.
             const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
-            ctx.fillStyle = 'rgba(' + this.color + ',' + (this.alpha * fade).toFixed(3) + ')';
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size * (0.6 + 0.4 * (1 - t)), 0, Math.PI * 2);
-            ctx.fill();
+            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
+            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
+            ctx.drawImage(dustSprite(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
+            ctx.globalAlpha = 1;
             return;
         }
         if(this.solid) {

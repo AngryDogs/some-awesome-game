@@ -26,7 +26,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Dock at Atlantis (shipyard) | B (inside the dashed ring, slowly) |
 | Shields on / off | H (or the button at the top of the screen) |
 | Cargo hold (view / eject ore) | C (or the cargo button, top right) |
-| Zoom | Mouse wheel |
+| Zoom | Mouse wheel or + / - (0 resets) |
 | Pause | Esc |
 
 ## Mining
@@ -34,8 +34,9 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 - Space is endless: sectors are generated as you fly. The scanner (bottom right) shows nearby asteroids
   coloured by material, and an arrow points back to base.
 - Asteroids contain rock, iron, copper, titanium, gold and naquadah. Valuable metals appear further from base.
-- Shooting chips an asteroid down and breaks chunks off. The chipped material floats free as ore.
-  Fly near it to scoop it into your cargo hold.
+- Asteroids have a soft, dusty outer layer and a hard core. The dust carves away quickly (mostly plain
+  rock), the core is slow to cut but holds most of the metal. Cut all the way through and the asteroid
+  splits in two along the cut. Chipped material pops out as ore: fly near it to scoop it into your hold.
 - Asteroids pull on each other with gravity based on their size. When they touch they lock together
   and the smaller one gradually sinks into the bigger one in a cloud of dust.
 - Shields protect the hull, but while they're up the tractor beam is offline and ore that touches them

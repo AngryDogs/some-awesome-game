@@ -13,7 +13,7 @@ class Bullet {
         this.damage = damage || 1;
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
-        this.mass = this.kind === 'plasma' ? 60 : 4;
+        this.mass = this.kind === 'plasma' ? 30 : 1.2;
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }

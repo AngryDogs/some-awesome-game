@@ -7,16 +7,45 @@ const cache = {};
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
 export const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
 
-// Draws `draw(ctx)` into a new offscreen canvas of `width` x `height` world pixels.
-export const createSprite = (width, height, draw, resolution) => {
+// Draws `draw(ctx)` into an offscreen canvas of `width` x `height` world pixels.
+// Pass a previous sprite as `reuse` to redraw into its canvas when the size still fits
+// (allocating canvases is slow; reusing one is just a clear).
+export const createSprite = (width, height, draw, resolution, reuse) => {
     const res = resolution || spriteResolution();
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.ceil(width * res));
-    canvas.height = Math.max(1, Math.ceil(height * res));
+    const w = Math.max(1, Math.ceil(width * res));
+    const h = Math.max(1, Math.ceil(height * res));
+    let canvas;
+    if(reuse && reuse.canvas.width >= w && reuse.canvas.height >= h &&
+        reuse.canvas.width < w * 1.25 && reuse.canvas.height < h * 1.25) {
+        canvas = reuse.canvas;
+    } else {
+        canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+    }
     const ctx = canvas.getContext('2d');
-    ctx.scale(res, res);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Map world units so the drawing fills the (possibly slightly larger) canvas exactly.
+    ctx.scale(canvas.width / width, canvas.height / height);
     draw(ctx);
     return { canvas: canvas, width: width, height: height };
+};
+
+// Shared fine-grain dust texture (light and dark specks) used as a fill pattern.
+export const grainTexture = () => {
+    if(!cache.grain) {
+        cache.grain = createSprite(128, 128, ctx => {
+            for(let i = 0; i < 900; i++) {
+                const light = Math.random() < 0.5;
+                const a = 0.1 + Math.random() * 0.28;
+                ctx.fillStyle = light ? 'rgba(255, 245, 225, ' + a + ')' : 'rgba(30, 25, 20, ' + a + ')';
+                const size = 0.5 + Math.random() * 1.3;
+                ctx.fillRect(Math.random() * 128, Math.random() * 128, size, size);
+            }
+        }, 1);
+    }
+    return cache.grain.canvas;
 };
 
 // Soft round glow, white-hot centre fading to `color` then transparent.
@@ -90,6 +119,22 @@ export const muzzleSprite = (color) => {
                 ctx.closePath();
                 ctx.fill();
             });
+        }, 1);
+    }
+    return cache[key];
+};
+
+// Soft feathered puff for dust clouds (no hard edge, unlike a filled circle).
+export const dustSprite = (color) => {
+    const key = 'dust:' + color;
+    if(!cache[key]) {
+        cache[key] = createSprite(48, 48, ctx => {
+            const g = ctx.createRadialGradient(24, 24, 0, 24, 24, 24);
+            g.addColorStop(0, 'rgba(' + color + ', 0.9)');
+            g.addColorStop(0.5, 'rgba(' + color + ', 0.45)');
+            g.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 48, 48);
         }, 1);
     }
     return cache[key];

@@ -1,5 +1,5 @@
 import Ship from '../components/ship/ship';
-import { MAX_MERGE_RADIUS, VISUAL_RADIUS } from '../components/rock/rock';
+import { MAX_MERGE_RADIUS, VISUAL_RADIUS, resetRebuildBudget } from '../components/rock/rock';
 import Particle from '../components/particle/particle';
 import Ore from '../components/ore/ore';
 import loadInputHandlers, { input, onKeyPress } from '../components/ship/handlers';
@@ -14,7 +14,8 @@ import { glowSprite, stamp } from '../render/sprites';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
-const MAX_PARTICLES = 1200;
+const MAX_PARTICLES = 900;
+const MAX_DUST = 250;              // soft dust puffs are large; keep only the newest
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
 const ROCK_BOUNCE = 0.2;
@@ -579,7 +580,7 @@ const rockCollisions = () => {
             // Fresh fragments, busy pairs and oversized bodies just rest against each other.
             if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > MAX_MERGE_RADIUS) {
                 const impact = resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
-                if(impact > 18) {
+                if(impact > 30) {
                     // Grinding knock: grit and dust thrown out sideways from the contact.
                     const cx = a.x + normalX * a.radius * VISUAL_RADIUS;
                     const cy = a.y + normalY * a.radius * VISUAL_RADIUS;
@@ -822,6 +823,12 @@ const step = (dt) => {
     state.particles = particles.filter(particle => !particle.dead);
     state.ores = state.ores.filter(ore => !ore.dead);
     state.floatingTexts = state.floatingTexts.filter(text => text.life > 0);
+    let dustCount = 0;
+    state.particles.forEach(particle => { if(particle.dust) dustCount++; });
+    if(dustCount > MAX_DUST) {
+        let excess = dustCount - MAX_DUST;
+        state.particles = state.particles.filter(particle => !(particle.dust && excess-- > 0));
+    }
     if(state.particles.length > MAX_PARTICLES) {
         state.particles = state.particles.slice(state.particles.length - MAX_PARTICLES);
     }
@@ -1419,6 +1426,7 @@ const drawMinimap = () => {
 
 const render = () => {
     const time = state.time;
+    resetRebuildBudget();
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, world.width, world.height);
     drawStarfield();

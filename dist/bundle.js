@@ -76,21 +76,52 @@ const cache = {};
 
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
 const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
-/* harmony export (immutable) */ __webpack_exports__["e"] = spriteResolution;
+/* harmony export (immutable) */ __webpack_exports__["g"] = spriteResolution;
 
 
-// Draws `draw(ctx)` into a new offscreen canvas of `width` x `height` world pixels.
-const createSprite = (width, height, draw, resolution) => {
+// Draws `draw(ctx)` into an offscreen canvas of `width` x `height` world pixels.
+// Pass a previous sprite as `reuse` to redraw into its canvas when the size still fits
+// (allocating canvases is slow; reusing one is just a clear).
+const createSprite = (width, height, draw, resolution, reuse) => {
     const res = resolution || spriteResolution();
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.ceil(width * res));
-    canvas.height = Math.max(1, Math.ceil(height * res));
+    const w = Math.max(1, Math.ceil(width * res));
+    const h = Math.max(1, Math.ceil(height * res));
+    let canvas;
+    if(reuse && reuse.canvas.width >= w && reuse.canvas.height >= h &&
+        reuse.canvas.width < w * 1.25 && reuse.canvas.height < h * 1.25) {
+        canvas = reuse.canvas;
+    } else {
+        canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+    }
     const ctx = canvas.getContext('2d');
-    ctx.scale(res, res);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Map world units so the drawing fills the (possibly slightly larger) canvas exactly.
+    ctx.scale(canvas.width / width, canvas.height / height);
     draw(ctx);
     return { canvas: canvas, width: width, height: height };
 };
 /* harmony export (immutable) */ __webpack_exports__["a"] = createSprite;
+
+
+// Shared fine-grain dust texture (light and dark specks) used as a fill pattern.
+const grainTexture = () => {
+    if(!cache.grain) {
+        cache.grain = createSprite(128, 128, ctx => {
+            for(let i = 0; i < 900; i++) {
+                const light = Math.random() < 0.5;
+                const a = 0.1 + Math.random() * 0.28;
+                ctx.fillStyle = light ? 'rgba(255, 245, 225, ' + a + ')' : 'rgba(30, 25, 20, ' + a + ')';
+                const size = 0.5 + Math.random() * 1.3;
+                ctx.fillRect(Math.random() * 128, Math.random() * 128, size, size);
+            }
+        }, 1);
+    }
+    return cache.grain.canvas;
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = grainTexture;
 
 
 // Soft round glow, white-hot centre fading to `color` then transparent.
@@ -108,7 +139,7 @@ const glowSprite = (color) => {
     }
     return cache[key];
 };
-/* harmony export (immutable) */ __webpack_exports__["c"] = glowSprite;
+/* harmony export (immutable) */ __webpack_exports__["d"] = glowSprite;
 
 
 // Flame/jet pointing along +x from its left-middle edge (draw it rotated and stretched).
@@ -141,7 +172,7 @@ const flameSprite = (color, core) => {
     }
     return cache[key];
 };
-/* harmony export (immutable) */ __webpack_exports__["b"] = flameSprite;
+/* harmony export (immutable) */ __webpack_exports__["c"] = flameSprite;
 
 
 // Muzzle flash: a hot core with a long forward spike and short side spikes (pointing +x).
@@ -172,14 +203,32 @@ const muzzleSprite = (color) => {
     }
     return cache[key];
 };
-/* harmony export (immutable) */ __webpack_exports__["d"] = muzzleSprite;
+/* harmony export (immutable) */ __webpack_exports__["f"] = muzzleSprite;
+
+
+// Soft feathered puff for dust clouds (no hard edge, unlike a filled circle).
+const dustSprite = (color) => {
+    const key = 'dust:' + color;
+    if(!cache[key]) {
+        cache[key] = createSprite(48, 48, ctx => {
+            const g = ctx.createRadialGradient(24, 24, 0, 24, 24, 24);
+            g.addColorStop(0, 'rgba(' + color + ', 0.9)');
+            g.addColorStop(0.5, 'rgba(' + color + ', 0.45)');
+            g.addColorStop(1, 'rgba(' + color + ', 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 48, 48);
+        }, 1);
+    }
+    return cache[key];
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = dustSprite;
 
 
 // Stamp a sprite centred at (x, y) with the given size.
 const stamp = (ctx, sprite, x, y, width, height) => {
     ctx.drawImage(sprite.canvas, x - width / 2, y - height / 2, width, height);
 };
-/* harmony export (immutable) */ __webpack_exports__["f"] = stamp;
+/* harmony export (immutable) */ __webpack_exports__["h"] = stamp;
 
 
 
@@ -322,6 +371,9 @@ const gravityAt = (body, attractors) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+
+
 // Small glowing sparks, plus soft dust that can be drawn into an asteroid
 // (used when asteroids merge: the dust cloud spirals in and settles on the surface).
 
@@ -412,12 +464,12 @@ class Particle {
     draw(ctx) {
         const t = Math.max(this.life / this.maxLife, 0);
         if(this.dust) {
-            // Soft puff: fade in quickly, fade out slowly.
+            // Soft puff: fades in quickly, swells, then thins out.
             const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
-            ctx.fillStyle = 'rgba(' + this.color + ',' + (this.alpha * fade).toFixed(3) + ')';
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.size * (0.6 + 0.4 * (1 - t)), 0, Math.PI * 2);
-            ctx.fill();
+            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
+            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
+            ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
+            ctx.globalAlpha = 1;
             return;
         }
         if(this.solid) {
@@ -2173,7 +2225,7 @@ const MAX_SPLIT_SPEED = 55;       // px/s, halves drift apart gently
 const MAX_SCARS = 12;
 const SHAPE_POINTS = 32;
 const SPRITE_REBUILD_INTERVAL = 0.12;
-const LIGHT_REFRESH_ANGLE = 0.26;  // re-bake lighting after the rock turns ~15 degrees
+const LIGHT_REFRESH_ANGLE = 0.45;  // re-bake lighting after the rock turns ~25 degrees
 const MAX_MERGE_RADIUS = 170;
 /* harmony export (immutable) */ __webpack_exports__["a"] = MAX_MERGE_RADIUS;
 
@@ -2188,6 +2240,14 @@ const BASE_ROCK = [128, 118, 106];
 const STEP = Math.PI * 2 / SHAPE_POINTS;
 
 let nextId = 1;
+
+// Sprite rebuilds are spread out: at most this many per frame (the rest wait a frame or
+// two, showing their previous image). The game resets the budget every frame.
+const REBUILDS_PER_FRAME = 4;
+let rebuildBudget = REBUILDS_PER_FRAME;
+const resetRebuildBudget = () => { rebuildBudget = REBUILDS_PER_FRAME; };
+/* harmony export (immutable) */ __webpack_exports__["d"] = resetRebuildBudget;
+
 
 // Lumpy outline from a few layered sine "octaves" (smooth, rock-like, not spiky).
 const lumpyShape = (rnd, base, spread, min, max) => {
@@ -2347,13 +2407,7 @@ class Rock {
                 tilt: rnd() * Math.PI
             });
         }
-        // Fine dust grain: hundreds of light and dark specks.
-        this.speckles = [];
-        for(let i = 0; i < 260; i++) {
-            const angle = rnd() * Math.PI * 2;
-            const distance = Math.sqrt(rnd()) * 0.98;
-            this.speckles.push({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, s: 0.4 + rnd() * 1.2, light: rnd() < 0.5, a: 0.12 + rnd() * 0.25 });
-        }
+        this.grainOffset = rnd();
         // Boulders resting in the dust.
         this.boulders = [];
         const boulderCount = 3 + Math.floor(rnd() * 6);
@@ -2762,7 +2816,7 @@ class Rock {
     // after turning ~15 degrees so the baked lighting stays correct).
     buildSprite() {
         const r = this.radius;
-        const extent = r * Math.max(1, this.maxFactor) * 1.16 + 3;
+        const extent = r * Math.max(1, this.maxFactor) * 1.1 + 2;
         const dust = this.dustColor;
         const core = this.coreColor;
 
@@ -2817,11 +2871,12 @@ class Rock {
             });
             ctx.restore();
 
-            // Dust grain.
-            this.speckles.forEach(p => {
-                ctx.fillStyle = p.light ? 'rgba(255, 245, 225, ' + p.a + ')' : 'rgba(30, 25, 20, ' + p.a + ')';
-                ctx.fillRect(p.x * r, p.y * r, p.s, p.s);
-            });
+            // Dust grain: one fill with the shared speck texture, offset per asteroid.
+            ctx.save();
+            ctx.translate(this.grainOffset * 128, this.grainOffset * 64);
+            ctx.fillStyle = ctx.createPattern(Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["e" /* grainTexture */])(), 'repeat');
+            ctx.fillRect(-extent - 128, -extent - 128, extent * 2 + 256, extent * 2 + 256);
+            ctx.restore();
 
             // Craters: shadowed bowl on the lit side, bright rim opposite, ejecta ring.
             this.craters.forEach(c => {
@@ -2943,7 +2998,7 @@ class Rock {
             ctx.strokeStyle = rim;
             ctx.lineWidth = Math.max(1, r * 0.03);
             ctx.stroke();
-        }, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["e" /* spriteResolution */])()));
+        }, Math.min(1.5, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["g" /* spriteResolution */])()), this.sprite);
         this.spriteAngle = this.angle;
         this.spriteExtent = extent;
         this.spriteRadius = r;
@@ -2960,8 +3015,10 @@ class Rock {
         if(r < 0.5) return;
         let turned = Math.abs(this.angle - (this.spriteAngle || 0)) % (Math.PI * 2);
         if(turned > Math.PI) turned = Math.PI * 2 - turned;
-        if(!this.sprite || (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
-            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05) {
+        const stale = (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
+            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05;
+        if(!this.sprite || (stale && rebuildBudget > 0)) {
+            rebuildBudget--;
             this.buildSprite();
         }
 
@@ -3746,7 +3803,8 @@ openShipyard.addEventListener('click', () => {
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
-const MAX_PARTICLES = 1200;
+const MAX_PARTICLES = 900;
+const MAX_DUST = 250;              // soft dust puffs are large; keep only the newest
 const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
 const ROCK_BOUNCE = 0.2;
@@ -4311,7 +4369,7 @@ const rockCollisions = () => {
             // Fresh fragments, busy pairs and oversized bodies just rest against each other.
             if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* MAX_MERGE_RADIUS */]) {
                 const impact = resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
-                if(impact > 18) {
+                if(impact > 30) {
                     // Grinding knock: grit and dust thrown out sideways from the contact.
                     const cx = a.x + normalX * a.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
                     const cy = a.y + normalY * a.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
@@ -4554,6 +4612,12 @@ const step = (dt) => {
     state.particles = particles.filter(particle => !particle.dead);
     state.ores = state.ores.filter(ore => !ore.dead);
     state.floatingTexts = state.floatingTexts.filter(text => text.life > 0);
+    let dustCount = 0;
+    state.particles.forEach(particle => { if(particle.dust) dustCount++; });
+    if(dustCount > MAX_DUST) {
+        let excess = dustCount - MAX_DUST;
+        state.particles = state.particles.filter(particle => !(particle.dust && excess-- > 0));
+    }
     if(state.particles.length > MAX_PARTICLES) {
         state.particles = state.particles.slice(state.particles.length - MAX_PARTICLES);
     }
@@ -4689,7 +4753,7 @@ const drawTractor = (time) => {
     if(!held.length || !ship.alive) return;
 
     const emitter = ship.tractorEmitter();
-    const glow = Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(TRACTOR);
+    const glow = Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* glowSprite */])(TRACTOR);
     const pulse = 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -4768,7 +4832,7 @@ const drawTractor = (time) => {
 
         // Containment field around the captured ore.
         ctx.globalAlpha = 0.5 + 0.3 * pulse;
-        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["f" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["h" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
         ctx.globalAlpha = 1;
         ctx.setLineDash([3, 3]);
         ctx.lineDashOffset = -time * 20;
@@ -4782,7 +4846,7 @@ const drawTractor = (time) => {
 
     // Emitter aura.
     ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["f" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
+    Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["h" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
     ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.7)';
     ctx.lineWidth = 1.2;
@@ -4934,7 +4998,7 @@ const drawFlashes = () => {
     state.flashes.forEach(f => {
         const t = f.life / f.maxLife;
         ctx.globalAlpha = t;
-        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
     });
     ctx.restore();
 };
@@ -4946,7 +5010,7 @@ const drawShockwaves = () => {
     state.shockwaves.forEach(wave => {
         const glow = wave.maxRadius * 1.6 * wave.life;
         ctx.globalAlpha = wave.life * 0.8;
-        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
         ctx.globalAlpha = wave.life;
         ctx.strokeStyle = 'rgb(' + wave.color + ')';
         ctx.lineWidth = 1 + 4 * wave.life;
@@ -5151,6 +5215,7 @@ const drawMinimap = () => {
 
 const render = () => {
     const time = state.time;
+    Object(__WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["d" /* resetRebuildBudget */])();
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height);
     drawStarfield();
@@ -5521,7 +5586,7 @@ const MASS_UNIT = 300;            // physics mass per hull mass point
 const BULLET_SPEED = 1100;
 const BULLET_SPREAD = 0.022;
 const PLASMA_SPEED = 520;
-const RECOIL = 3.5;               // px/s per bullet for a mass-1 hull
+const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
 const TURRET_TURN_RATE = 14;      // rad/s
 const SALVO_GAP = 0.12;           // s between launchers firing
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
@@ -6092,7 +6157,7 @@ class Ship {
             world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
                 x: p.x + Math.cos(turret.aim) * barrel, y: p.y + Math.sin(turret.aim) * barrel,
                 vx: this.vx + dirX * 30 + (Math.random() - 0.5) * 20, vy: this.vy + dirY * 30 + (Math.random() - 0.5) * 20,
-                life: 0.5 + Math.random() * 0.4, size: 4, color: '190,190,200', dust: true, alpha: 0.18
+                life: 0.4 + Math.random() * 0.3, size: 3, color: '230,225,215', dust: true, alpha: 0.08
             }));
         }
 
@@ -6351,9 +6416,9 @@ class Ship {
         const t = this.thrusters;
         const jetScale = this.hullDef.jetScale || 1;
         const exhaust = this.hullDef.exhaust || '255,150,60';
-        const plume = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["b" /* flameSprite */])(exhaust, '255,235,190');
-        const jetFlame = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["b" /* flameSprite */])('170,210,255', '255,255,255');
-        const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])(exhaust);
+        const plume = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])(exhaust, '255,235,190');
+        const jetFlame = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])('170,210,255', '255,255,255');
+        const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(exhaust);
         const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
         ctx.save();
@@ -6364,7 +6429,7 @@ class Ship {
             // Nozzle glow, pulsing even when idle.
             const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
             ctx.globalAlpha = 0.55 + t.main * 0.45;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
 
             // Plume straight out of the nozzle, as wide as the nozzle.
             if(t.main > 0.03) {
@@ -6420,13 +6485,13 @@ class Ship {
         // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
         if(this.shieldImpacts.length) {
             ctx.globalCompositeOperation = 'lighter';
-            const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])(color);
+            const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color);
             this.shieldImpacts.forEach(impact => {
                 const ix = impact.x * grow;
                 const iy = impact.y * grow;
                 const size = (20 + 50 * impact.strength) * impact.life;
                 ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, glow, ix, iy, size, size);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, ix, iy, size, size);
                 ctx.globalAlpha = 0.7 * impact.life;
                 ctx.strokeStyle = 'rgb(' + color + ')';
                 ctx.lineWidth = 2 * impact.life + 0.5;
@@ -6465,11 +6530,11 @@ class Ship {
             ctx.lineTo(beam.x2, beam.y2);
             ctx.stroke();
             ctx.setLineDash([]);
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
             if(beam.hit) {
                 // Molten contact point.
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
             }
             ctx.restore();
         });
@@ -6516,13 +6581,13 @@ class Ship {
                     const fy = Math.sin(turret.aim - this.angle) * tip;
                     ctx.globalCompositeOperation = 'lighter';
                     const bloom = 16 + 20 * turret.flash / 0.14;
-                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
+                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
                 }
                 // Star-shaped muzzle flash pointing down the barrel, flickering in size.
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.rotate(turret.aim - this.angle);
                 const flashSize = (turret.kind === 'staff' ? 30 : 18 + Math.random() * 10) * Math.max(0.8, u);
-                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
+                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
             }
             ctx.restore();
         });
@@ -6558,7 +6623,7 @@ class Bullet {
         this.damage = damage || 1;
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
-        this.mass = this.kind === 'plasma' ? 60 : 4;
+        this.mass = this.kind === 'plasma' ? 30 : 1.2;
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }
@@ -6592,7 +6657,7 @@ class Bullet {
                 ctx.stroke();
             });
             const head = 28 * flicker;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
             ctx.restore();
             return;
         }
@@ -6737,7 +6802,7 @@ class Missile {
             const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = pulse;
-            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["c" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
+            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["d" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
             ctx.globalAlpha = 1;
             ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
             ctx.lineWidth = 1.2;
@@ -6771,6 +6836,8 @@ class Missile {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_sprites__ = __webpack_require__(0);
+
 
 
 const ORE_LIFETIME = 90;
@@ -6836,11 +6903,12 @@ class Ore {
         ctx.save();
         ctx.translate(this.x, this.y);
 
-        // Soft halo in the metal colour.
-        ctx.fillStyle = 'rgba(' + color + ', ' + (0.16 + 0.08 * sparkle).toFixed(2) + ')';
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 2.4, 0, Math.PI * 2);
-        ctx.fill();
+        // Soft glow in the metal colour.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.35 + 0.15 * sparkle;
+        ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_1__render_sprites__["d" /* glowSprite */])(color).canvas, -r * 3, -r * 3, r * 6, r * 6);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
 
         // Faceted nugget: dark body, lit facet, bright edge.
         ctx.rotate(this.angle);
@@ -7350,7 +7418,7 @@ const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprite
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
-}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["e" /* spriteResolution */])()));
+}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["g" /* spriteResolution */])()));
 
 const drawStation = (ctx, time, canDock) => {
     const key = canDock ? 'dock' : 'idle';
@@ -7374,7 +7442,7 @@ const drawStation = (ctx, time, canDock) => {
             const age = 1 - impact.life;
             const size = (50 + 90 * impact.strength) * impact.life;
             ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('140,200,255'), ix, iy, size, size);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('140,200,255'), ix, iy, size, size);
             ctx.globalAlpha = 0.7 * impact.life;
             ctx.strokeStyle = 'rgb(150, 215, 255)';
             ctx.lineWidth = 2.5 * impact.life + 0.5;
@@ -7394,7 +7462,7 @@ const drawStation = (ctx, time, canDock) => {
     ctx.globalCompositeOperation = 'lighter';
     const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
     ctx.globalAlpha = 0.8 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
 
     // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
@@ -7403,7 +7471,7 @@ const drawStation = (ctx, time, canDock) => {
         const color = canDock ? '140,255,160' : '255,120,100';
         for(let i = 0; i < 6; i += 2) {
             const angle = i * Math.PI / 3 - Math.PI / 2;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["f" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
         }
     }
     ctx.restore();

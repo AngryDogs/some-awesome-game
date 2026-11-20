@@ -1,6 +1,6 @@
 import MATERIALS, { dominantMaterial } from '../../world/materials';
 import { G } from '../../physics/physics';
-import { createSprite, spriteResolution } from '../../render/sprites';
+import { createSprite, spriteResolution, grainTexture } from '../../render/sprites';
 
 // Asteroids have two layers:
 //  - a soft, dusty outer layer (regolith): easy to carve, kicks up dust, mostly plain rock
@@ -25,7 +25,7 @@ const MAX_SPLIT_SPEED = 55;       // px/s, halves drift apart gently
 const MAX_SCARS = 12;
 const SHAPE_POINTS = 32;
 const SPRITE_REBUILD_INTERVAL = 0.12;
-const LIGHT_REFRESH_ANGLE = 0.26;  // re-bake lighting after the rock turns ~15 degrees
+const LIGHT_REFRESH_ANGLE = 0.45;  // re-bake lighting after the rock turns ~25 degrees
 export const MAX_MERGE_RADIUS = 170;
 export const VISUAL_RADIUS = 0.88;   // average outline radius relative to `radius`
 
@@ -36,6 +36,12 @@ const BASE_ROCK = [128, 118, 106];
 const STEP = Math.PI * 2 / SHAPE_POINTS;
 
 let nextId = 1;
+
+// Sprite rebuilds are spread out: at most this many per frame (the rest wait a frame or
+// two, showing their previous image). The game resets the budget every frame.
+const REBUILDS_PER_FRAME = 4;
+let rebuildBudget = REBUILDS_PER_FRAME;
+export const resetRebuildBudget = () => { rebuildBudget = REBUILDS_PER_FRAME; };
 
 // Lumpy outline from a few layered sine "octaves" (smooth, rock-like, not spiky).
 const lumpyShape = (rnd, base, spread, min, max) => {
@@ -195,13 +201,7 @@ class Rock {
                 tilt: rnd() * Math.PI
             });
         }
-        // Fine dust grain: hundreds of light and dark specks.
-        this.speckles = [];
-        for(let i = 0; i < 260; i++) {
-            const angle = rnd() * Math.PI * 2;
-            const distance = Math.sqrt(rnd()) * 0.98;
-            this.speckles.push({ x: Math.cos(angle) * distance, y: Math.sin(angle) * distance, s: 0.4 + rnd() * 1.2, light: rnd() < 0.5, a: 0.12 + rnd() * 0.25 });
-        }
+        this.grainOffset = rnd();
         // Boulders resting in the dust.
         this.boulders = [];
         const boulderCount = 3 + Math.floor(rnd() * 6);
@@ -610,7 +610,7 @@ class Rock {
     // after turning ~15 degrees so the baked lighting stays correct).
     buildSprite() {
         const r = this.radius;
-        const extent = r * Math.max(1, this.maxFactor) * 1.16 + 3;
+        const extent = r * Math.max(1, this.maxFactor) * 1.1 + 2;
         const dust = this.dustColor;
         const core = this.coreColor;
 
@@ -665,11 +665,12 @@ class Rock {
             });
             ctx.restore();
 
-            // Dust grain.
-            this.speckles.forEach(p => {
-                ctx.fillStyle = p.light ? 'rgba(255, 245, 225, ' + p.a + ')' : 'rgba(30, 25, 20, ' + p.a + ')';
-                ctx.fillRect(p.x * r, p.y * r, p.s, p.s);
-            });
+            // Dust grain: one fill with the shared speck texture, offset per asteroid.
+            ctx.save();
+            ctx.translate(this.grainOffset * 128, this.grainOffset * 64);
+            ctx.fillStyle = ctx.createPattern(grainTexture(), 'repeat');
+            ctx.fillRect(-extent - 128, -extent - 128, extent * 2 + 256, extent * 2 + 256);
+            ctx.restore();
 
             // Craters: shadowed bowl on the lit side, bright rim opposite, ejecta ring.
             this.craters.forEach(c => {
@@ -791,7 +792,7 @@ class Rock {
             ctx.strokeStyle = rim;
             ctx.lineWidth = Math.max(1, r * 0.03);
             ctx.stroke();
-        }, Math.min(2, spriteResolution()));
+        }, Math.min(1.5, spriteResolution()), this.sprite);
         this.spriteAngle = this.angle;
         this.spriteExtent = extent;
         this.spriteRadius = r;
@@ -808,8 +809,10 @@ class Rock {
         if(r < 0.5) return;
         let turned = Math.abs(this.angle - (this.spriteAngle || 0)) % (Math.PI * 2);
         if(turned > Math.PI) turned = Math.PI * 2 - turned;
-        if(!this.sprite || (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
-            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05) {
+        const stale = (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
+            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05;
+        if(!this.sprite || (stale && rebuildBudget > 0)) {
+            rebuildBudget--;
             this.buildSprite();
         }
 
