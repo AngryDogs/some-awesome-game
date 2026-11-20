@@ -354,6 +354,7 @@ class Shipyard {
             ['Guidance', stats.guidance ? stats.guidance.range + 'px' : 'none'],
             ['Cargo hold', stats.cargo],
             ['Tractor', stats.magnetRange + 'px'],
+            ['Scanner', stats.scanner ? stats.scanner.range + 'px' : 'none'],
             ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
         ];
         this.statsBox.innerHTML = '';

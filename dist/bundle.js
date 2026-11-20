@@ -3038,6 +3038,7 @@ class Shipyard {
             ['Guidance', stats.guidance ? stats.guidance.range + 'px' : 'none'],
             ['Cargo hold', stats.cargo],
             ['Tractor', stats.magnetRange + 'px'],
+            ['Scanner', stats.scanner ? stats.scanner.range + 'px' : 'none'],
             ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
         ];
         this.statsBox.innerHTML = '';
@@ -3490,6 +3491,7 @@ const createState = () => {
         ores: [],
         beamHits: [],
         shockwaves: [],
+        scan: { timer: 1, target: null, value: 0, pings: [] },
         mergeLinks: [],
         floatingTexts: [],
         sectors: new __WEBPACK_IMPORTED_MODULE_8__world_sectors__["a" /* SectorManager */](Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().seed),
@@ -4106,6 +4108,7 @@ const step = (dt) => {
         wave.radius += (wave.maxRadius - wave.radius) * Math.min(1, dt * 9);
     });
     state.shockwaves = state.shockwaves.filter(wave => wave.life > 0);
+    updateScanner(dt);
     cityShield(dt);
     bullets.forEach(bullet => {
         if(bullet.kind === 'plasma' && Math.random() < 0.6) {
@@ -4376,6 +4379,141 @@ const drawTractor = (time) => {
     ctx.restore();
 };
 
+// ---------------------------------------------------------------- ore scanner
+
+// Estimated sale value of everything an asteroid would yield.
+const rockValue = (rock) => {
+    let perArea = 0;
+    Object.keys(rock.composition).forEach(id => { perArea += rock.composition[id] * __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][id].price; });
+    return Math.round(rock.area / 120 * perArea);
+};
+
+// Periodic scan: ping, then lock onto the richest asteroid in range (value vs. distance).
+const updateScanner = (dt) => {
+    const ship = state.ship;
+    const scan = state.scan;
+    scan.pings.forEach(ping => {
+        ping.life -= dt / 1.4;
+        ping.radius = ping.range * (1 - ping.life);
+    });
+    scan.pings = scan.pings.filter(ping => ping.life > 0);
+    if(!ship.scanner || !ship.alive) {
+        scan.target = null;
+        return;
+    }
+
+    if(scan.target && scan.target.dead) scan.target = null;
+    scan.timer -= dt;
+    if(scan.timer > 0 && scan.target) return;
+    if(scan.timer > 0) return;
+    scan.timer = ship.scanner.interval;
+
+    const range = ship.scanner.range;
+    let best = null;
+    let bestScore = 0;
+    state.rocks.forEach(rock => {
+        if(rock.dead || rock.merging) return;
+        const dx = rock.x - ship.x;
+        const dy = rock.y - ship.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if(distance > range) return;
+        const value = rockValue(rock);
+        const score = value / (1 + distance / 1200);
+        if(score > bestScore) {
+            bestScore = score;
+            best = rock;
+        }
+    });
+    scan.target = best;
+    scan.value = best ? rockValue(best) : 0;
+    scan.pings.push({ x: ship.x, y: ship.y, range: range, radius: 0, life: 1 });
+    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].scanPing();
+};
+
+// World-space: ping rings, target brackets with a label, and a dashed guide line.
+const drawScanner = (time) => {
+    const ship = state.ship;
+    const scan = state.scan;
+    ctx.save();
+    scan.pings.forEach(ping => {
+        ctx.strokeStyle = 'rgba(190, 255, 140, ' + (0.35 * ping.life) + ')';
+        ctx.lineWidth = 2 / zoom + 3 * ping.life;
+        ctx.beginPath();
+        ctx.arc(ping.x, ping.y, ping.radius, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    const target = scan.target;
+    if(target && ship.alive) {
+        const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color;
+        const r = target.boundRadius + 10;
+        // Rotating corner brackets.
+        ctx.strokeStyle = 'rgba(' + color + ', 0.95)';
+        ctx.lineWidth = 2;
+        for(let i = 0; i < 4; i++) {
+            const a = time * 0.8 + i * Math.PI / 2;
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, r, a, a + 0.6);
+            ctx.stroke();
+        }
+        ctx.font = '12px Bungee, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(' + color + ', 0.95)';
+        ctx.fillText(__WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' · ~' + scan.value.toLocaleString('en-US') + ' cr',
+            target.x, target.y - r - 8);
+
+        // Guide line from the ship.
+        const dx = target.x - ship.x;
+        const dy = target.y - ship.y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+        if(distance > r + ship.radius) {
+            ctx.setLineDash([8, 10]);
+            ctx.lineDashOffset = -time * 40;
+            ctx.strokeStyle = 'rgba(' + color + ', 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(ship.x + dx / distance * (ship.radius + 10), ship.y + dy / distance * (ship.radius + 10));
+            ctx.lineTo(target.x - dx / distance * r, target.y - dy / distance * r);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+    ctx.restore();
+};
+
+// Screen-space arrow to the scanner target when it's off screen.
+const drawScannerPointer = () => {
+    const target = state.scan.target;
+    if(!target || !state.ship.alive) return;
+    const sx = (target.x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
+    const sy = (target.y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    if(sx > 0 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width && sy > 0 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height) return;
+
+    const margin = 46;
+    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const angle = Math.atan2(sy - cy, sx - cx);
+    const scale = Math.min(Math.abs((cx - margin) / Math.cos(angle) || Infinity), Math.abs((cy - margin) / Math.sin(angle) || Infinity));
+    const px = cx + Math.cos(angle) * scale;
+    const py = cy + Math.sin(angle) * scale;
+    const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color;
+    const distance = Math.sqrt(Math.pow(target.x - state.ship.x, 2) + Math.pow(target.y - state.ship.y, 2));
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.fillStyle = 'rgba(' + color + ', 0.95)';
+    ctx.font = '11px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(__WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' ' + (distance / 1000).toFixed(1) + 'k',
+        -Math.cos(angle) * 30, -Math.sin(angle) * 30 + 4);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(12, 0); ctx.lineTo(-6, -8); ctx.lineTo(-2, 0); ctx.lineTo(-6, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+};
+
 const drawShockwaves = () => {
     if(!state.shockwaves.length) return;
     ctx.save();
@@ -4529,13 +4667,32 @@ const drawMinimap = () => {
         ctx.stroke();
     });
 
+    // Without an ore scanner asteroids are just grey contacts; with one they're
+    // coloured by their main metal and the scanner's pick is highlighted.
+    const scanning = !!ship.scanner;
+    if(scanning) {
+        ctx.strokeStyle = 'rgba(190, 255, 140, 0.35)';
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, ship.scanner.range * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
     state.rocks.forEach(rock => {
         const x = cx + (rock.x - ship.x) * scale;
         const y = cy + (rock.y - ship.y) * scale;
-        ctx.fillStyle = 'rgb(' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][rock.material].color + ')';
+        ctx.fillStyle = scanning ? 'rgb(' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][rock.material].color + ')' : 'rgb(140, 140, 150)';
         const r = Math.max(1.2, rock.radius * scale * 1.5);
         ctx.fillRect(x - r, y - r, r * 2, r * 2);
     });
+    const target = state.scan.target;
+    if(target && Math.sin(state.time * 6) > -0.3) {
+        ctx.strokeStyle = 'rgb(' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color + ')';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(cx + (target.x - ship.x) * scale, cy + (target.y - ship.y) * scale, 6, 0, Math.PI * 2);
+        ctx.stroke();
+    }
 
     // Station (clamped to the edge when far away).
     let stx = (__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - ship.x) * scale;
@@ -4562,7 +4719,8 @@ const drawMinimap = () => {
     ctx.save();
     ctx.font = '10px Bungee, sans-serif';
     ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
-    ctx.fillText('SCANNER ' + (MINIMAP_RANGE / 1000).toFixed(1) + 'k', left + 6, top + 14);
+    ctx.fillText(ship.scanner ? 'ORE SCANNER ' + (MINIMAP_RANGE / 1000).toFixed(1) + 'k' : 'SENSORS ' + (MINIMAP_RANGE / 1000).toFixed(1) + 'k',
+        left + 6, top + 14);
     ctx.restore();
 };
 
@@ -4614,11 +4772,13 @@ const render = () => {
 
     state.missiles.forEach(missile => missile.draw(ctx));
     drawShockwaves();
+    drawScanner(time);
     state.ship.draw(ctx);
     drawFloatingTexts();
     ctx.restore();
 
     drawStationPointer();
+    drawScannerPointer();
     drawMinimap();
     drawWeaponPanel();
     drawDockPrompt();
@@ -5079,6 +5239,7 @@ class Ship {
         this.maxShield = stats.maxShield;
         this.shield = Math.min(this.shield || 0, this.maxShield);
         this.guidance = stats.guidance;
+        this.scanner = stats.scanner;
         this.cargoCapacity = stats.cargo;
         this.magnetRange = stats.magnetRange;
         this.collectRadius = hull.radius * 0.55 + 8;
