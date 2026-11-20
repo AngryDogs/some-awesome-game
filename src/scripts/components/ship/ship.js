@@ -3,7 +3,7 @@ import Missile from '../missile/missile';
 import Particle from '../particle/particle';
 import { drawHullArt } from '../../shipyard/hulls';
 import { drawModule } from '../../shipyard/modules';
-import { wrapPosition, delta } from '../../physics/physics';
+import { delta } from '../../physics/physics';
 
 // Zero-g flight model: thrusters change velocity, nothing slows you down
 // except firing thrusters the other way (or the X stabilizer).
@@ -76,6 +76,9 @@ class Ship {
         this.maxShield = stats.maxShield;
         this.shield = Math.min(this.shield || 0, this.maxShield);
         this.guidance = stats.guidance;
+        this.cargoCapacity = stats.cargo;
+        this.magnetRange = stats.magnetRange;
+        this.collectRadius = hull.radius * 0.55 + 8;
 
         const u = hull.moduleScale;
         this.turrets = stats.modules.filter(m => m.type === 'minigun').map(m => ({
@@ -180,7 +183,6 @@ class Ship {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.angle += this.angularVelocity * dt;
-        wrapPosition(this);
 
         this.animateThrusters(dt, localX / mainThrust, localY / secondaryThrust, torque / angularThrust);
         this.emitExhaust(dt, particles);
@@ -290,7 +292,7 @@ class Ship {
         }
 
         const range = this.guidance.range;
-        const nearCursor = this.nearestRock(input.mouseX, input.mouseY, rocks, MISSILE_LOCK_RADIUS);
+        const nearCursor = this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS);
         this.missileLock = nearCursor || this.nearestRock(this.x, this.y, rocks, range);
 
         this.turrets.forEach(turret => {
@@ -314,7 +316,7 @@ class Ship {
 
             // Manual fire always aims at the cursor; otherwise the guidance computer
             // leads the locked target.
-            let desired = Math.atan2(input.mouseY - p.y, input.mouseX - p.x);
+            let desired = Math.atan2(input.aimY - p.y, input.aimX - p.x);
             let shouldFire = input.firing;
 
             if(!input.firing && turret.target) {
@@ -377,7 +379,7 @@ class Ship {
             const stats = launcher.module.stats;
             const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
             const target = this.guidance ? this.missileLock : null;
-            const aimAt = target ? delta(p, target) : { x: input.mouseX - p.x, y: input.mouseY - p.y };
+            const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
             const angle = Math.atan2(aimAt.y, aimAt.x);
 
             world.missiles.push(new Missile({

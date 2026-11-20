@@ -1,38 +1,42 @@
 import Ship from '../components/ship/ship';
-import Rock from '../components/rock/rock';
+import { MAX_MERGE_RADIUS } from '../components/rock/rock';
 import Particle from '../components/particle/particle';
+import Ore from '../components/ore/ore';
 import loadInputHandlers, { input, onKeyPress } from '../components/ship/handlers';
 import sounds from '../audio/audio';
 import { world, delta, gravityAt } from '../physics/physics';
-import { computeShipStats, getProfile, addCredits, recordScore } from '../shipyard/profile';
-import { getShipyard, isShipyardOpen } from '../shipyard/shipyard';
+import MATERIALS from '../world/materials';
+import { SectorManager, sectorOf } from '../world/sectors';
+import { STATION, drawStation } from '../world/station';
+import { computeShipStats, getProfile, storeOre, cargoUsed, loseCargo } from '../shipyard/profile';
+import { getShipyard } from '../shipyard/shipyard';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 8;
 const MAX_PARTICLES = 2000;
-const ROCK_SPAWN_INTERVAL = 2;
-const GAME_OVER_DELAY = 2;
-const ROCK_RESTITUTION = 0.5;
+const GAME_OVER_DELAY = 2.5;
 const SHIP_RESTITUTION = 0.4;
-const CREDITS_PER_RADIUS = 1.2;
-const LEVEL_BONUS = 50;
+const ROCK_BOUNCE = 0.2;
 const MISSILE_PUSH = 60000;
+const SECTOR_UPDATE_INTERVAL = 0.5;
+const MINIMAP_SIZE = 180;
+const MINIMAP_RANGE = 3500;
 
 const gameboard = document.getElementById('gameboard');
 const menu = document.getElementById('menu');
 const menuMessage = document.getElementById('menuMessage');
 const pauseMenu = document.getElementById('pauseMenu');
 const hudElements = {
-    score: document.getElementById('score'),
-    level: document.getElementById('level'),
     credits: document.getElementById('credits'),
+    location: document.getElementById('location'),
     targeting: document.getElementById('targeting'),
     fps: document.getElementById('fps'),
     hullBar: document.getElementById('hullBar'),
     hullText: document.getElementById('hullText'),
     shieldBar: document.getElementById('shieldBar'),
     shieldText: document.getElementById('shieldText'),
-    shieldRow: document.getElementById('shieldRow')
+    cargoBar: document.getElementById('cargoBar'),
+    cargoText: document.getElementById('cargoText')
 };
 
 const canvas = document.createElement('canvas');
@@ -46,26 +50,31 @@ let accumulator = 0;
 let fps = 60;
 const hud = {};
 
-const rocksForLevel = (level) => 2 + (level - 1) * 2;
-
-const createState = () => ({
-    ship: new Ship(world.width / 2, world.height / 2, computeShipStats(getProfile().hull)),
-    rocks: [],
-    newRocks: [],
-    bullets: [],
-    missiles: [],
-    particles: [],
-    floatingTexts: [],
-    level: 1,
-    score: 0,
-    creditsEarned: 0,
-    rocksToSpawn: rocksForLevel(1),
-    spawnTimer: 0.5,
-    bannerText: 'Level 1',
-    bannerTimer: 2,
-    gameOverTimer: 0,
-    paused: false
-});
+const createState = () => {
+    const ship = new Ship(STATION.x + STATION.dockRadius + 60, STATION.y, computeShipStats(getProfile().hull));
+    ship.angle = 0;
+    return {
+        ship: ship,
+        rocks: [],
+        newRocks: [],
+        bullets: [],
+        missiles: [],
+        particles: [],
+        ores: [],
+        floatingTexts: [],
+        sectors: new SectorManager(getProfile().seed),
+        sectorTimer: 0,
+        camera: { x: ship.x, y: ship.y },
+        time: 0,
+        bannerText: 'Undocked. Happy mining!',
+        bannerTimer: 2.5,
+        cargoFullTimer: 0,
+        canDock: false,
+        gameOverTimer: 0,
+        paused: false,
+        docked: false
+    };
+};
 
 const resize = () => {
     pixelRatio = window.devicePixelRatio || 1;
@@ -91,27 +100,41 @@ const setBar = (key, fraction) => {
     }
 };
 
+const distanceToStation = () => {
+    const dx = state.ship.x - STATION.x;
+    const dy = state.ship.y - STATION.y;
+    return Math.sqrt(dx * dx + dy * dy);
+};
+
 const renderInfo = () => {
     const ship = state.ship;
-    setText('score', 'Score: ' + state.score);
-    setText('level', 'Level: ' + state.level);
+    const used = cargoUsed();
+    const sector = sectorOf(ship.x, ship.y);
     setText('credits', 'Credits: ' + Math.round(getProfile().credits).toLocaleString('en-US'));
+    setText('location', 'Sector ' + sector.sx + ', ' + sector.sy + ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k');
     setText('fps', 'Fps: ' + Math.round(fps));
     setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + ' (G)' : '');
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
     setText('shieldText', ship.maxShield ? Math.ceil(ship.shield) + ' / ' + Math.round(ship.maxShield) : 'none');
+    setBar('cargoBar', used / ship.cargoCapacity);
+    setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
 
 const floatText = (x, y, text, color) => {
     state.floatingTexts.push({ x: x, y: y, text: text, color: color || '255,225,120', life: 1.2 });
 };
 
+const banner = (text, duration) => {
+    state.bannerText = text;
+    state.bannerTimer = duration || 2;
+};
+
 // ---------------------------------------------------------------- physics
 
 const applyGravity = (dt) => {
-    const { rocks, ship, bullets, missiles, particles } = state;
+    const { rocks, ship, bullets, missiles, ores } = state;
 
     // Compute every rock's acceleration before changing any velocity.
     const accelerations = rocks.map(rock => gravityAt(rock, rocks));
@@ -129,34 +152,48 @@ const applyGravity = (dt) => {
     if(ship.alive) pull(ship);
     bullets.forEach(pull);
     missiles.forEach(pull);
-    particles.forEach(pull);
+    ores.forEach(pull);
 };
 
-const destroyRock = (rock, byPlayer) => {
+// Weapon damage chips the asteroid: area turns into ore, stress cracks chunks off.
+const hitRock = (rock, damage, hitX, hitY) => {
     if(rock.dead) return;
-    rock.dead = true;
+    const result = rock.chip(damage, hitX, hitY);
 
-    const fragments = rock.split();
-    fragments.forEach(fragment => state.newRocks.push(fragment));
+    const out = delta(rock, { x: hitX, y: hitY });
+    const outLength = Math.sqrt(out.x * out.x + out.y * out.y) || 1;
+    const outX = out.x / outLength;
+    const outY = out.y / outLength;
 
-    Particle.burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, Math.round(rock.radius * 0.8), {
-        minSpeed: 20, maxSpeed: 140, minLife: 0.4, maxLife: 1.1, size: 3, color: '230,230,240'
+    result.ore.forEach(material => {
+        const angle = Math.atan2(outY, outX) + (Math.random() - 0.5) * 1.6;
+        const speed = 30 + Math.random() * 60;
+        state.ores.push(new Ore(
+            rock.x + outX * rock.radius * 0.9,
+            rock.y + outY * rock.radius * 0.9,
+            rock.vx + Math.cos(angle) * speed,
+            rock.vy + Math.sin(angle) * speed,
+            material
+        ));
     });
 
-    if(byPlayer) {
-        const reward = Math.round(rock.radius * CREDITS_PER_RADIUS);
-        state.score += Math.round(rock.radius);
-        state.creditsEarned += reward;
-        addCredits(reward);
-        floatText(rock.x, rock.y, '+' + reward + ' cr');
-    }
-    sounds.explosion(Math.min(1, 0.3 + rock.radius / 50));
-};
+    Particle.burst(state.particles, hitX, hitY, rock.vx + outX * 40, rock.vy + outY * 40, 2, {
+        minSpeed: 20, maxSpeed: 90, minLife: 0.2, maxLife: 0.5, size: 2, color: MATERIALS[rock.material].color
+    });
 
-const damageRock = (rock, amount) => {
-    rock.health -= amount;
-    rock.flash = 0.05;
-    if(rock.health <= 0) destroyRock(rock, true);
+    if(result.fragment) {
+        state.newRocks.push(result.fragment);
+        Particle.burst(state.particles, (rock.x + result.fragment.x) / 2, (rock.y + result.fragment.y) / 2,
+            rock.vx, rock.vy, 16, { minSpeed: 30, maxSpeed: 130, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '220,220,230' });
+        sounds.explosion(0.35);
+    }
+
+    if(result.crumbled) {
+        Particle.burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
+            minSpeed: 20, maxSpeed: 100, minLife: 0.3, maxLife: 0.8, size: 2.5, color: '200,200,210'
+        });
+        sounds.explosion(0.3);
+    }
 };
 
 // Bounce two bodies off each other along the contact normal and push them apart.
@@ -182,39 +219,35 @@ const resolveImpact = (a, b, normalX, normalY, overlap, restitution) => {
 };
 
 const bulletCollisions = () => {
-    const { bullets, rocks, particles } = state;
+    const { bullets, rocks } = state;
 
     bullets.forEach(bullet => {
         if(bullet.dead) return;
         for(let i = 0; i < rocks.length; i++) {
             const rock = rocks[i];
             if(rock.dead) continue;
-            const d = delta(rock, bullet);
-            if(d.x * d.x + d.y * d.y > rock.radius * rock.radius) continue;
+            const dx = bullet.x - rock.x;
+            const dy = bullet.y - rock.y;
+            if(dx * dx + dy * dy > rock.radius * rock.radius) continue;
 
             bullet.dead = true;
             // Bullets carry momentum and nudge the rock.
             rock.vx += bullet.vx * bullet.mass / rock.mass;
             rock.vy += bullet.vy * bullet.mass / rock.mass;
-            Particle.burst(particles, bullet.x, bullet.y, rock.vx, rock.vy, 3, {
-                minSpeed: 30, maxSpeed: 120, minLife: 0.15, maxLife: 0.4, size: 2, color: '255,240,200'
-            });
             sounds.rockHit();
-            damageRock(rock, bullet.damage);
+            hitRock(rock, bullet.damage, bullet.x, bullet.y);
             return;
         }
     });
 };
 
 const explodeMissile = (missile) => {
-    const { rocks, particles } = state;
-
-    Particle.burst(particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, 30, {
+    Particle.burst(state.particles, missile.x, missile.y, missile.vx * 0.2, missile.vy * 0.2, 30, {
         minSpeed: 40, maxSpeed: missile.blast * 3, minLife: 0.2, maxLife: 0.6, size: 3, color: '255,160,80'
     });
     sounds.explosion(0.5);
 
-    rocks.forEach(rock => {
+    state.rocks.forEach(rock => {
         if(rock.dead) return;
         const d = delta(missile, rock);
         const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
@@ -224,7 +257,9 @@ const explodeMissile = (missile) => {
         const falloff = 1 - distance / reach;
         rock.vx += d.x / distance * MISSILE_PUSH * falloff / rock.mass;
         rock.vy += d.y / distance * MISSILE_PUSH * falloff / rock.mass;
-        damageRock(rock, missile.damage * (0.35 + 0.65 * falloff));
+        // Damage lands on the face of the rock nearest the blast.
+        hitRock(rock, missile.damage * (0.35 + 0.65 * falloff),
+            rock.x - d.x / distance * rock.radius, rock.y - d.y / distance * rock.radius);
     });
 };
 
@@ -251,37 +286,46 @@ const missileCollisions = () => {
     });
 };
 
-// Asteroids that touch each other shatter.
+// Asteroids pulled together by gravity merge into one when they touch.
 const rockCollisions = () => {
     const { rocks, particles } = state;
 
     for(let i = 0; i < rocks.length; i++) {
         const a = rocks[i];
-        if(a.dead || a.grace > 0) continue;
+        if(a.dead) continue;
 
         for(let j = i + 1; j < rocks.length; j++) {
             const b = rocks[j];
-            if(b.dead || b.grace > 0) continue;
+            if(b.dead) continue;
 
-            const d = delta(a, b);
-            const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
-            const overlap = a.radius + b.radius - distance;
-            if(overlap <= 0) continue;
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const reach = (a.radius + b.radius) * 0.9;
+            const distSq = dx * dx + dy * dy;
+            if(distSq > reach * reach) continue;
 
-            const normalX = d.x / distance;
-            const normalY = d.y / distance;
-            const impactSpeed = resolveImpact(a, b, normalX, normalY, overlap, ROCK_RESTITUTION);
+            const distance = Math.sqrt(distSq) || 0.001;
+            const normalX = dx / distance;
+            const normalY = dy / distance;
+            const combinedRadius = Math.sqrt(a.area + b.area);
+
+            // Fresh fragments and asteroids that would get too big just bump.
+            if(a.grace > 0 || b.grace > 0 || combinedRadius > MAX_MERGE_RADIUS) {
+                resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
+                continue;
+            }
 
             const contactX = a.x + normalX * a.radius;
             const contactY = a.y + normalY * a.radius;
-            Particle.burst(particles, contactX, contactY, (a.vx + b.vx) / 2, (a.vy + b.vy) / 2,
-                10 + Math.min(30, Math.round(impactSpeed / 4)), {
-                    minSpeed: 30, maxSpeed: 100 + impactSpeed, minLife: 0.2, maxLife: 0.7, size: 2.5, color: '255,220,170'
-                });
+            const bigger = a.area >= b.area ? a : b;
+            const smaller = bigger === a ? b : a;
+            bigger.merge(smaller);
 
-            destroyRock(a, false);
-            destroyRock(b, false);
-            break;
+            Particle.burst(particles, contactX, contactY, bigger.vx, bigger.vy, 18, {
+                minSpeed: 20, maxSpeed: 110, minLife: 0.3, maxLife: 0.9, size: 2.5, color: '210,200,190'
+            });
+            sounds.explosion(0.25);
+            if(a.dead) break;
         }
     }
 };
@@ -309,44 +353,49 @@ const shipCollisions = () => {
             const impactSpeed = resolveImpact(ship, rock, d.x / distance, d.y / distance, overlap, SHIP_RESTITUTION);
             const damage = 4 + impactSpeed * rock.mass / 6000;
 
-            if(ship.takeDamage(damage, particles)) {
+            if(impactSpeed > 25 && ship.takeDamage(damage, particles)) {
                 sounds.explosion(0.6);
-                damageRock(rock, 2 + impactSpeed * ship.mass / 20000);
+                // Ramming chips the asteroid too.
+                hitRock(rock, 1 + impactSpeed * ship.mass / 30000, c.x + d.x / distance * c.r, c.y + d.y / distance * c.r);
             }
             return;
         }
     });
 };
 
-const updateLevel = (dt) => {
-    if(state.bannerTimer > 0) state.bannerTimer -= dt;
+const collectOre = (dt) => {
+    const ship = state.ship;
+    const cargoFull = cargoUsed() >= ship.cargoCapacity;
+    if(state.cargoFullTimer > 0) state.cargoFullTimer -= dt;
 
-    if(state.rocksToSpawn > 0) {
-        state.spawnTimer -= dt;
-        if(state.spawnTimer <= 0) {
-            state.rocks.push(Rock.spawnAtEdge(state.level));
-            state.rocksToSpawn--;
-            state.spawnTimer = ROCK_SPAWN_INTERVAL;
+    state.ores.forEach(ore => {
+        if(ore.dead) return;
+        if(!ore.update(dt, ship, !cargoFull)) return;
+
+        if(storeOre(ore.material, ship.cargoCapacity)) {
+            ore.dead = true;
+            const material = MATERIALS[ore.material];
+            sounds.pickup(material.price);
+            floatText(ship.x, ship.y - ship.radius - 6, '+1 ' + material.name, material.color);
+        } else if(state.cargoFullTimer <= 0) {
+            state.cargoFullTimer = 4;
+            banner('Cargo hold full! Return to the shipyard to sell.', 2.5);
         }
-        return;
-    }
+    });
 
-    if(state.rocks.length === 0 && state.ship.alive) {
-        const bonus = LEVEL_BONUS * state.level;
-        addCredits(bonus);
-        state.creditsEarned += bonus;
-        floatText(state.ship.x, state.ship.y - 40, 'Sector clear +' + bonus + ' cr', '140,255,160');
-
-        state.level++;
-        state.rocksToSpawn = rocksForLevel(state.level);
-        state.spawnTimer = 1.5;
-        state.bannerText = 'Level ' + state.level;
-        state.bannerTimer = 2;
+    if(cargoFull && state.cargoFullTimer <= 0 && state.ores.some(o => !o.dead)) {
+        state.cargoFullTimer = 6;
+        banner('Cargo hold full! Return to the shipyard to sell.', 2.5);
     }
 };
 
 const step = (dt) => {
     const { ship, bullets, missiles, particles } = state;
+    state.time += dt;
+
+    // Mouse is in screen space; turrets need it in world space.
+    input.aimX = input.mouseX - world.width / 2 + state.camera.x;
+    input.aimY = input.mouseY - world.height / 2 + state.camera.y;
 
     ship.update(dt, input, state);
     applyGravity(dt);
@@ -355,6 +404,7 @@ const step = (dt) => {
     bullets.forEach(bullet => bullet.update(dt));
     missiles.forEach(missile => missile.update(dt, state.rocks, particles));
     particles.forEach(particle => particle.update(dt));
+    collectOre(dt);
     state.floatingTexts.forEach(text => {
         text.life -= dt;
         text.y -= 30 * dt;
@@ -371,17 +421,73 @@ const step = (dt) => {
     state.bullets = bullets.filter(bullet => !bullet.dead);
     state.missiles = missiles.filter(missile => !missile.dead);
     state.particles = particles.filter(particle => !particle.dead);
+    state.ores = state.ores.filter(ore => !ore.dead);
     state.floatingTexts = state.floatingTexts.filter(text => text.life > 0);
     if(state.particles.length > MAX_PARTICLES) {
         state.particles = state.particles.slice(state.particles.length - MAX_PARTICLES);
     }
 
-    updateLevel(dt);
+    // Stream the endless map in and out around the ship.
+    state.sectorTimer -= dt;
+    if(state.sectorTimer <= 0) {
+        state.sectorTimer = SECTOR_UPDATE_INTERVAL;
+        state.rocks = state.sectors.update(ship.x, ship.y, state.rocks);
+        state.ores = state.ores.filter(ore => Math.abs(ore.x - ship.x) < 5000 && Math.abs(ore.y - ship.y) < 5000);
+    }
 
+    // Camera leads slightly in the direction of travel.
+    const followRate = Math.min(1, dt * 4);
+    state.camera.x += (ship.x + ship.vx * 0.25 - state.camera.x) * followRate;
+    state.camera.y += (ship.y + ship.vy * 0.25 - state.camera.y) * followRate;
+
+    state.canDock = ship.alive && distanceToStation() < STATION.dockRadius;
+    if(state.bannerTimer > 0) state.bannerTimer -= dt;
     if(!ship.alive) state.gameOverTimer += dt;
 };
 
 // ---------------------------------------------------------------- render
+
+const hash = (x, y, salt) => {
+    let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(salt, 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+const STAR_LAYERS = [
+    { factor: 0.1, cell: 180, size: 1, alpha: 0.45 },
+    { factor: 0.3, cell: 240, size: 1.4, alpha: 0.65 },
+    { factor: 0.6, cell: 320, size: 2, alpha: 0.9 }
+];
+
+// Parallax starfield generated from the camera position, so it never runs out.
+const drawStarfield = () => {
+    const w = world.width;
+    const h = world.height;
+    STAR_LAYERS.forEach((layer, index) => {
+        const offsetX = state.camera.x * layer.factor;
+        const offsetY = state.camera.y * layer.factor;
+        const startX = Math.floor((offsetX - w / 2) / layer.cell);
+        const startY = Math.floor((offsetY - h / 2) / layer.cell);
+        const endX = Math.floor((offsetX + w / 2) / layer.cell);
+        const endY = Math.floor((offsetY + h / 2) / layer.cell);
+        ctx.fillStyle = 'rgba(220, 230, 255, ' + layer.alpha + ')';
+        for(let cx = startX; cx <= endX; cx++) {
+            for(let cy = startY; cy <= endY; cy++) {
+                for(let s = 0; s < 2; s++) {
+                    const x = (cx + hash(cx, cy, index * 7 + s)) * layer.cell - offsetX + w / 2;
+                    const y = (cy + hash(cy, cx, index * 13 + s + 3)) * layer.cell - offsetY + h / 2;
+                    ctx.fillRect(x, y, layer.size, layer.size);
+                }
+            }
+        }
+    });
+};
+
+const isVisible = (x, y, r) => {
+    const halfW = world.width / 2 + r;
+    const halfH = world.height / 2 + r;
+    return Math.abs(x - state.camera.x) < halfW && Math.abs(y - state.camera.y) < halfH;
+};
 
 const drawCrosshair = () => {
     const x = input.mouseX;
@@ -441,7 +547,7 @@ const drawTargeting = (time) => {
 
 const drawFloatingTexts = () => {
     ctx.save();
-    ctx.font = '13px Bungee, sans-serif';
+    ctx.font = '12px Bungee, sans-serif';
     ctx.textAlign = 'center';
     state.floatingTexts.forEach(text => {
         ctx.fillStyle = 'rgba(' + text.color + ',' + Math.min(1, text.life).toFixed(2) + ')';
@@ -457,23 +563,142 @@ const drawBanner = () => {
     ctx.fillStyle = '#fff';
     ctx.shadowBlur = 12;
     ctx.shadowColor = '#fff';
-    ctx.font = '42px Bungee, sans-serif';
+    ctx.font = '30px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(state.bannerText, world.width / 2, world.height / 3);
+    ctx.fillText(state.bannerText, world.width / 2, world.height / 4);
     ctx.restore();
 };
 
-const render = (time) => {
+const drawDockPrompt = () => {
+    if(!state.canDock) return;
+    const ship = state.ship;
+    const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+    const text = speed > STATION.maxDockSpeed ? 'Slow down to dock (X stabilizes)' : 'Press B to dock at the shipyard';
+    ctx.save();
+    ctx.font = '18px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = speed > STATION.maxDockSpeed ? 'rgba(255, 200, 120, 0.95)' : 'rgba(140, 255, 160, 0.95)';
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.fillText(text, world.width / 2, world.height - 60);
+    ctx.restore();
+};
+
+// Edge-of-screen pointer to the shipyard when it's out of view.
+const drawStationPointer = () => {
+    const sx = STATION.x - state.camera.x + world.width / 2;
+    const sy = STATION.y - state.camera.y + world.height / 2;
+    const margin = 40;
+    if(sx > -100 && sx < world.width + 100 && sy > -100 && sy < world.height + 100) return;
+
+    const cx = world.width / 2;
+    const cy = world.height / 2;
+    const angle = Math.atan2(sy - cy, sx - cx);
+    const scale = Math.min(
+        Math.abs((cx - margin) / Math.cos(angle) || Infinity),
+        Math.abs((cy - margin) / Math.sin(angle) || Infinity)
+    );
+    const px = cx + Math.cos(angle) * scale;
+    const py = cy + Math.sin(angle) * scale;
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.fillStyle = 'rgba(140, 200, 255, 0.9)';
+    ctx.font = '11px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('BASE ' + (distanceToStation() / 1000).toFixed(1) + 'k', -Math.cos(angle) * 26, -Math.sin(angle) * 26 + 4);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(10, 0); ctx.lineTo(-6, -7); ctx.lineTo(-2, 0); ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+};
+
+const drawMinimap = () => {
+    const size = MINIMAP_SIZE;
+    const left = world.width - size - 16;
+    const top = world.height - size - 16;
+    const scale = (size / 2) / MINIMAP_RANGE;
+    const cx = left + size / 2;
+    const cy = top + size / 2;
+    const ship = state.ship;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 12, 26, 0.94)';
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.fillRect(left, top, size, size);
+    ctx.strokeRect(left, top, size, size);
+    ctx.beginPath();
+    ctx.rect(left, top, size, size);
+    ctx.clip();
+
+    // Range rings.
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.15)';
+    [1000, 2000, 3000].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+
+    state.rocks.forEach(rock => {
+        const x = cx + (rock.x - ship.x) * scale;
+        const y = cy + (rock.y - ship.y) * scale;
+        ctx.fillStyle = 'rgb(' + MATERIALS[rock.material].color + ')';
+        const r = Math.max(1.2, rock.radius * scale * 1.5);
+        ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    });
+
+    // Station (clamped to the edge when far away).
+    let stx = (STATION.x - ship.x) * scale;
+    let sty = (STATION.y - ship.y) * scale;
+    const limit = size / 2 - 6;
+    const furthest = Math.max(Math.abs(stx), Math.abs(sty));
+    if(furthest > limit) {
+        stx *= limit / furthest;
+        sty *= limit / furthest;
+    }
+    ctx.strokeStyle = 'rgb(140, 200, 255)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx + stx - 4, cy + sty - 4, 8, 8);
+
+    ctx.translate(cx, cy);
+    ctx.rotate(ship.angle);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-2, 0); ctx.lineTo(-4, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+    ctx.fillText('SCANNER ' + (MINIMAP_RANGE / 1000).toFixed(1) + 'k', left + 6, top + 14);
+    ctx.restore();
+};
+
+const render = () => {
+    const time = state.time;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, world.width, world.height);
+    drawStarfield();
 
-    state.rocks.forEach(rock => rock.drawGravityWell(ctx));
-    state.rocks.forEach(rock => rock.draw(ctx));
+    ctx.save();
+    ctx.translate(world.width / 2 - state.camera.x, world.height / 2 - state.camera.y);
+
+    if(isVisible(STATION.x, STATION.y, 300)) drawStation(ctx, time, state.canDock);
+
+    const visibleRocks = state.rocks.filter(rock => isVisible(rock.x, rock.y, rock.radius * 3.5));
+    visibleRocks.forEach(rock => rock.drawGravityWell(ctx));
+    visibleRocks.forEach(rock => rock.draw(ctx));
+    state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    state.particles.forEach(particle => particle.draw(ctx));
+    state.particles.forEach(particle => { if(isVisible(particle.x, particle.y, 10)) particle.draw(ctx); });
     ctx.restore();
 
     ctx.save();
@@ -487,20 +712,22 @@ const render = (time) => {
     state.missiles.forEach(missile => missile.draw(ctx));
     state.ship.draw(ctx);
     drawFloatingTexts();
+    ctx.restore();
+
+    drawStationPointer();
+    drawMinimap();
+    drawDockPrompt();
     if(!state.paused) drawCrosshair();
     drawBanner();
 };
 
 // ---------------------------------------------------------------- loop & menus
 
-const setPaused = (paused) => {
-    if(!state) return;
-    state.paused = paused;
+const freeze = (frozen) => {
     input.reset();
-    input.enabled = !paused;
-    pauseMenu.style.visibility = paused ? 'visible' : 'hidden';
-    document.body.classList.toggle('playing', !paused);
-    if(paused) {
+    input.enabled = !frozen;
+    document.body.classList.toggle('playing', !frozen);
+    if(frozen) {
         sounds.stopAll();
     } else {
         sounds.startEngine();
@@ -509,23 +736,51 @@ const setPaused = (paused) => {
     }
 };
 
-const endGame = () => {
+const setPaused = (paused) => {
+    if(!state) return;
+    state.paused = paused;
+    pauseMenu.style.visibility = paused ? 'visible' : 'hidden';
+    freeze(paused);
+};
+
+const dock = () => {
+    const ship = state.ship;
+    state.paused = true;
+    state.docked = true;
+    freeze(true);
+    ship.vx = 0;
+    ship.vy = 0;
+    ship.angularVelocity = 0;
+
+    getShipyard().open({
+        tab: cargoUsed() > 0 ? 'market' : 'ship',
+        closeLabel: 'Undock',
+        canTrade: true,
+        hullStatus: () => ({ hp: state.ship.hp, max: Math.round(state.ship.maxHull) }),
+        repair: (points) => { state.ship.hp = Math.min(state.ship.maxHull, state.ship.hp + points); },
+        onClose: () => {
+            if(!state) return;
+            ship.applyStats(computeShipStats(getProfile().hull));
+            ship.shield = ship.maxShield;
+            ship.immunity = 1.5;
+            state.paused = false;
+            state.docked = false;
+            freeze(false);
+            banner('Undocked', 1.2);
+        }
+    });
+};
+
+const endGame = (message) => {
     cancelAnimationFrame(frameId);
     frameId = null;
-    input.enabled = false;
-    input.reset();
-    sounds.stopAll();
-    document.body.classList.remove('playing');
+    freeze(true);
     pauseMenu.style.visibility = 'hidden';
-    recordScore(state.score);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if(menuMessage) {
-        menuMessage.textContent = 'Game over! Score: ' + state.score + ' · earned ' +
-            state.creditsEarned.toLocaleString('en-US') + ' cr';
-    }
+    if(menuMessage) menuMessage.textContent = message || '';
     menu.style.visibility = 'visible';
     state = null;
 };
@@ -549,27 +804,16 @@ const frame = (now) => {
         sounds.setFiring(state.ship.alive && state.ship.firing);
     }
 
-    render(now / 1000);
+    render();
     renderInfo();
 
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
-        endGame();
+        loseCargo();
+        endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
         return;
     }
 
     frameId = requestAnimationFrame(frame);
-};
-
-const openShipyardFromPause = () => {
-    pauseMenu.style.visibility = 'hidden';
-    getShipyard().open({
-        closeLabel: 'Back to battle',
-        onClose: () => {
-            if(!state) return;
-            state.ship.applyStats(computeShipStats(getProfile().hull));
-            pauseMenu.style.visibility = 'visible';
-        }
-    });
 };
 
 let initialized = false;
@@ -581,7 +825,7 @@ const initialize = () => {
     loadInputHandlers();
 
     onKeyPress('Escape', () => {
-        if(!state || isShipyardOpen() || !state.ship.alive) return false;
+        if(!state || state.docked || !state.ship.alive) return false;
         setPaused(!state.paused);
         return true;
     });
@@ -589,15 +833,25 @@ const initialize = () => {
     onKeyPress('KeyG', () => {
         if(!state || state.paused || !state.ship.guidance) return false;
         state.ship.autoTarget = !state.ship.autoTarget;
-        state.bannerText = 'Auto-targeting ' + (state.ship.autoTarget ? 'ON' : 'OFF');
-        state.bannerTimer = 1.2;
+        banner('Auto-targeting ' + (state.ship.autoTarget ? 'ON' : 'OFF'), 1.2);
+        return true;
+    });
+
+    onKeyPress('KeyB', () => {
+        if(!state || state.paused || !state.canDock) return false;
+        const ship = state.ship;
+        const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
+        if(speed > STATION.maxDockSpeed) {
+            banner('Too fast to dock', 1.2);
+        } else {
+            dock();
+        }
         return true;
     });
 
     document.getElementById('resumeGame').addEventListener('click', () => setPaused(false));
-    document.getElementById('pauseShipyard').addEventListener('click', openShipyardFromPause);
     document.getElementById('abandonGame').addEventListener('click', () => {
-        if(state) endGame();
+        if(state) endGame('Returned to base. Cargo in the hold is kept.');
     });
 };
 
@@ -607,14 +861,9 @@ const constructGameBoard = () => {
 
     resize();
     state = createState();
-    input.reset();
-    input.enabled = true;
-    accumulator = 0;
-    lastFrameTime = performance.now();
+    state.rocks = state.sectors.update(state.ship.x, state.ship.y, []);
     pauseMenu.style.visibility = 'hidden';
-    document.body.classList.add('playing');
-
-    sounds.startEngine();
+    freeze(false);
     frameId = requestAnimationFrame(frame);
 };
 

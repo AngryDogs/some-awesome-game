@@ -1,5 +1,5 @@
 import Particle from '../particle/particle';
-import { delta, isOutsideWorld } from '../../physics/physics';
+import { delta } from '../../physics/physics';
 
 const ACCELERATION = 520;
 const MAX_SPEED = 620;
@@ -33,9 +33,9 @@ class Missile {
 
     update(dt, rocks, particles) {
         this.life -= dt;
-        if(this.life <= 0 || isOutsideWorld(this)) {
+        if(this.life <= 0) {
             this.dead = true;
-            this.exploded = this.life <= 0;
+            this.exploded = true;
             return;
         }
 

@@ -1,5 +1,3 @@
-import { wrapPosition } from '../../physics/physics';
-
 class Particle {
 
     constructor(options) {
@@ -36,7 +34,6 @@ class Particle {
         this.y += this.vy * dt;
         this.life -= dt;
         if(this.life <= 0) this.dead = true;
-        wrapPosition(this);
     }
 
     draw(ctx) {

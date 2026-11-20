@@ -10,8 +10,9 @@ const menuCredits = document.getElementById('menuCredits');
 
 const renderMenuCredits = () => {
     const profile = getProfile();
+    const cargo = Object.keys(profile.cargo).reduce((sum, id) => sum + profile.cargo[id], 0);
     menuCredits.textContent = 'Credits: ' + Math.round(profile.credits).toLocaleString('en-US') +
-        (profile.bestScore ? ' · Best score: ' + profile.bestScore : '');
+        (cargo ? ' · Ore in hold: ' + cargo : '');
 };
 
 renderMenuCredits();

@@ -30,6 +30,8 @@ export const input = {
     rightMouseDown: false,
     mouseX: window.innerWidth / 2,
     mouseY: 0,
+    aimX: 0,             // mouse position in world space (set by the game each step)
+    aimY: 0,
     enabled: false,
 
     get firing() {

@@ -53,6 +53,26 @@ const MODULES = {
         stats: { range: [350, 480, 620], homing: [3, 4.5, 6] },
         describe: (s) => s.range + 'px lock range, homing ' + s.homing
     },
+    cargo: {
+        id: 'cargo',
+        name: 'Cargo pod',
+        short: 'Cargo',
+        description: 'Extra hold space for ore.',
+        cost: 350,
+        color: '200,170,255',
+        stats: { capacity: [20, 35, 55] },
+        describe: (s) => '+' + s.capacity + ' cargo'
+    },
+    magnet: {
+        id: 'magnet',
+        name: 'Ore tractor',
+        short: 'Tractor',
+        description: 'Tractor beam that pulls in floating ore from further away.',
+        cost: 450,
+        color: '120,255,230',
+        stats: { range: [160, 230, 320] },
+        describe: (s) => s.range + 'px pickup range'
+    },
     armor: {
         id: 'armor',
         name: 'Trinium armor',
@@ -65,7 +85,7 @@ const MODULES = {
     }
 };
 
-export const MODULE_ORDER = ['minigun', 'missile', 'engine', 'shield', 'guidance', 'armor'];
+export const MODULE_ORDER = ['minigun', 'missile', 'engine', 'shield', 'guidance', 'cargo', 'magnet', 'armor'];
 
 export const moduleStats = (type, level) => {
     const def = MODULES[type];
@@ -168,6 +188,27 @@ export const drawModule = (ctx, type, level, options) => {
         for(let i = 1; i < level; i++) {
             ctx.beginPath();
             ctx.arc(0, 0, (3.8 + i * 1.6) * u, -Math.PI * 0.8, -Math.PI * 0.2);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'cargo') {
+        shape([[-4.5, -4], [4.5, -4], [4.5, 4], [-4.5, 4]]);
+        line(-4.5, 0, 4.5, 0);
+        for(let i = 0; i < level; i++) line(-2 + i * 2, -4, -2 + i * 2, 4);
+    }
+
+    if(type === 'magnet') {
+        // Horseshoe magnet, one field arc per level.
+        ctx.beginPath();
+        ctx.arc(-1 * u, 0, 3.5 * u, Math.PI / 2, Math.PI * 1.5);
+        ctx.lineTo(3 * u, -3.5 * u);
+        ctx.moveTo(-1 * u, 3.5 * u);
+        ctx.lineTo(3 * u, 3.5 * u);
+        ctx.stroke();
+        for(let i = 0; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(3 * u, 0, (2 + i * 1.6) * u, -Math.PI / 3, Math.PI / 3);
             ctx.stroke();
         }
     }

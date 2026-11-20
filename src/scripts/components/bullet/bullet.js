@@ -1,5 +1,3 @@
-import { isOutsideWorld } from '../../physics/physics';
-
 const BULLET_LIFE = 1.4;
 
 class Bullet {
@@ -19,7 +17,7 @@ class Bullet {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
         this.life -= dt;
-        if(this.life <= 0 || isOutsideWorld(this)) this.dead = true;
+        if(this.life <= 0) this.dead = true;
     }
 
     draw(ctx) {

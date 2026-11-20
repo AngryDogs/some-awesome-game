@@ -1,6 +1,6 @@
 # some-awesome-game
 
-Zero-gravity asteroid shooter with a ship-building shipyard.
+Zero-gravity asteroid mining in an endless star field, with a ship-building shipyard.
 
 ## Running
 
@@ -23,15 +23,27 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Guns | Left click / Space |
 | Missiles | Right click / F |
 | Toggle auto-targeting | G (needs a targeting computer) |
-| Pause / shipyard | Esc |
+| Dock at the shipyard | B (inside the dashed ring, slowly) |
+| Pause | Esc |
+
+## Mining
+
+- Space is endless: sectors are generated as you fly. The scanner (bottom right) shows nearby asteroids
+  coloured by material, and an arrow points back to base.
+- Asteroids contain rock, iron, copper, titanium, gold and naquadah. Valuable metals appear further from base.
+- Shooting chips an asteroid down and breaks chunks off. The chipped material floats free as ore.
+  Fly near it to scoop it into your cargo hold.
+- Asteroids pull on each other with gravity based on their size, and merge when they collide.
+- Dock at the shipyard (B) to sell ore in the Market tab and repair your hull.
+  If your ship is destroyed, the cargo is lost.
 
 ## Shipyard
 
-Destroying asteroids earns credits (saved in the browser). Spend them in the shipyard on:
+Spend credits on:
 
-- **Hulls**: X-302, X-303, X-304, Ha'tak and Asgard, each with its own mounts, mass, hull and built-in shields.
+- **Hulls**: X-302, X-303, X-304, Ha'tak and Asgard, each with its own mounts, cargo hold, mass, hull and built-in shields.
 - **Modules** placed on mounts by drag & drop (or select one and click a mount):
-  minigun turrets, missile pods, sublight engines, shield emitters, targeting computers and armor.
-  Each module upgrades from Mk I to Mk III and can be sold for half its value.
+  minigun turrets, missile pods, sublight engines, shield emitters, targeting computers, cargo pods,
+  ore tractors and armor. Each module upgrades from Mk I to Mk III and can be sold for half its value.
 
 A targeting computer makes turrets lock on and fire automatically and turns missiles into homing missiles.

@@ -34,7 +34,33 @@ const playOneShot = (audio, volume) => {
     safePlay(audio);
 };
 
+// Short synthesized blip for ore pickups (no extra asset needed).
+let audioContext = null;
+let lastBlip = 0;
+const blip = (frequency) => {
+    try {
+        if(!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioContext.currentTime;
+        if(now - lastBlip < 0.04) return;
+        lastBlip = now;
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(frequency, now);
+        osc.frequency.exponentialRampToValueAtTime(frequency * 1.6, now + 0.08);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+        osc.start(now);
+        osc.stop(now + 0.13);
+    } catch(e) {
+        // Web Audio unavailable: stay silent.
+    }
+};
+
 const sounds = {
+    pickup(value) { blip(500 + Math.min(700, value * 8)); },
     startEngine() { setLooping(engineSound, true); },
     setThrust(on) { setLooping(thrusterSound, on); },
     setFiring(on) { setLooping(minigunSound, on); },

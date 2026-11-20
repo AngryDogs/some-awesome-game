@@ -20,18 +20,22 @@
     </head>
     <body>
         <div class="info" id="info">
-            <p id="score">Score: 0</p>
-            <p id="level">Level: 1</p>
             <p id="credits">Credits: 0</p>
+            <p id="location"></p>
             <div class="hud-bar-row">
                 <span class="hud-bar-label">Hull</span>
                 <div class="hud-bar hull"><div id="hullBar" class="hud-bar-fill"></div></div>
                 <span id="hullText" class="hud-bar-text"></span>
             </div>
-            <div class="hud-bar-row" id="shieldRow">
+            <div class="hud-bar-row">
                 <span class="hud-bar-label">Shield</span>
                 <div class="hud-bar shield"><div id="shieldBar" class="hud-bar-fill"></div></div>
                 <span id="shieldText" class="hud-bar-text"></span>
+            </div>
+            <div class="hud-bar-row">
+                <span class="hud-bar-label">Cargo</span>
+                <div class="hud-bar cargo"><div id="cargoBar" class="hud-bar-fill"></div></div>
+                <span id="cargoText" class="hud-bar-text"></span>
             </div>
             <p id="targeting"></p>
             <p id="fps">Fps: 0</p>
@@ -40,18 +44,18 @@
             <h1>Awesome game</h1>
             <p id="menuMessage" class="menu-message"></p>
             <p id="menuCredits" class="menu-credits"></p>
-            <h2 id="startGame" class="menu-action">Start shooting</h2>
+            <h2 id="startGame" class="menu-action">Launch from shipyard</h2>
             <h2 id="openShipyard" class="menu-action">Shipyard</h2>
             <hr>
             <h4>Thrust: W / S &nbsp; Rotate: A / D &nbsp; Strafe: Q / E &nbsp; Stabilize: X</h4>
             <h4>Aim: mouse &nbsp; Guns: left click / SPACE &nbsp; Missiles: right click / F</h4>
-            <h4>Auto-targeting: G &nbsp; Pause: ESC</h4>
+            <h4>Dock at shipyard: B &nbsp; Auto-targeting: G &nbsp; Pause: ESC</h4>
+            <h4 class="menu-tip">Shoot asteroids to chip off ore, fly through it to collect, sell it at the shipyard.</h4>
         </div>
         <div id="pauseMenu" class="menu pause-menu">
             <h1>Paused</h1>
             <h2 id="resumeGame" class="menu-action">Resume</h2>
-            <h2 id="pauseShipyard" class="menu-action">Shipyard</h2>
-            <h2 id="abandonGame" class="menu-action">Abandon run</h2>
+            <h2 id="abandonGame" class="menu-action">Quit to menu</h2>
         </div>
         <div class="gameboard" id="gameboard">
         </div>

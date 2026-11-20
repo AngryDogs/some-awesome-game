@@ -1,10 +1,12 @@
 // Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
 
-import HULLS, { HULL_ORDER, drawHullArt } from './hulls';
+import HULLS, { HULL_ORDER, drawHullArt, hullBounds } from './hulls';
+import MATERIALS, { MATERIAL_ORDER } from '../world/materials';
 import MODULES, { MODULE_ORDER, MAX_LEVEL, drawModule, moduleStats, upgradeCost, sellValue } from './modules';
 import {
     getProfile, loadoutFor, ownsHull, selectHull, buyHull,
-    installModule, upgradeModule, sellModule, computeShipStats
+    installModule, upgradeModule, sellModule, computeShipStats,
+    cargoUsed, cargoValue, sellCargo, spendCredits, REPAIR_COST_PER_HP
 } from './profile';
 
 const SLOT_HIT_RADIUS = 16;
@@ -17,23 +19,6 @@ const el = (tag, className, text) => {
 };
 
 const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
-
-const hullBounds = (hull) => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const add = (x, y) => {
-        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-    };
-    hull.art.forEach(part => {
-        if(part.circle) {
-            add(part.circle[0] - part.circle[2], part.circle[1] - part.circle[2]);
-            add(part.circle[0] + part.circle[2], part.circle[1] + part.circle[2]);
-        } else {
-            part.pts.forEach(p => add(p[0], p[1]));
-        }
-    });
-    return { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
-};
 
 const setupCanvas = (canvas, width, height) => {
     const ratio = window.devicePixelRatio || 1;
@@ -74,6 +59,15 @@ class Shipyard {
 
         const header = el('div', 'shipyard-header');
         header.appendChild(el('h1', '', 'Shipyard'));
+        const tabs = el('div', 'shipyard-tabs');
+        this.tabButtons = {};
+        [['ship', 'Ship'], ['market', 'Market']].forEach(tab => {
+            const button = el('button', 'sy-tab', tab[1]);
+            button.addEventListener('click', () => this.showTab(tab[0]));
+            tabs.appendChild(button);
+            this.tabButtons[tab[0]] = button;
+        });
+        header.appendChild(tabs);
         this.creditsLabel = el('div', 'shipyard-credits');
         header.appendChild(this.creditsLabel);
         this.closeButton = el('button', 'sy-button primary', 'Launch');
@@ -112,6 +106,10 @@ class Shipyard {
         body.appendChild(moduleColumn);
 
         root.appendChild(body);
+        this.shipBody = body;
+
+        this.marketBody = el('div', 'shipyard-market');
+        root.appendChild(this.marketBody);
 
         this.message = el('div', 'shipyard-message');
         root.appendChild(this.message);
@@ -150,6 +148,7 @@ class Shipyard {
         this.armedModule = null;
         this.closeButton.textContent = this.options.closeLabel || 'Launch';
         this.root.classList.add('open');
+        this.tab = this.options.tab || 'ship';
         this.refresh();
         this.resizeCanvas();
         const loop = () => {
@@ -177,15 +176,111 @@ class Shipyard {
 
     // ------------------------------------------------------------ panels
 
+    showTab(tab) {
+        this.tab = tab;
+        this.armedModule = null;
+        this.refresh();
+    }
+
     refresh() {
         const profile = getProfile();
         this.creditsLabel.textContent = formatCredits(profile.credits);
+        Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
+        this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
+        this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
+        this.renderMarket();
         this.renderHullList();
         this.renderTitle();
         this.renderStats();
         this.renderPalette();
         this.renderInspector();
         this.renderHint();
+    }
+
+    renderMarket() {
+        const box = this.marketBody;
+        const profile = getProfile();
+        const capacity = computeShipStats(this.hull.id).cargo;
+        box.innerHTML = '';
+
+        const panel = el('div', 'shipyard-panel market-panel');
+        panel.appendChild(el('h3', '', 'Ore exchange'));
+        const canTrade = !!(this.options && this.options.canTrade);
+        if(!canTrade) panel.appendChild(el('p', 'market-warning', 'Fly to the shipyard station and dock (B) to sell ore.'));
+        panel.appendChild(el('p', 'muted', 'Cargo hold: ' + cargoUsed() + ' / ' + capacity +
+            ' units. Prices are per unit; metals found further from base are worth more.'));
+
+        const table = el('table', 'market-table');
+        const head = el('tr');
+        ['Material', 'Price', 'In hold', 'Value', ''].forEach(h => head.appendChild(el('th', '', h)));
+        table.appendChild(head);
+
+        MATERIAL_ORDER.forEach(id => {
+            const material = MATERIALS[id];
+            const amount = profile.cargo[id] || 0;
+            const tr = el('tr', amount ? '' : 'empty');
+            const name = el('td', 'material-name');
+            const swatch = el('span', 'swatch');
+            swatch.style.background = 'rgb(' + material.color + ')';
+            swatch.style.boxShadow = '0 0 6px rgb(' + material.color + ')';
+            name.appendChild(swatch);
+            name.appendChild(document.createTextNode(material.name));
+            tr.appendChild(name);
+            tr.appendChild(el('td', '', formatCredits(material.price)));
+            tr.appendChild(el('td', '', String(amount)));
+            tr.appendChild(el('td', '', formatCredits(amount * material.price)));
+            const cell = el('td');
+            const sell = el('button', 'sy-button small', 'Sell');
+            sell.disabled = amount === 0 || !canTrade;
+            sell.addEventListener('click', () => {
+                const earned = sellCargo(id);
+                this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
+                this.refresh();
+            });
+            cell.appendChild(sell);
+            tr.appendChild(cell);
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+
+        const total = cargoValue();
+        const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
+        sellAll.disabled = total === 0 || !canTrade;
+        sellAll.addEventListener('click', () => {
+            const earned = sellCargo();
+            this.flash('Cargo sold for ' + formatCredits(earned));
+            this.refresh();
+        });
+        panel.appendChild(sellAll);
+
+        // Repairs are only offered when docked with a damaged ship.
+        const status = this.options && this.options.hullStatus ? this.options.hullStatus() : null;
+        if(status) {
+            panel.appendChild(el('h3', 'market-section', 'Repairs'));
+            const missing = Math.ceil(status.max - status.hp);
+            if(missing <= 0) {
+                panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
+            } else {
+                const cost = missing * REPAIR_COST_PER_HP;
+                const affordable = Math.min(missing, Math.floor(profile.credits / REPAIR_COST_PER_HP));
+                panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
+                    ' · ' + REPAIR_COST_PER_HP + ' cr per point'));
+                const repair = el('button', 'sy-button', affordable < missing
+                    ? 'Repair ' + affordable + ' points  ' + formatCredits(affordable * REPAIR_COST_PER_HP)
+                    : 'Full repair  ' + formatCredits(cost));
+                repair.disabled = affordable <= 0;
+                repair.addEventListener('click', () => {
+                    if(spendCredits(affordable * REPAIR_COST_PER_HP)) {
+                        this.options.repair(affordable);
+                        this.flash('Hull repaired.');
+                    }
+                    this.refresh();
+                });
+                panel.appendChild(repair);
+            }
+        }
+
+        box.appendChild(panel);
     }
 
     renderHullList() {
@@ -209,7 +304,7 @@ class Shipyard {
             const info = el('div', 'hull-info');
             info.appendChild(el('div', 'hull-name', hull.name));
             info.appendChild(el('div', 'hull-class', hull.className + ' · ' + hull.faction));
-            info.appendChild(el('div', 'hull-meta', hull.slots.length + ' mounts · ' + hull.hull + ' hull' +
+            info.appendChild(el('div', 'hull-meta', hull.slots.length + ' mounts · ' + hull.cargo + ' cargo · ' + hull.hull + ' hull' +
                 (hull.baseShield ? ' · ' + hull.baseShield + ' shield' : '')));
 
             let action;
@@ -254,9 +349,11 @@ class Shipyard {
             ['Shield', stats.maxShield ? Math.round(stats.maxShield) + ' (+' + Math.round(stats.shieldRegen) + '/s)' : 'none'],
             ['Acceleration', Math.round(stats.acceleration)],
             ['Turn rate', stats.maxTurn.toFixed(1)],
-            ['Mass', stats.mass.toFixed(1)],
+
             ['Weapons', stats.weapons],
             ['Guidance', stats.guidance ? stats.guidance.range + 'px' : 'none'],
+            ['Cargo hold', stats.cargo],
+            ['Tractor', stats.magnetRange + 'px'],
             ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
         ];
         this.statsBox.innerHTML = '';
@@ -355,7 +452,7 @@ class Shipyard {
     renderHint() {
         this.hint.textContent = this.armedModule
             ? 'Placing ' + MODULES[this.armedModule].name + ': click an empty mount (Esc to cancel)'
-            : 'Drag modules from the right onto the ship\'s mounts. Destroy asteroids to earn credits.';
+            : 'Drag modules from the right onto the ship\'s mounts. Mine ore and sell it in the Market tab.';
     }
 
     // ------------------------------------------------------------ hull canvas
