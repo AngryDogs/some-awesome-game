@@ -25,6 +25,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Toggle auto-targeting | G (needs a targeting computer) |
 | Dock at Atlantis (shipyard) | B (inside the dashed ring, slowly) |
 | Shields on / off | H (or the button at the top of the screen) |
+| Cargo hold (view / eject ore) | C (or the cargo button, top right) |
 | Pause | Esc |
 
 ## Mining
@@ -37,7 +38,9 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 - Asteroids pull on each other with gravity based on their size. When they touch they lock together
   and the smaller one gradually sinks into the bigger one in a cloud of dust.
 - Shields protect the hull, but while they're up the tractor beam is offline and ore that touches them
-  burns up (costing a little shield energy). Lower shields (H) to collect ore.
+  burns up (costing a little shield energy). Lower shields (H) to collect ore with the tractor beam.
+- Open the cargo hold (C) to see what you carry and eject unwanted ore to make room.
+- Atlantis is protected by a city shield that deflects asteroids but lets ships through.
 - Dock at Atlantis (B) to sell ore in the Market tab and repair your hull.
   If your ship is destroyed, the cargo is lost.
 
