@@ -4,7 +4,7 @@
 // Performance: the city's line art (hundreds of glowing strokes) and the shield dome
 // gradient are rendered once into sprites; each frame just stamps them.
 
-import { createSprite, glowSprite, stamp } from '../render/sprites';
+import { createSprite, glowSprite, stamp, spriteResolution } from '../render/sprites';
 
 export const STATION = {
     x: 0,
@@ -107,18 +107,49 @@ const buildCity = (canDock) => createSprite(EXTENT * 2, EXTENT * 2, ctx => {
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // City shield styled like the ship shields: soft edge, hexagon lattice, glowing rim.
     const R = STATION.shieldRadius;
     const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.85, 'rgba(120, 190, 255, 0.05)');
-    dome.addColorStop(1, 'rgba(140, 205, 255, 0.15)');
+    dome.addColorStop(0.8, 'rgba(120, 190, 255, 0.04)');
+    dome.addColorStop(1, 'rgba(140, 205, 255, 0.2)');
     ctx.fillStyle = dome;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(150, 210, 255, 0.28)';
-    ctx.lineWidth = 1.5;
+    ctx.save();
+    ctx.clip();
+    const size = 16;
+    const w = size * Math.sqrt(3);
+    const lattice = new Path2D();
+    for(let row = -Math.ceil(R / (size * 1.5)); row <= Math.ceil(R / (size * 1.5)); row++) {
+        for(let col = -Math.ceil(R / w) - 1; col <= Math.ceil(R / w) + 1; col++) {
+            const cx = col * w + (row % 2 ? w / 2 : 0);
+            const cy = row * size * 1.5;
+            if(cx * cx + cy * cy > (R + size) * (R + size)) continue;
+            for(let i = 0; i < 6; i++) {
+                const a1 = Math.PI / 6 + i * Math.PI / 3;
+                lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+            }
+        }
+    }
+    const fade = ctx.createRadialGradient(0, 0, R * 0.4, 0, 0, R);
+    fade.addColorStop(0, 'rgba(140, 205, 255, 0.02)');
+    fade.addColorStop(1, 'rgba(140, 205, 255, 0.22)');
+    ctx.strokeStyle = fade;
+    ctx.lineWidth = 0.8;
+    ctx.stroke(lattice);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150, 215, 255, 0.55)';
+    ctx.lineWidth = 1.8;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = 'rgb(120, 200, 255)';
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
 
     ctx.lineJoin = 'miter';
     ctx.lineWidth = 1.5;
@@ -150,7 +181,7 @@ const buildCity = (canDock) => createSprite(EXTENT * 2, EXTENT * 2, ctx => {
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
-});
+}, Math.min(2, spriteResolution()));
 
 export const drawStation = (ctx, time, canDock) => {
     const key = canDock ? 'dock' : 'idle';
@@ -161,22 +192,30 @@ export const drawStation = (ctx, time, canDock) => {
     ctx.translate(STATION.x, STATION.y);
     ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
 
-    // Impact ripples and flares (only while something has just hit).
+    // Impact ripples and flares, like the ship shields (only while something has just hit).
     if(STATION.impacts.length) {
         ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 2, 0, Math.PI * 2);
+        ctx.clip();
         ctx.globalCompositeOperation = 'lighter';
         STATION.impacts.forEach(impact => {
             const ix = Math.cos(impact.angle) * R;
             const iy = Math.sin(impact.angle) * R;
-            const size = (60 + 100 * impact.strength) * impact.life;
-            ctx.globalAlpha = impact.life;
+            const age = 1 - impact.life;
+            const size = (50 + 90 * impact.strength) * impact.life;
+            ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
             stamp(ctx, glowSprite('140,200,255'), ix, iy, size, size);
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+            ctx.globalAlpha = 0.7 * impact.life;
+            ctx.strokeStyle = 'rgb(150, 215, 255)';
             ctx.lineWidth = 2.5 * impact.life + 0.5;
             ctx.beginPath();
-            ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength - (1 - impact.life) * 0.4,
-                impact.angle + 0.25 * impact.strength + (1 - impact.life) * 0.4);
+            ctx.arc(ix, iy, 6 + age * R * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.9 * impact.life;
+            ctx.lineWidth = 3 * impact.life;
+            ctx.beginPath();
+            ctx.arc(0, 0, R, impact.angle - 0.2 * impact.strength, impact.angle + 0.2 * impact.strength);
             ctx.stroke();
         });
         ctx.restore();

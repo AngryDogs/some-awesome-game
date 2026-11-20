@@ -88,6 +88,12 @@ const createState = () => {
 // Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
 // automatically if the game can't hold a smooth frame rate on this computer.
 let resolutionCap = 2;
+
+// Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
+// The mouse wheel adjusts it between MIN_ZOOM and MAX_ZOOM.
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 1.9;
+let zoom = 1.3;
 let slowTime = 0;
 
 const resize = () => {
@@ -652,8 +658,8 @@ const step = (dt) => {
     state.time += dt;
 
     // Mouse is in screen space; turrets need it in world space.
-    input.aimX = input.mouseX - world.width / 2 + state.camera.x;
-    input.aimY = input.mouseY - world.height / 2 + state.camera.y;
+    input.aimX = (input.mouseX - world.width / 2) / zoom + state.camera.x;
+    input.aimY = (input.mouseY - world.height / 2) / zoom + state.camera.y;
 
     ship.update(dt, input, state);
     state.beamHits.forEach(hit => {
@@ -771,8 +777,8 @@ const drawStarfield = () => {
 };
 
 const isVisible = (x, y, r) => {
-    const halfW = world.width / 2 + r;
-    const halfH = world.height / 2 + r;
+    const halfW = world.width / (2 * zoom) + r;
+    const halfH = world.height / (2 * zoom) + r;
     return Math.abs(x - state.camera.x) < halfW && Math.abs(y - state.camera.y) < halfH;
 };
 
@@ -1006,8 +1012,8 @@ const drawDockPrompt = () => {
 
 // Edge-of-screen pointer to the shipyard when it's out of view.
 const drawStationPointer = () => {
-    const sx = STATION.x - state.camera.x + world.width / 2;
-    const sy = STATION.y - state.camera.y + world.height / 2;
+    const sx = (STATION.x - state.camera.x) * zoom + world.width / 2;
+    const sy = (STATION.y - state.camera.y) * zoom + world.height / 2;
     const margin = 40;
     if(sx > -100 && sx < world.width + 100 && sy > -100 && sy < world.height + 100) return;
 
@@ -1145,7 +1151,9 @@ const render = () => {
     drawStarfield();
 
     ctx.save();
-    ctx.translate(world.width / 2 - state.camera.x, world.height / 2 - state.camera.y);
+    ctx.translate(world.width / 2, world.height / 2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-state.camera.x, -state.camera.y);
 
     if(isVisible(STATION.x, STATION.y, 300)) drawStation(ctx, time, state.canDock);
 
@@ -1396,6 +1404,12 @@ const initialize = () => {
         return true;
     };
     onKeyPress('KeyH', toggleShields);
+
+    window.addEventListener('wheel', (event) => {
+        if(!state || state.paused) return;
+        event.preventDefault();
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * Math.exp(-event.deltaY * 0.0012)));
+    }, { passive: false });
 
     onKeyPress('KeyC', () => {
         if(!state || state.paused) return false;

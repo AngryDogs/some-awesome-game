@@ -74,8 +74,9 @@
 
 const cache = {};
 
-const spriteResolution = () => Math.min(2, window.devicePixelRatio || 1);
-/* unused harmony export spriteResolution */
+// Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
+const spriteResolution = () => Math.min(2.5, (window.devicePixelRatio || 1) * 1.5);
+/* harmony export (immutable) */ __webpack_exports__["d"] = spriteResolution;
 
 
 // Draws `draw(ctx)` into a new offscreen canvas of `width` x `height` world pixels.
@@ -147,7 +148,7 @@ const flameSprite = (color, core) => {
 const stamp = (ctx, sprite, x, y, width, height) => {
     ctx.drawImage(sprite.canvas, x - width / 2, y - height / 2, width, height);
 };
-/* harmony export (immutable) */ __webpack_exports__["d"] = stamp;
+/* harmony export (immutable) */ __webpack_exports__["e"] = stamp;
 
 
 
@@ -3509,6 +3510,12 @@ const createState = () => {
 // Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
 // automatically if the game can't hold a smooth frame rate on this computer.
 let resolutionCap = 2;
+
+// Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
+// The mouse wheel adjusts it between MIN_ZOOM and MAX_ZOOM.
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 1.9;
+let zoom = 1.3;
 let slowTime = 0;
 
 const resize = () => {
@@ -4073,8 +4080,8 @@ const step = (dt) => {
     state.time += dt;
 
     // Mouse is in screen space; turrets need it in world space.
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimX = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 + state.camera.x;
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 + state.camera.y;
+    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimX = (__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2) / zoom + state.camera.x;
+    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = (__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2) / zoom + state.camera.y;
 
     ship.update(dt, __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], state);
     state.beamHits.forEach(hit => {
@@ -4192,8 +4199,8 @@ const drawStarfield = () => {
 };
 
 const isVisible = (x, y, r) => {
-    const halfW = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 + r;
-    const halfH = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 + r;
+    const halfW = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / (2 * zoom) + r;
+    const halfH = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / (2 * zoom) + r;
     return Math.abs(x - state.camera.x) < halfW && Math.abs(y - state.camera.y) < halfH;
 };
 
@@ -4345,7 +4352,7 @@ const drawTractor = (time) => {
 
         // Containment field around the captured ore.
         ctx.globalAlpha = 0.5 + 0.3 * pulse;
-        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["e" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
         ctx.globalAlpha = 1;
         ctx.setLineDash([3, 3]);
         ctx.lineDashOffset = -time * 20;
@@ -4359,7 +4366,7 @@ const drawTractor = (time) => {
 
     // Emitter aura.
     ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
+    Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["e" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
     ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.7)';
     ctx.lineWidth = 1.2;
@@ -4376,7 +4383,7 @@ const drawShockwaves = () => {
     state.shockwaves.forEach(wave => {
         const glow = wave.maxRadius * 1.6 * wave.life;
         ctx.globalAlpha = wave.life * 0.8;
-        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
+        Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_12__render_sprites__["c" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
         ctx.globalAlpha = wave.life;
         ctx.strokeStyle = 'rgb(' + wave.color + ')';
         ctx.lineWidth = 1 + 4 * wave.life;
@@ -4427,8 +4434,8 @@ const drawDockPrompt = () => {
 
 // Edge-of-screen pointer to the shipyard when it's out of view.
 const drawStationPointer = () => {
-    const sx = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - state.camera.x + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const sy = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - state.camera.y + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const sx = (__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
+    const sy = (__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
     const margin = 40;
     if(sx > -100 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width + 100 && sy > -100 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height + 100) return;
 
@@ -4566,7 +4573,9 @@ const render = () => {
     drawStarfield();
 
     ctx.save();
-    ctx.translate(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2 - state.camera.x, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2 - state.camera.y);
+    ctx.translate(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-state.camera.x, -state.camera.y);
 
     if(isVisible(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, 300)) Object(__WEBPACK_IMPORTED_MODULE_9__world_station__["b" /* drawStation */])(ctx, time, state.canDock);
 
@@ -4817,6 +4826,12 @@ const initialize = () => {
         return true;
     };
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
+
+    window.addEventListener('wheel', (event) => {
+        if(!state || state.paused) return;
+        event.preventDefault();
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * Math.exp(-event.deltaY * 0.0012)));
+    }, { passive: false });
 
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyC', () => {
         if(!state || state.paused) return false;
@@ -5738,7 +5753,7 @@ class Ship {
             // Nozzle glow, pulsing even when idle.
             const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
             ctx.globalAlpha = 0.55 + t.main * 0.45;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["e" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
 
             // Plume straight out of the nozzle, as wide as the nozzle.
             if(t.main > 0.03) {
@@ -5800,7 +5815,7 @@ class Ship {
                 const iy = impact.y * grow;
                 const size = (20 + 50 * impact.strength) * impact.life;
                 ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, glow, ix, iy, size, size);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["e" /* stamp */])(ctx, glow, ix, iy, size, size);
                 ctx.globalAlpha = 0.7 * impact.life;
                 ctx.strokeStyle = 'rgb(' + color + ')';
                 ctx.lineWidth = 2 * impact.life + 0.5;
@@ -5829,7 +5844,7 @@ class Ship {
                 ctx.lineTo(beam.x2, beam.y2);
                 ctx.stroke();
             });
-            if(beam.hit) Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 34, 34);
+            if(beam.hit) Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 34, 34);
             ctx.restore();
         });
     }
@@ -5875,7 +5890,7 @@ class Ship {
                     const fy = Math.sin(turret.aim - this.angle) * tip;
                     ctx.globalCompositeOperation = 'lighter';
                     const bloom = 16 + 20 * turret.flash / 0.14;
-                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
+                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
                 }
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.fillStyle = 'rgba(' + color + ', 0.9)';
@@ -5952,7 +5967,7 @@ class Bullet {
                 ctx.stroke();
             });
             const head = 28 * flicker;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
             ctx.restore();
             return;
         }
@@ -6097,7 +6112,7 @@ class Missile {
             const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = pulse;
-            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["c" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
+            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["c" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
             ctx.globalAlpha = 1;
             ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
             ctx.lineWidth = 1.2;
@@ -6606,18 +6621,49 @@ const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprite
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // City shield styled like the ship shields: soft edge, hexagon lattice, glowing rim.
     const R = STATION.shieldRadius;
     const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
     dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.85, 'rgba(120, 190, 255, 0.05)');
-    dome.addColorStop(1, 'rgba(140, 205, 255, 0.15)');
+    dome.addColorStop(0.8, 'rgba(120, 190, 255, 0.04)');
+    dome.addColorStop(1, 'rgba(140, 205, 255, 0.2)');
     ctx.fillStyle = dome;
     ctx.beginPath();
     ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(150, 210, 255, 0.28)';
-    ctx.lineWidth = 1.5;
+    ctx.save();
+    ctx.clip();
+    const size = 16;
+    const w = size * Math.sqrt(3);
+    const lattice = new Path2D();
+    for(let row = -Math.ceil(R / (size * 1.5)); row <= Math.ceil(R / (size * 1.5)); row++) {
+        for(let col = -Math.ceil(R / w) - 1; col <= Math.ceil(R / w) + 1; col++) {
+            const cx = col * w + (row % 2 ? w / 2 : 0);
+            const cy = row * size * 1.5;
+            if(cx * cx + cy * cy > (R + size) * (R + size)) continue;
+            for(let i = 0; i < 6; i++) {
+                const a1 = Math.PI / 6 + i * Math.PI / 3;
+                lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+            }
+        }
+    }
+    const fade = ctx.createRadialGradient(0, 0, R * 0.4, 0, 0, R);
+    fade.addColorStop(0, 'rgba(140, 205, 255, 0.02)');
+    fade.addColorStop(1, 'rgba(140, 205, 255, 0.22)');
+    ctx.strokeStyle = fade;
+    ctx.lineWidth = 0.8;
+    ctx.stroke(lattice);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150, 215, 255, 0.55)';
+    ctx.lineWidth = 1.8;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = 'rgb(120, 200, 255)';
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
 
     ctx.lineJoin = 'miter';
     ctx.lineWidth = 1.5;
@@ -6649,7 +6695,7 @@ const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprite
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
-});
+}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* spriteResolution */])()));
 
 const drawStation = (ctx, time, canDock) => {
     const key = canDock ? 'dock' : 'idle';
@@ -6660,22 +6706,30 @@ const drawStation = (ctx, time, canDock) => {
     ctx.translate(STATION.x, STATION.y);
     ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
 
-    // Impact ripples and flares (only while something has just hit).
+    // Impact ripples and flares, like the ship shields (only while something has just hit).
     if(STATION.impacts.length) {
         ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 2, 0, Math.PI * 2);
+        ctx.clip();
         ctx.globalCompositeOperation = 'lighter';
         STATION.impacts.forEach(impact => {
             const ix = Math.cos(impact.angle) * R;
             const iy = Math.sin(impact.angle) * R;
-            const size = (60 + 100 * impact.strength) * impact.life;
-            ctx.globalAlpha = impact.life;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('140,200,255'), ix, iy, size, size);
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = 'rgba(150, 215, 255, ' + (0.6 * impact.life) + ')';
+            const age = 1 - impact.life;
+            const size = (50 + 90 * impact.strength) * impact.life;
+            ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('140,200,255'), ix, iy, size, size);
+            ctx.globalAlpha = 0.7 * impact.life;
+            ctx.strokeStyle = 'rgb(150, 215, 255)';
             ctx.lineWidth = 2.5 * impact.life + 0.5;
             ctx.beginPath();
-            ctx.arc(0, 0, R, impact.angle - 0.25 * impact.strength - (1 - impact.life) * 0.4,
-                impact.angle + 0.25 * impact.strength + (1 - impact.life) * 0.4);
+            ctx.arc(ix, iy, 6 + age * R * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.9 * impact.life;
+            ctx.lineWidth = 3 * impact.life;
+            ctx.beginPath();
+            ctx.arc(0, 0, R, impact.angle - 0.2 * impact.strength, impact.angle + 0.2 * impact.strength);
             ctx.stroke();
         });
         ctx.restore();
@@ -6685,7 +6739,7 @@ const drawStation = (ctx, time, canDock) => {
     ctx.globalCompositeOperation = 'lighter';
     const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
     ctx.globalAlpha = 0.8 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
 
     // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
@@ -6694,7 +6748,7 @@ const drawStation = (ctx, time, canDock) => {
         const color = canDock ? '140,255,160' : '255,120,100';
         for(let i = 0; i < 6; i += 2) {
             const angle = i * Math.PI / 3 - Math.PI / 2;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["e" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["c" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
         }
     }
     ctx.restore();
