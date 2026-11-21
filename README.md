@@ -59,7 +59,7 @@ fields and ore mix (Abydos is rich in naquadah, Dakara in gold, and so on).
   new address.
 - **Starmap (M)**: a 3D map of the constellations and worlds. Click a world to see its address: the
   six symbols are three pairs, and the line through each pair passes through the destination.
-- **Hyperdrive**: the X-304, Ha'tak, Asgard and Aurora have one built in, and cruiser-sized ships can
+- **Hyperdrive**: the Al'kesh, X-304, Ha'tak, Asgard and Aurora have one built in, and cruiser-sized ships can
   fit a hyperdrive module. Pick a destination on the starmap and engage: a hyperspace window opens,
   and the trip takes longer the further you go.
 
@@ -106,7 +106,7 @@ Turn it off the same way. Selling gives nothing back while it's on.
 
 Spend credits on:
 
-- **Hulls**: F-302, X-303, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields.
+- **Hulls**: F-302, Death Glider, Puddle Jumper, X-303, Al'kesh, X-304, Ha'tak, Asgard and the Ancient Aurora, each with its own mounts, cargo hold, mass, hull and built-in shields. The Glider, Jumper and Al'kesh line art follows blueprint references; the Al'kesh has a (slow) hyperdrive built in.
 - **Modules** placed on mounts by drag & drop (or select one and click a mount):
   minigun turrets, Goa'uld staff cannons, Asgard ion beams, missile pods, Ancient drone launchers,
   sublight engines, shield emitters, targeting computers, ore scanners, cargo pods, ore tractors and armor.

@@ -1891,6 +1891,148 @@ const HULLS = {
         jetScale: 0.9
     },
 
+    jumper: {
+        id: 'jumper',
+        name: 'Puddle Jumper',
+        className: 'Gateship',
+        faction: 'Ancient',
+        description: 'Lantean gateship: boxy hull, D-shaped windscreen and drive pods on both flanks. Small enough for the Stargate.',
+        cost: 1800,
+        color: '205,232,255',
+        exhaust: '150,210,255',
+        mass: 1.4,
+        hull: 90,
+        baseShield: 20,
+        cargo: 24,
+        thrust: 340,
+        torque: 8,
+        maxTurn: 4.2,
+        moduleScale: 0.6,
+        radius: 24,
+        art: [
+            // Drive pods along the flanks, with the hourglass drive cores at the back.
+            { closed: true, pts: [[1, -7], [1, -11], [-15.5, -11], [-17.5, -10.2], [-17.5, -7.6], [-15.5, -7]] },
+            mirrorPart({ closed: true, pts: [[1, -7], [1, -11], [-15.5, -11], [-17.5, -10.2], [-17.5, -7.6], [-15.5, -7]] }),
+            ...mirrorLine(-9, -10.2, -14, -7.8), ...mirrorLine(-9, -7.8, -14, -10.2),
+            ...mirrorLine(-3, -9, -8, -9), ...mirrorRect(-14.6, -10.4, -15.5, -7.6),
+            // Main hull: blunt front with chamfered corners, rounded stern.
+            { closed: true, pts: symmetric([[20, 0], [20, -6.4], [17.8, -7], [12.5, -7], [11, -7.7], [0, -7.7], [-18.5, -7], [-20, -6], [-20, 0]]) },
+            // Windscreen: flat front edge, rounded behind.
+            { closed: true, pts: symmetric([[13, 0], [13, -4.6], [11.5, -5.2], [8, -5.2], [6.2, -4.2], [5.5, -2.4], [5.5, 0]]) },
+            // Panel lines and the rear ramp.
+            ...mirrorLine(4, -6, -17, -6),
+            ...mirrorLine(-1, -2.6, -18, -2.6),
+            line(-1, -2.6, -1, 2.6),
+            rect(-18, -4.6, -20, 4.6),
+            ...mirrorLine(17, -4.5, 15, -4.5)
+        ],
+        slots: [
+            { id: 'c', x: 2, y: 0 },
+            { id: 'pl', x: -6, y: -9 },
+            { id: 'pr', x: -6, y: 9 },
+            { id: 'rear', x: -11, y: 0 }
+        ],
+        engines: [{ x: -17.5, y: -8.9, size: 0.55 }, { x: -17.5, y: 8.9, size: 0.55 }],
+        colliders: [[17, 0, 7], [9, 0, 7.5], [1, 0, 7.5], [-7, 0, 7.5], [-15, 0, 7], [-4, -9, 3], [-12, -9, 3], [-4, 9, 3], [-12, 9, 3]],
+        jets: { retro: [[19, 6]], side: [[4, 8]], bow: [20, 5], stern: [-18, 10] },
+        jetScale: 0.9
+    },
+
+    glider: {
+        id: 'glider',
+        name: 'Death Glider',
+        className: 'Goa\'uld fighter',
+        faction: "Goa'uld",
+        description: 'Jaffa attack fighter: a slender pod between great crescent wings that curve forward. Fast, fragile, almost no hold.',
+        cost: 1200,
+        color: '255,205,110',
+        exhaust: '255,190,90',
+        mass: 0.9,
+        hull: 45,
+        baseShield: 0,
+        cargo: 8,
+        thrust: 300,
+        torque: 10,
+        maxTurn: 5.5,
+        moduleScale: 0.55,
+        radius: 34,
+        art: [
+            // Crescent wings: tips curve forward, the convex edge faces aft.
+            { closed: true, pts: [[8.7, -7.3], [9.8, -11.6], [10.9, -20.3], [11.9, -30], [12.8, -35.2], [10, -35.6], [4.3, -30.5],
+                [-4.3, -23], [-10.9, -15.4], [-14.7, -8.6], [-15.4, -4], [-8, -6.8]] },
+            mirrorPart({ closed: true, pts: [[8.7, -7.3], [9.8, -11.6], [10.9, -20.3], [11.9, -30], [12.8, -35.2], [10, -35.6], [4.3, -30.5],
+                [-4.3, -23], [-10.9, -15.4], [-14.7, -8.6], [-15.4, -4], [-8, -6.8]] }),
+            // Wing ribs.
+            ...mirrorLine(11.5, -27, 3, -29.8), ...mirrorLine(10.6, -16, -7, -19.2), ...mirrorLine(9.6, -10, -12.6, -12),
+            // Weapon housings inside the wings.
+            { closed: true, pts: [[3.3, -23.6], [-11, -11.2], [2.7, -11.2]] },
+            mirrorPart({ closed: true, pts: [[3.3, -23.6], [-11, -11.2], [2.7, -11.2]] }),
+            // Central pod with the canopy.
+            { closed: true, pts: symmetric([[15.5, 0], [12.5, -3], [8, -6], [0, -7.3], [-8, -7], [-13, -5], [-15.4, 0]]) },
+            { closed: true, pts: symmetric([[12.8, 0], [10, -2.2], [4, -3], [-1.6, -2.6], [-1.6, 0]]) },
+            line(-1.6, 0, -13, 0)
+        ],
+        slots: [
+            { id: 'c', x: -6, y: 0 },
+            { id: 'wl', x: -1, y: -16 },
+            { id: 'wr', x: -1, y: 16 }
+        ],
+        engines: [{ x: -15.5, y: -2, size: 0.5 }, { x: -15.5, y: 2, size: 0.5 }],
+        colliders: [[12, 0, 5], [4, 0, 7], [-5, 0, 7], [-12, 0, 5], [10, -30, 4], [10, 30, 4], [6, -22, 5], [6, 22, 5],
+            [-2, -20, 5], [-2, 20, 5], [-9, -13, 5], [-9, 13, 5]],
+        jets: { retro: [[13, 34]], side: [[0, 29]], bow: [15, 3], stern: [-15, 8] },
+        jetScale: 0.9
+    },
+
+    alkesh: {
+        id: 'alkesh',
+        hyperdrive: 1.0,          // built-in hyperdrive speed
+        name: "Al'kesh",
+        className: 'Goa\'uld bomber',
+        faction: "Goa'uld",
+        description: 'Mid-range bomber: arrowhead hull with a raised dorsal wedge and four engines aft. Sturdy, with a slow hyperdrive.',
+        cost: 3500,
+        color: '255,205,110',
+        exhaust: '170,210,255',
+        mass: 3.2,
+        hull: 190,
+        baseShield: 30,
+        cargo: 70,
+        thrust: 640,
+        torque: 4.2,
+        maxTurn: 2.6,
+        moduleScale: 0.85,
+        radius: 40,
+        art: [
+            // Arrowhead hull with a broad, rounded stern.
+            { closed: true, pts: symmetric([[34, 0], [24, -6], [10, -14], [-6, -21], [-17, -25], [-23, -24.5], [-27, -20], [-28.5, -10], [-28.5, 0]]) },
+            // Raised dorsal wedge pointing forward.
+            { closed: true, pts: [[30, 0], [-16, -12], [-20, 0], [-16, 12]] },
+            line(30, 0, -20, 0),
+            ...mirrorLine(18, -4, -8, -10.5),
+            // Side window bands.
+            ...mirrorLine(16, -9, 4, -14.5), ...mirrorLine(1, -16, -12, -21),
+            // Engine housings and nozzles across the stern.
+            ...mirrorRect(-22, -20.5, -28.5, -8),
+            { circle: [-27, -17, 2.4] }, { circle: [-27, -11.3, 2.4] }, { circle: [-27, 11.3, 2.4] }, { circle: [-27, 17, 2.4] },
+            // Bow gun.
+            line(34, 0, 39, 0)
+        ],
+        slots: [
+            { id: 'nose', x: 22, y: 0 },
+            { id: 'top', x: 2, y: 0 },
+            { id: 'wl', x: -6, y: -15 },
+            { id: 'wr', x: -6, y: 15 },
+            { id: 'rl', x: -18, y: -6 },
+            { id: 'rr', x: -18, y: 6 }
+        ],
+        engines: [{ x: -28.5, y: -17, size: 0.75 }, { x: -28.5, y: -11.3, size: 0.75 }, { x: -28.5, y: 11.3, size: 0.75 }, { x: -28.5, y: 17, size: 0.75 }],
+        colliders: [[28, 0, 6], [20, 0, 8], [10, 0, 10], [-1, 0, 11], [-13, 0, 12], [-22, 0, 9],
+            [4, -12, 6], [4, 12, 6], [-8, -17, 7], [-8, 17, 7], [-20, -19, 7], [-20, 19, 7]],
+        jets: { retro: [[30, 4]], side: [[-8, 22]], bow: [33, 2], stern: [-27, 23] },
+        jetScale: 1.3
+    },
+
     x303: {
         id: 'x303',
         name: 'X-303',
@@ -2034,41 +2176,54 @@ const HULLS = {
         moduleScale: 1.1,
         radius: 72,
         art: [
-            // Six legs: a forward pair, a side pair and a rear pair, each with an elbow.
-            leg([[10, -17], [40, -13.5], [64, -8.5]], 4.5), mirrorPart(leg([[10, -17], [40, -13.5], [64, -8.5]], 4.5)),
-            leg([[2, -22], [2, -44], [9, -63]], 7), mirrorPart(leg([[2, -22], [2, -44], [9, -63]], 7)),
-            leg([[-12, -16], [-34, -30], [-58, -40]], 7), mirrorPart(leg([[-12, -16], [-34, -30], [-58, -40]], 7)),
-            // Squared feet at the end of each leg.
-            ...mirrorRect(62, -13.5, 68, -4), ...mirrorRect(3, -60, 16, -66),
-            { closed: true, pts: [[-55, -46], [-62, -34], [-66, -36], [-59, -48]] },
-            mirrorPart({ closed: true, pts: [[-55, -46], [-62, -34], [-66, -36], [-59, -48]] }),
-            // Hangar rings at the elbows.
-            { circle: [2, -44, 4] }, { circle: [2, 44, 4] }, { circle: [-34, -30, 4] }, { circle: [-34, 30, 4] },
-            { circle: [40, -13.5, 2.5] }, { circle: [40, 13.5, 2.5] },
-            // Central pyramid: nested triangles pointing forward.
-            { closed: true, pts: [[26, 0], [-16, -22], [-16, 22]] },
-            { closed: true, pts: [[16, 0], [-10, -14], [-10, 14]] },
-            { closed: true, pts: [[7, 0], [-5, -6.5], [-5, 6.5]] },
-            line(26, 0, 7, 0), line(-16, -22, -5, -6.5), line(-16, 22, -5, 6.5),
-            ...mirrorRect(-16, -12, -19, -4)
+            // Eight legs, as in the top-down blueprint: two narrow forward prongs, two arms
+            // angled forward, two arms out to the sides and two legs angled back.
+            // Solid central hull the legs grow out of.
+            { closed: true, pts: symmetric([[40, 0], [38, -11], [24, -21], [6, -29], [-12, -34], [-26, -28], [-27, -14], [-24, 0]]) },
+            leg([[18, -6], [40, -9.5], [62, -12]], 5.5), mirrorPart(leg([[18, -6], [40, -9.5], [62, -12]], 5.5)),
+            leg([[12, -14], [32, -28], [50, -42]], 6.5), mirrorPart(leg([[12, -14], [32, -28], [50, -42]], 6.5)),
+            leg([[-6, -20], [-1, -44], [4, -67]], 7), mirrorPart(leg([[-6, -20], [-1, -44], [4, -67]], 7)),
+            leg([[-16, -14], [-40, -19], [-66, -26]], 7), mirrorPart(leg([[-16, -14], [-40, -19], [-66, -26]], 7)),
+            // Hull plates joining the side arms to the rear legs.
+            { closed: true, pts: [[-4, -20], [-16, -38], [-32, -30], [-16, -13]] },
+            mirrorPart({ closed: true, pts: [[-4, -20], [-16, -38], [-32, -30], [-16, -13]] }),
+            // Squared feet.
+            { closed: true, pts: [[60, -16], [67, -15], [66, -8], [59, -8.5]] },
+            mirrorPart({ closed: true, pts: [[60, -16], [67, -15], [66, -8], [59, -8.5]] }),
+            { closed: true, pts: [[45, -47], [53, -50], [56, -40], [49, -37]] },
+            mirrorPart({ closed: true, pts: [[45, -47], [53, -50], [56, -40], [49, -37]] }),
+            ...mirrorRect(-3, -64, 11, -71),
+            ...mirrorRect(-63, -32, -70, -20),
+            // Hangar rings at the hubs.
+            { circle: [38, -8, 3] }, { circle: [38, 8, 3] },
+            { circle: [-19, -36, 4] }, { circle: [-19, 36, 4] },
+            { circle: [-31, -29, 3.5] }, { circle: [-31, 29, 3.5] },
+            // Central pyramid: nested triangles pointing forward, and the spine between the prongs.
+            { closed: true, pts: [[30, 0], [-18, -24], [-18, 24]] },
+            { closed: true, pts: [[20, 0], [-11, -16], [-11, 16]] },
+            { closed: true, pts: [[9, 0], [-4, -7], [-4, 7]] },
+            line(30, 0, 9, 0), line(-18, -24, -4, -7), line(-18, 24, -4, 7),
+            line(30, 0, 38, 0),
+            ...mirrorRect(-18, -13, -22, -4)
         ],
         slots: [
             { id: 'top', x: 3, y: 0 },
-            { id: 'fl', x: 52, y: -11 },
-            { id: 'fr', x: 52, y: 11 },
-            { id: 'pl', x: 2, y: -33 },
-            { id: 'pr', x: 2, y: 33 },
-            { id: 'al', x: -46, y: -35 },
-            { id: 'ar', x: -46, y: 35 },
+            { id: 'fl', x: 50, y: -10.5 },
+            { id: 'fr', x: 50, y: 10.5 },
+            { id: 'pl', x: 0, y: -52 },
+            { id: 'pr', x: 0, y: 52 },
+            { id: 'al', x: -50, y: -22 },
+            { id: 'ar', x: -50, y: 22 },
             { id: 'sl', x: -11, y: -10 },
             { id: 'sr', x: -11, y: 10 }
         ],
-        engines: [{ x: -19, y: -8, size: 1.3 }, { x: -19, y: 8, size: 1.3 }, { x: -64, y: -41, size: 0.8 }, { x: -64, y: 41, size: 0.8 }],
-        colliders: [[2, 0, 16], [16, 0, 9], [-12, -14, 7], [-12, 14, 7],
-            [26, -15, 5], [26, 15, 5], [44, -13, 5], [44, 13, 5], [62, -8.5, 5], [62, 8.5, 5],
-            [2, -28, 8], [2, 28, 8], [3, -44, 8], [3, 44, 8], [8, -60, 8], [8, 60, 8],
-            [-22, -22, 8], [-22, 22, 8], [-36, -31, 8], [-36, 31, 8], [-52, -38, 8], [-52, 38, 8]],
-        jets: { retro: [[66, 10]], side: [[9, 66]], bow: [62, 11], stern: [-60, 46] },
+        engines: [{ x: -22, y: -8, size: 1.3 }, { x: -22, y: 8, size: 1.3 }, { x: -70, y: -26, size: 0.8 }, { x: -70, y: 26, size: 0.8 }],
+        colliders: [[4, 0, 17], [20, 0, 9], [-12, -16, 8], [-12, 16, 8],
+            [30, -8, 5], [30, 8, 5], [46, -10, 5], [46, 10, 5], [62, -12, 5], [62, 12, 5],
+            [24, -22, 6], [24, 22, 6], [38, -33, 6], [38, 33, 6], [50, -43, 6], [50, 43, 6],
+            [-3, -32, 8], [-3, 32, 8], [0, -50, 8], [0, 50, 8], [4, -66, 7], [4, 66, 7],
+            [-20, -30, 9], [-20, 30, 9], [-34, -19, 8], [-34, 19, 8], [-50, -22, 8], [-50, 22, 8], [-65, -26, 7], [-65, 26, 7]],
+        jets: { retro: [[66, 14]], side: [[4, 70]], bow: [64, 13], stern: [-68, 30] },
         jetScale: 1.8,
         exhaust: '255,190,90',
         shieldColor: '255,200,120'
@@ -2215,7 +2370,7 @@ const HULLS = {
     }
 };
 
-const HULL_ORDER = ['x302', 'x303', 'x304', 'hatak', 'asgard', 'aurora'];
+const HULL_ORDER = ['x302', 'glider', 'jumper', 'x303', 'alkesh', 'x304', 'hatak', 'asgard', 'aurora'];
 /* harmony export (immutable) */ __webpack_exports__["a"] = HULL_ORDER;
 
 
