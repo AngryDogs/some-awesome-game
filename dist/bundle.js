@@ -824,21 +824,57 @@ const loops = {};
 const lastShots = {};
 let samplesRequested = false;
 
+// Fallback for when the files can't be fetched into Web Audio, above all when the game is
+// opened straight from disk (file://), where browsers block fetch(): plain <audio>
+// elements can still play them.
+const elements = {};
+const loadElement = (name, i, file) => {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.src = CAP + file;
+    elements[name][i] = audio;
+};
+
 function loadSamples(c) {
-    if(samplesRequested || !window.fetch) return;
+    if(samplesRequested) return;
     samplesRequested = true;
+    const local = window.location.protocol === 'file:' || !window.fetch;
     Object.keys(SAMPLE_FILES).forEach(name => {
         buffers[name] = [];
+        elements[name] = [];
         SAMPLE_FILES[name].forEach((file, i) => {
+            if(local) {
+                loadElement(name, i, file);
+                return;
+            }
             window.fetch(CAP + file)
                 .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(file))))
                 // Callback form: older Safari has no promise-returning decodeAudioData.
                 .then(data => new Promise((resolve, reject) => c.decodeAudioData(data, resolve, reject)))
                 .then(buffer => { buffers[name][i] = buffer; })
-                .catch(() => {});
+                .catch(() => loadElement(name, i, file));
         });
     });
 }
+
+// Play through an <audio> element (fallback path). Returns true if one was available.
+const playElement = (name, index, level, opts) => {
+    const list = elements[name];
+    const audio = list && (list[index] || list.filter(Boolean)[0]);
+    if(!audio || audio.error) return false;
+    const clip = LOOPING_SAMPLES[name] ? audio : audio.cloneNode();
+    clip.volume = Math.max(0, Math.min(1, level));
+    clip.playbackRate = opts.rate || 1;
+    if(LOOPING_SAMPLES[name]) {
+        if(loops[name]) return true;
+        clip.loop = true;
+        loops[name] = { element: clip };
+    } else {
+        lastShots[name] = { element: clip };
+    }
+    safePlay(clip);
+    return true;
+};
 
 // Play sample `name` (a random variant, or options.variant). Returns false if it isn't
 // loaded yet so the caller can fall back to the synthesized sound.
@@ -850,13 +886,13 @@ const playSample = (name, volume, options) => {
     const count = SAMPLE_FILES[name].length;
     const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
     const buffer = list[index] || list.filter(Boolean)[0];
-    if(!buffer) return false;
     const level = volume === undefined ? 0.9 : volume;
+    if(!buffer) return playElement(name, index, level, opts);
 
     if(LOOPING_SAMPLES[name]) {
         const playing = loops[name];
         if(playing) {
-            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            if(playing.gain) playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
             return true;
         }
     }
@@ -888,6 +924,10 @@ const cutSample = (name, fade) => {
     const shot = lastShots[name];
     if(!shot || !ac) return;
     delete lastShots[name];
+    if(shot.element) {
+        shot.element.pause();
+        return;
+    }
     shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
     try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
 };
@@ -896,6 +936,11 @@ const stopSample = (name) => {
     const playing = loops[name];
     if(!playing || !ac) return;
     delete loops[name];
+    if(playing.element) {
+        playing.element.pause();
+        playing.element.currentTime = 0;
+        return;
+    }
     playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
     try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
 };
@@ -1009,7 +1054,7 @@ const hyperVoice = createVoice(c => {
 const gateSounds = {
     // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
     dhdPress(index) {
-        if(playSample('dhd_press', 0.8, { variant: index })) return;
+        if(playSample('dhd_press', 0.9, { rate: 0.97 + Math.random() * 0.06 })) return;
         const c = context();
         if(!c) return;
         const f = 520 + (index % 13) * 22;
@@ -1302,7 +1347,6 @@ const sounds = {
         const c = throttle('shield', 0.07);
         if(!c) return;
         const s = Math.max(0.3, Math.min(1.5, strength || 1));
-        if(playSample('shield_hit', 0.35 + 0.35 * Math.min(1, s), { rate: vary(0.05) })) return;
         tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
         tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
         noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
@@ -1423,13 +1467,12 @@ Object.assign(sounds, gateSounds);
 // large sphere around the map), so the starmap can draw the three lines meeting exactly
 // at the world.
 
-// 36 constellations: one per triangle of the DHD (see ui/dhd.js).
 const CONSTELLATIONS = [
     'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
     'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
-    'Leo', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
+    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
     'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
-    'Serpens Caput', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
+    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
 ];
 /* harmony export (immutable) */ __webpack_exports__["a"] = CONSTELLATIONS;
 
@@ -1526,7 +1569,7 @@ const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
 const build = () => {
     const rnd = random(1994);
     const positions = new Array(CONSTELLATIONS.length);
-    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 15 anchors, 21 line ends
+    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
 
     // Anchors: evenly spread over the sphere.
     for(let i = 0; i < anchorCount; i++) {
@@ -6683,26 +6726,6 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
-// The player's ship drawn in the hyperspace tunnel, pointing at (x, y) heading `angle`.
-const drawShipInTunnel = (c, x, y, angle, scale) => {
-    const ship = state.ship;
-    const hidden = ship.hidden;
-    const shield = ship.shieldLevel;
-    ship.hidden = false;
-    ship.shieldLevel = 0;
-    c.save();
-    c.translate(x, y);
-    // Big enough to read, whatever the hull's size.
-    const k = Math.min(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height) * 0.2 / Math.max(20, ship.radius || 40) * Math.min(1.5, scale);
-    c.scale(k, k);
-    c.rotate(angle - ship.angle);
-    c.translate(-ship.x, -ship.y);
-    ship.draw(c);
-    c.restore();
-    ship.hidden = hidden;
-    ship.shieldLevel = shield;
-};
-
 const renderTunnel = () => {
     const tr = state.transition;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -6711,8 +6734,7 @@ const renderTunnel = () => {
     else {
         const remaining = Math.max(0, tr.duration - tr.t);
         Object(__WEBPACK_IMPORTED_MODULE_17__travel__["b" /* drawHyperspace */])(ctx, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height, time, Math.min(1, tr.t / tr.duration),
-            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s',
-            drawShipInTunnel);
+            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s');
     }
 };
 
@@ -9737,23 +9759,17 @@ class Stargate {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
-// DHD (dial-home device) panel, laid out as the hexagon of triangular constellation tiles:
-// 36 constellations, each tile showing its star figure. The grey triangle in the middle is
-// the dial button (the "dome"), and this gate's point of origin has its own tile in the
-// top-left corner. Enter six constellations and the point of origin, then press the
-// centre to dial.
+// DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
+// origin, then press the dome to dial.
 
 
 
 
 
-const SIDE = 104;                       // triangle side
-const ROW = SIDE * Math.sqrt(3) / 2;    // row height
-const WIDTH = SIDE * 5;
-const HEIGHT = Math.round(ROW * 5);
-const CX = WIDTH / 2;
-// Hexagon width (in triangle bases) at each row boundary, top to bottom.
-const BOUNDARY_WIDTHS = [2, 3, 4, 5, 4, 3];
+const SIZE = 520;
+const OUTER = [205, 250];   // inner / outer radius of the outer key ring
+const INNER = [140, 200];
+const DOME = 75;
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -9762,66 +9778,11 @@ const el = (tag, className, text) => {
     return node;
 };
 
-// Build the triangles row by row: "up" triangles stand on the row's bottom edge, "down"
-// triangles hang from its top edge.
-const CELLS = [];
-for(let row = 0; row < 5; row++) {
-    const top = BOUNDARY_WIDTHS[row];
-    const bottom = BOUNDARY_WIDTHS[row + 1];
-    const y0 = row * ROW;
-    const y1 = (row + 1) * ROW;
-    const xTop = CX - top * SIDE / 2;
-    const xBottom = CX - bottom * SIDE / 2;
-    const rowCells = [];
-    for(let i = 0; i < bottom; i++) {
-        const x = xBottom + i * SIDE;
-        rowCells.push({ points: [[x, y1], [x + SIDE, y1], [x + SIDE / 2, y0]], up: true });
-    }
-    for(let i = 0; i < top; i++) {
-        const x = xTop + i * SIDE;
-        rowCells.push({ points: [[x, y0], [x + SIDE, y0], [x + SIDE / 2, y1]], up: false });
-    }
-    rowCells.sort((a, b) => (a.points[0][0] + a.points[1][0] + a.points[2][0]) - (b.points[0][0] + b.points[1][0] + b.points[2][0]));
-    rowCells.forEach(cell => CELLS.push(cell));
-}
-CELLS.forEach(cell => {
-    cell.cx = (cell.points[0][0] + cell.points[1][0] + cell.points[2][0]) / 3;
-    cell.cy = (cell.points[0][1] + cell.points[1][1] + cell.points[2][1]) / 3;
-});
-
-// The centre "up" triangle of the middle row is the dial button; the others get the
-// constellations in glyph-chart order.
-const DIAL_CELL = CELLS.filter(c => c.up && Math.abs(c.cx - CX) < 1 && c.cy > 2 * ROW && c.cy < 3 * ROW)[0];
+// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
+// origin on the inner ring.
 const KEYS = [];
-let next = 0;
-CELLS.forEach(cell => {
-    if(cell === DIAL_CELL) return;
-    KEYS.push({ glyph: __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][next++], cell: cell });
-});
-// Point of origin: a tile of its own in the free top-left corner.
-const ORIGIN_CELL = { points: [[8, 92], [96, 92], [52, 16]], up: true };
-ORIGIN_CELL.cx = 52;
-ORIGIN_CELL.cy = (92 * 2 + 16) / 3;
-KEYS.push({ glyph: 'origin', cell: ORIGIN_CELL });
-
-const inTriangle = (x, y, p) => {
-    const sign = (a, b, c) => (a[0] - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (a[1] - c[1]);
-    const pt = [x, y];
-    const d1 = sign(pt, p[0], p[1]);
-    const d2 = sign(pt, p[1], p[2]);
-    const d3 = sign(pt, p[2], p[0]);
-    const neg = d1 < 0 || d2 < 0 || d3 < 0;
-    const pos = d1 > 0 || d2 > 0 || d3 > 0;
-    return !(neg && pos);
-};
-
-const tracePath = (ctx, points) => {
-    ctx.beginPath();
-    ctx.moveTo(points[0][0], points[0][1]);
-    ctx.lineTo(points[1][0], points[1][1]);
-    ctx.lineTo(points[2][0], points[2][1]);
-    ctx.closePath();
-};
+for(let i = 0; i < 19; i++) KEYS.push({ glyph: __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][i], ring: OUTER, slot: i, count: 19 });
+for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
 
 class DHD {
 
@@ -9860,7 +9821,7 @@ class DHD {
             this.render();
         });
         actions.appendChild(clear);
-        actions.appendChild(el('span', 'dhd-hint', 'Enter the 6 constellations of an address, then the point of origin (top left), then press the centre to dial. Addresses are on the starmap (M).'));
+        actions.appendChild(el('span', 'dhd-hint', 'Enter 6 symbols, then the point of origin, then press the dome. Addresses are on the starmap (M).'));
         panel.appendChild(actions);
 
         root.appendChild(panel);
@@ -9868,10 +9829,10 @@ class DHD {
         this.root = root;
 
         const ratio = window.devicePixelRatio || 1;
-        this.canvas.width = WIDTH * ratio;
-        this.canvas.height = (HEIGHT + 4) * ratio;
-        this.canvas.style.width = WIDTH + 'px';
-        this.canvas.style.height = (HEIGHT + 4) + 'px';
+        this.canvas.width = SIZE * ratio;
+        this.canvas.height = SIZE * ratio;
+        this.canvas.style.width = SIZE + 'px';
+        this.canvas.style.height = SIZE + 'px';
         this.ctx = this.canvas.getContext('2d');
         this.ctx.scale(ratio, ratio);
         this.addressBar.width = 520 * ratio;
@@ -9926,14 +9887,30 @@ class DHD {
         this.status.classList.toggle('error', !!error);
     }
 
+    keyGeometry(key) {
+        const step = Math.PI * 2 / key.count;
+        const a1 = -Math.PI / 2 + key.slot * step - step / 2 + 0.01;
+        const a2 = a1 + step - 0.02;
+        return { a1: a1, a2: a2, mid: (a1 + a2) / 2, r1: key.ring[0], r2: key.ring[1] };
+    }
+
     keyAt(event) {
         const rect = this.canvas.getBoundingClientRect();
         // The canvas may be scaled down by CSS on small screens.
-        const x = (event.clientX - rect.left) * WIDTH / (rect.width || WIDTH);
-        const y = (event.clientY - rect.top) * (HEIGHT + 4) / (rect.height || HEIGHT + 4);
-        if(inTriangle(x, y, DIAL_CELL.points)) return 'dome';
+        const sx = SIZE / (rect.width || SIZE);
+        const sy = SIZE / (rect.height || SIZE);
+        const x = (event.clientX - rect.left) * sx - SIZE / 2;
+        const y = (event.clientY - rect.top) * sy - SIZE / 2;
+        const r = Math.sqrt(x * x + y * y);
+        if(r < DOME) return 'dome';
+        let a = Math.atan2(y, x);
         for(let i = 0; i < KEYS.length; i++) {
-            if(inTriangle(x, y, KEYS[i].cell.points)) return i;
+            const g = this.keyGeometry(KEYS[i]);
+            if(r < g.r1 || r > g.r2) continue;
+            let rel = a - g.a1;
+            while(rel < 0) rel += Math.PI * 2;
+            while(rel > Math.PI * 2) rel -= Math.PI * 2;
+            if(rel <= g.a2 - g.a1) return i;
         }
         return -1;
     }
@@ -9990,66 +9967,133 @@ class DHD {
 
     render() {
         const ctx = this.ctx;
-        ctx.clearRect(0, 0, WIDTH, HEIGHT + 4);
+        const c = SIZE / 2;
+        ctx.clearRect(0, 0, SIZE, SIZE);
         ctx.save();
-        ctx.translate(0, 2);
-        ctx.lineJoin = 'round';
+        ctx.translate(c, c);
 
-        const tile = (cell, fill) => {
-            tracePath(ctx, cell.points);
-            ctx.fillStyle = fill;
-            ctx.fill();
-        };
+        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
+        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
+        base.addColorStop(0, 'rgb(96, 92, 86)');
+        base.addColorStop(0.7, 'rgb(62, 59, 55)');
+        base.addColorStop(1, 'rgb(34, 32, 30)');
+        ctx.fillStyle = base;
+        ctx.beginPath();
+        ctx.arc(0, 0, 258, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
+            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Collar around the dome.
+        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
+        collar.addColorStop(0, 'rgb(30, 28, 26)');
+        collar.addColorStop(1, 'rgb(80, 76, 70)');
+        ctx.fillStyle = collar;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
+        ctx.fill();
 
         KEYS.forEach((key, i) => {
-            const cell = key.cell;
+            const g = this.keyGeometry(key);
             const glyph = this.glyphOf(key);
             const lit = this.entered.indexOf(glyph) !== -1;
             const hovered = this.hover === i;
+            const r = (g.r1 + g.r2) / 2;
+            const kx = Math.cos(g.mid) * r;
+            const ky = Math.sin(g.mid) * r;
+            ctx.beginPath();
+            ctx.arc(0, 0, g.r2, g.a1, g.a2);
+            ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
+            ctx.closePath();
+            // Each key is a slightly domed tile lit from the top-left.
+            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
             if(lit) {
-                const g = ctx.createRadialGradient(cell.cx, cell.cy, 4, cell.cx, cell.cy, SIDE * 0.6);
-                g.addColorStop(0, 'rgb(255, 214, 150)');
-                g.addColorStop(1, 'rgb(235, 130, 45)');
-                tile(cell, g);
+                tile.addColorStop(0, 'rgb(255, 214, 150)');
+                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
+                tile.addColorStop(1, 'rgb(150, 60, 15)');
             } else {
-                tile(cell, hovered ? 'rgb(214, 228, 248)' : 'rgb(246, 244, 238)');
+                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
+                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
             }
-            const ink = lit ? 'rgb(70, 25, 0)' : 'rgb(10, 10, 12)';
-            if(key.glyph === 'origin') {
-                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, cell.cx, cell.cy + 2, 34, ink, 3);
+            ctx.fillStyle = tile;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
+                ctx.shadowBlur = 14;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgb(28, 25, 22)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
+            const size = key.ring === OUTER ? 30 : 34;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+                ctx.shadowBlur = 8;
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
+                ctx.shadowBlur = 0;
             } else {
-                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawConstellation */])(ctx, key.glyph, cell.cx, cell.cy + (cell.up ? 3 : -3), SIDE * 0.42, ink, ink, 1.35);
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
             }
         });
 
-        // Dial button: the grey centre triangle, glowing red once the address is complete.
+        // Dome: the big red crystal. It glows once a full address is entered.
         const ready = this.entered.length === 7;
+        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
+        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
+        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
+        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
+        dome.addColorStop(1, 'rgb(60, 8, 6)');
         if(ready) {
-            const g = ctx.createRadialGradient(DIAL_CELL.cx, DIAL_CELL.cy - 6, 3, DIAL_CELL.cx, DIAL_CELL.cy, SIDE * 0.6);
-            g.addColorStop(0, 'rgb(255, 190, 160)');
-            g.addColorStop(0.5, 'rgb(230, 50, 30)');
-            g.addColorStop(1, 'rgb(130, 15, 10)');
-            ctx.shadowColor = 'rgba(255, 60, 30, 0.9)';
-            ctx.shadowBlur = 22;
-            tile(DIAL_CELL, g);
-            ctx.shadowBlur = 0;
-        } else {
-            tile(DIAL_CELL, this.hover === 'dome' ? 'rgb(150, 150, 150)' : 'rgb(128, 128, 128)');
+            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
+            ctx.shadowBlur = 30;
         }
-
-        // Thick black borders, like the chart.
-        ctx.strokeStyle = 'rgb(12, 12, 14)';
-        ctx.lineWidth = 2.6;
-        CELLS.forEach(cell => {
-            tracePath(ctx, cell.points);
+        ctx.fillStyle = dome;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Facets inside the crystal.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 12; i++) {
+            const a = i * Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
+            ctx.stroke();
+        }
+        [18, 42].forEach(rr => {
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, 0, Math.PI * 2);
             ctx.stroke();
         });
-        tracePath(ctx, ORIGIN_CELL.points);
-        ctx.stroke();
-        ctx.font = '9px Bungee, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(240, 225, 205, 0.85)';
-        ctx.fillText('ORIGIN', ORIGIN_CELL.cx, ORIGIN_CELL.points[0][1] + 13);
+        // Specular highlight.
+        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(-60, -64, 70, 70);
+        ctx.restore();
+        if(this.hover === 'dome' || ready) {
+            ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+            ctx.stroke();
+        }
         ctx.restore();
 
         // Hovered key name.
@@ -10057,14 +10101,9 @@ class DHD {
             const key = KEYS[this.hover];
             const name = key.glyph === 'origin' ? 'Point of origin · ' + this.options.originName : __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][key.glyph];
             ctx.font = '14px Bungee, sans-serif';
-            ctx.textAlign = 'right';
+            ctx.textAlign = 'center';
             ctx.fillStyle = '#fff';
-            ctx.fillText(name, WIDTH - 6, HEIGHT - 6);
-        } else if(this.hover === 'dome') {
-            ctx.font = '14px Bungee, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#fff';
-            ctx.fillText('Dial', WIDTH - 6, HEIGHT - 6);
+            ctx.fillText(name, c, SIZE - 6);
         }
 
         // Address bar: seven slots.
@@ -10703,125 +10742,56 @@ const drawWormhole = (ctx, w, h, time, progress) => {
 /* harmony export (immutable) */ __webpack_exports__["c"] = drawWormhole;
 
 
-// Hyperspace, as in the show: soft, blurred blue-white rays streaming out of a bright,
-// crystalline vanishing point, with dark bands between them, and the ship flying in the
-// middle. The rays are drawn into a small offscreen canvas and scaled up, which blurs them
-// cheaply.
-let rayCanvas = null;
-const RAYS = [];
-for(let i = 0; i < 46; i++) {
-    RAYS.push({ angle: Math.random() * Math.PI * 2, width: 0.05 + Math.random() * 0.16, light: Math.random() < 0.55,
-        speed: 0.6 + Math.random() * 1.4, phase: Math.random() * 10, drift: (Math.random() - 0.5) * 0.06 });
-}
+// Hyperspace: a deep blue tunnel with streaming light clouds and star streaks.
+const drawHyperspace = (ctx, w, h, time, progress, label) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const max = Math.sqrt(w * w + h * h) * 0.6;
 
-const hyperVanishingPoint = (w, h, time) => ({
-    x: w * (0.3 + Math.sin(time * 0.31) * 0.025),
-    y: h * (0.24 + Math.cos(time * 0.27) * 0.025)
-});
-/* unused harmony export hyperVanishingPoint */
-
-
-// `drawShip(ctx, x, y, angle, scale)` draws the player's ship in the tunnel (optional).
-const drawHyperspace = (ctx, w, h, time, progress, label, drawShip) => {
-    const vp = hyperVanishingPoint(w, h, time);
-    const scale = 8;
-    const sw = Math.max(32, Math.ceil(w / scale));
-    const sh = Math.max(24, Math.ceil(h / scale));
-    if(!rayCanvas) rayCanvas = document.createElement('canvas');
-    if(rayCanvas.width !== sw || rayCanvas.height !== sh) {
-        rayCanvas.width = sw;
-        rayCanvas.height = sh;
-    }
-    const r = rayCanvas.getContext('2d');
-    const vx = vp.x / scale;
-    const vy = vp.y / scale;
-    const far = Math.sqrt(sw * sw + sh * sh) * 1.2;
-
-    // Pale blue base, brighter towards the vanishing point.
-    const base = r.createRadialGradient(vx, vy, 0, vx, vy, far);
-    base.addColorStop(0, 'rgb(235, 245, 255)');
-    base.addColorStop(0.2, 'rgb(165, 200, 240)');
-    base.addColorStop(0.6, 'rgb(110, 150, 210)');
-    base.addColorStop(1, 'rgb(70, 100, 165)');
-    r.fillStyle = base;
-    r.fillRect(0, 0, sw, sh);
-
-    // Wedge-shaped rays: light streams and dark bands, slowly turning and pulsing.
-    RAYS.forEach(ray => {
-        const a = ray.angle + time * ray.drift;
-        const pulse = 0.5 + 0.5 * Math.sin(time * ray.speed + ray.phase);
-        const half = ray.width * (0.7 + 0.5 * pulse);
-        r.fillStyle = ray.light ? 'rgba(235, 245, 255, ' + (0.18 + 0.3 * pulse) + ')' : 'rgba(8, 16, 40, ' + (0.2 + 0.35 * pulse) + ')';
-        r.beginPath();
-        r.moveTo(vx, vy);
-        r.lineTo(vx + Math.cos(a - half) * far, vy + Math.sin(a - half) * far);
-        r.lineTo(vx + Math.cos(a + half) * far, vy + Math.sin(a + half) * far);
-        r.closePath();
-        r.fill();
-    });
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, max);
+    bg.addColorStop(0, 'rgb(200, 225, 255)');
+    bg.addColorStop(0.12, 'rgb(60, 110, 220)');
+    bg.addColorStop(0.5, 'rgb(15, 35, 110)');
+    bg.addColorStop(1, 'rgb(5, 10, 40)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
     ctx.save();
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(rayCanvas, 0, 0, sw * scale, sh * scale);
-
-    // Light streaming outwards along the rays.
     ctx.globalCompositeOperation = 'lighter';
+    // Light clouds rushing past.
+    for(let i = 0; i < 24; i++) {
+        const z = ((i / 24) + time * 0.7) % 1;
+        const a = i * 2.4 + time * 0.3;
+        const r = Math.pow(z, 2) * max;
+        const size = 40 + z * 380;
+        ctx.globalAlpha = 0.12 + 0.25 * z;
+        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
+    }
+    ctx.globalAlpha = 1;
+    // Long star streaks.
     ctx.lineCap = 'round';
-    const max = Math.sqrt(w * w + h * h);
-    STREAKS.forEach(st => {
-        const z = (st.depth + time * st.speed * 0.8) % 1;
-        const r1 = Math.pow(z, 2.2) * max;
-        const r2 = Math.pow(Math.min(1, z + 0.12), 2.2) * max;
-        ctx.strokeStyle = 'rgba(225, 240, 255, ' + (0.02 + 0.08 * z) + ')';
-        ctx.lineWidth = st.width * (4 + z * 16);
+    STREAKS.forEach(s => {
+        const z = (s.depth + time * s.speed * 1.4) % 1;
+        const r1 = Math.pow(z, 2.6) * max;
+        const r2 = Math.pow(Math.min(1, z + 0.1), 2.6) * max;
+        ctx.strokeStyle = 'rgba(235, 245, 255, ' + (0.1 + 0.8 * z) + ')';
+        ctx.lineWidth = s.width * (0.4 + z * 1.6);
         ctx.beginPath();
-        ctx.moveTo(vp.x + Math.cos(st.angle) * r1, vp.y + Math.sin(st.angle) * r1);
-        ctx.lineTo(vp.x + Math.cos(st.angle) * r2, vp.y + Math.sin(st.angle) * r2);
+        ctx.moveTo(cx + Math.cos(s.angle) * r1, cy + Math.sin(s.angle) * r1);
+        ctx.lineTo(cx + Math.cos(s.angle) * r2, cy + Math.sin(s.angle) * r2);
         ctx.stroke();
     });
-
-    // The crystalline glare at the vanishing point: overlapping flickering glows and
-    // fine facets.
-    for(let i = 0; i < 7; i++) {
-        const a = i * 0.9 + time * 0.7;
-        const d = 18 + 14 * Math.sin(time * 1.3 + i);
-        const size = 90 + 50 * Math.sin(time * 2 + i * 1.7);
-        ctx.globalAlpha = 0.45;
-        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '200,225,255' : '240,248,255'), vp.x + Math.cos(a) * d, vp.y + Math.sin(a) * d, size, size);
-    }
-    ctx.globalAlpha = 0.9;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('250,252,255'), vp.x, vp.y, 120, 120);
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = 'rgba(240, 248, 255, 0.35)';
-    ctx.lineWidth = 1;
-    for(let i = 0; i < 10; i++) {
-        const a = i * Math.PI / 5 + time * 0.4;
-        const len = 20 + 18 * Math.sin(time * 3 + i * 2.1);
-        ctx.beginPath();
-        ctx.moveTo(vp.x + Math.cos(a) * 6, vp.y + Math.sin(a) * 6);
-        ctx.lineTo(vp.x + Math.cos(a + 0.4) * len, vp.y + Math.sin(a + 0.4) * len);
-        ctx.lineTo(vp.x + Math.cos(a - 0.3) * len * 0.6, vp.y + Math.sin(a - 0.3) * len * 0.6);
-        ctx.stroke();
-    }
     ctx.restore();
 
-    // The ship, flying away from the camera towards the vanishing point.
-    if(drawShip) {
-        const sx = w * 0.52 + Math.sin(time * 0.9) * 6;
-        const sy = h * 0.58 + Math.cos(time * 1.1) * 5;
-        drawShip(ctx, sx, sy, Math.atan2(vp.y - sy, vp.x - sx), Math.min(w, h) / 520);
-    }
-
     // Progress and destination.
-    const cx = w / 2;
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(10, 20, 50, 0.85)';
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.9)';
     ctx.fillText(label, cx, h - 80);
-    ctx.strokeStyle = 'rgba(10, 20, 50, 0.6)';
+    ctx.strokeStyle = 'rgba(230, 240, 255, 0.6)';
     ctx.strokeRect(cx - 150, h - 64, 300, 8);
-    ctx.fillStyle = 'rgba(20, 50, 120, 0.9)';
+    ctx.fillStyle = 'rgba(160, 210, 255, 0.9)';
     ctx.fillRect(cx - 149, h - 63, 298 * progress, 6);
     ctx.restore();
 };

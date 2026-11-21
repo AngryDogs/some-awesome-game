@@ -1,20 +1,14 @@
-// DHD (dial-home device) panel, laid out as the hexagon of triangular constellation tiles:
-// 36 constellations, each tile showing its star figure. The grey triangle in the middle is
-// the dial button (the "dome"), and this gate's point of origin has its own tile in the
-// top-left corner. Enter six constellations and the point of origin, then press the
-// centre to dial.
+// DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
+// origin, then press the dome to dial.
 
 import { CONSTELLATIONS, systemForAddress } from '../world/systems';
-import { drawGlyph, drawConstellation, GLYPH_ORDER } from '../render/glyphs';
+import { drawGlyph, GLYPH_ORDER } from '../render/glyphs';
 import sounds from '../audio/audio';
 
-const SIDE = 104;                       // triangle side
-const ROW = SIDE * Math.sqrt(3) / 2;    // row height
-const WIDTH = SIDE * 5;
-const HEIGHT = Math.round(ROW * 5);
-const CX = WIDTH / 2;
-// Hexagon width (in triangle bases) at each row boundary, top to bottom.
-const BOUNDARY_WIDTHS = [2, 3, 4, 5, 4, 3];
+const SIZE = 520;
+const OUTER = [205, 250];   // inner / outer radius of the outer key ring
+const INNER = [140, 200];
+const DOME = 75;
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -23,66 +17,11 @@ const el = (tag, className, text) => {
     return node;
 };
 
-// Build the triangles row by row: "up" triangles stand on the row's bottom edge, "down"
-// triangles hang from its top edge.
-const CELLS = [];
-for(let row = 0; row < 5; row++) {
-    const top = BOUNDARY_WIDTHS[row];
-    const bottom = BOUNDARY_WIDTHS[row + 1];
-    const y0 = row * ROW;
-    const y1 = (row + 1) * ROW;
-    const xTop = CX - top * SIDE / 2;
-    const xBottom = CX - bottom * SIDE / 2;
-    const rowCells = [];
-    for(let i = 0; i < bottom; i++) {
-        const x = xBottom + i * SIDE;
-        rowCells.push({ points: [[x, y1], [x + SIDE, y1], [x + SIDE / 2, y0]], up: true });
-    }
-    for(let i = 0; i < top; i++) {
-        const x = xTop + i * SIDE;
-        rowCells.push({ points: [[x, y0], [x + SIDE, y0], [x + SIDE / 2, y1]], up: false });
-    }
-    rowCells.sort((a, b) => (a.points[0][0] + a.points[1][0] + a.points[2][0]) - (b.points[0][0] + b.points[1][0] + b.points[2][0]));
-    rowCells.forEach(cell => CELLS.push(cell));
-}
-CELLS.forEach(cell => {
-    cell.cx = (cell.points[0][0] + cell.points[1][0] + cell.points[2][0]) / 3;
-    cell.cy = (cell.points[0][1] + cell.points[1][1] + cell.points[2][1]) / 3;
-});
-
-// The centre "up" triangle of the middle row is the dial button; the others get the
-// constellations in glyph-chart order.
-const DIAL_CELL = CELLS.filter(c => c.up && Math.abs(c.cx - CX) < 1 && c.cy > 2 * ROW && c.cy < 3 * ROW)[0];
+// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
+// origin on the inner ring.
 const KEYS = [];
-let next = 0;
-CELLS.forEach(cell => {
-    if(cell === DIAL_CELL) return;
-    KEYS.push({ glyph: GLYPH_ORDER[next++], cell: cell });
-});
-// Point of origin: a tile of its own in the free top-left corner.
-const ORIGIN_CELL = { points: [[8, 92], [96, 92], [52, 16]], up: true };
-ORIGIN_CELL.cx = 52;
-ORIGIN_CELL.cy = (92 * 2 + 16) / 3;
-KEYS.push({ glyph: 'origin', cell: ORIGIN_CELL });
-
-const inTriangle = (x, y, p) => {
-    const sign = (a, b, c) => (a[0] - c[0]) * (b[1] - c[1]) - (b[0] - c[0]) * (a[1] - c[1]);
-    const pt = [x, y];
-    const d1 = sign(pt, p[0], p[1]);
-    const d2 = sign(pt, p[1], p[2]);
-    const d3 = sign(pt, p[2], p[0]);
-    const neg = d1 < 0 || d2 < 0 || d3 < 0;
-    const pos = d1 > 0 || d2 > 0 || d3 > 0;
-    return !(neg && pos);
-};
-
-const tracePath = (ctx, points) => {
-    ctx.beginPath();
-    ctx.moveTo(points[0][0], points[0][1]);
-    ctx.lineTo(points[1][0], points[1][1]);
-    ctx.lineTo(points[2][0], points[2][1]);
-    ctx.closePath();
-};
+for(let i = 0; i < 19; i++) KEYS.push({ glyph: GLYPH_ORDER[i], ring: OUTER, slot: i, count: 19 });
+for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? GLYPH_ORDER[19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
 
 class DHD {
 
@@ -121,7 +60,7 @@ class DHD {
             this.render();
         });
         actions.appendChild(clear);
-        actions.appendChild(el('span', 'dhd-hint', 'Enter the 6 constellations of an address, then the point of origin (top left), then press the centre to dial. Addresses are on the starmap (M).'));
+        actions.appendChild(el('span', 'dhd-hint', 'Enter 6 symbols, then the point of origin, then press the dome. Addresses are on the starmap (M).'));
         panel.appendChild(actions);
 
         root.appendChild(panel);
@@ -129,10 +68,10 @@ class DHD {
         this.root = root;
 
         const ratio = window.devicePixelRatio || 1;
-        this.canvas.width = WIDTH * ratio;
-        this.canvas.height = (HEIGHT + 4) * ratio;
-        this.canvas.style.width = WIDTH + 'px';
-        this.canvas.style.height = (HEIGHT + 4) + 'px';
+        this.canvas.width = SIZE * ratio;
+        this.canvas.height = SIZE * ratio;
+        this.canvas.style.width = SIZE + 'px';
+        this.canvas.style.height = SIZE + 'px';
         this.ctx = this.canvas.getContext('2d');
         this.ctx.scale(ratio, ratio);
         this.addressBar.width = 520 * ratio;
@@ -187,14 +126,30 @@ class DHD {
         this.status.classList.toggle('error', !!error);
     }
 
+    keyGeometry(key) {
+        const step = Math.PI * 2 / key.count;
+        const a1 = -Math.PI / 2 + key.slot * step - step / 2 + 0.01;
+        const a2 = a1 + step - 0.02;
+        return { a1: a1, a2: a2, mid: (a1 + a2) / 2, r1: key.ring[0], r2: key.ring[1] };
+    }
+
     keyAt(event) {
         const rect = this.canvas.getBoundingClientRect();
         // The canvas may be scaled down by CSS on small screens.
-        const x = (event.clientX - rect.left) * WIDTH / (rect.width || WIDTH);
-        const y = (event.clientY - rect.top) * (HEIGHT + 4) / (rect.height || HEIGHT + 4);
-        if(inTriangle(x, y, DIAL_CELL.points)) return 'dome';
+        const sx = SIZE / (rect.width || SIZE);
+        const sy = SIZE / (rect.height || SIZE);
+        const x = (event.clientX - rect.left) * sx - SIZE / 2;
+        const y = (event.clientY - rect.top) * sy - SIZE / 2;
+        const r = Math.sqrt(x * x + y * y);
+        if(r < DOME) return 'dome';
+        let a = Math.atan2(y, x);
         for(let i = 0; i < KEYS.length; i++) {
-            if(inTriangle(x, y, KEYS[i].cell.points)) return i;
+            const g = this.keyGeometry(KEYS[i]);
+            if(r < g.r1 || r > g.r2) continue;
+            let rel = a - g.a1;
+            while(rel < 0) rel += Math.PI * 2;
+            while(rel > Math.PI * 2) rel -= Math.PI * 2;
+            if(rel <= g.a2 - g.a1) return i;
         }
         return -1;
     }
@@ -251,66 +206,133 @@ class DHD {
 
     render() {
         const ctx = this.ctx;
-        ctx.clearRect(0, 0, WIDTH, HEIGHT + 4);
+        const c = SIZE / 2;
+        ctx.clearRect(0, 0, SIZE, SIZE);
         ctx.save();
-        ctx.translate(0, 2);
-        ctx.lineJoin = 'round';
+        ctx.translate(c, c);
 
-        const tile = (cell, fill) => {
-            tracePath(ctx, cell.points);
-            ctx.fillStyle = fill;
-            ctx.fill();
-        };
+        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
+        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
+        base.addColorStop(0, 'rgb(96, 92, 86)');
+        base.addColorStop(0.7, 'rgb(62, 59, 55)');
+        base.addColorStop(1, 'rgb(34, 32, 30)');
+        ctx.fillStyle = base;
+        ctx.beginPath();
+        ctx.arc(0, 0, 258, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
+            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Collar around the dome.
+        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
+        collar.addColorStop(0, 'rgb(30, 28, 26)');
+        collar.addColorStop(1, 'rgb(80, 76, 70)');
+        ctx.fillStyle = collar;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
+        ctx.fill();
 
         KEYS.forEach((key, i) => {
-            const cell = key.cell;
+            const g = this.keyGeometry(key);
             const glyph = this.glyphOf(key);
             const lit = this.entered.indexOf(glyph) !== -1;
             const hovered = this.hover === i;
+            const r = (g.r1 + g.r2) / 2;
+            const kx = Math.cos(g.mid) * r;
+            const ky = Math.sin(g.mid) * r;
+            ctx.beginPath();
+            ctx.arc(0, 0, g.r2, g.a1, g.a2);
+            ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
+            ctx.closePath();
+            // Each key is a slightly domed tile lit from the top-left.
+            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
             if(lit) {
-                const g = ctx.createRadialGradient(cell.cx, cell.cy, 4, cell.cx, cell.cy, SIDE * 0.6);
-                g.addColorStop(0, 'rgb(255, 214, 150)');
-                g.addColorStop(1, 'rgb(235, 130, 45)');
-                tile(cell, g);
+                tile.addColorStop(0, 'rgb(255, 214, 150)');
+                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
+                tile.addColorStop(1, 'rgb(150, 60, 15)');
             } else {
-                tile(cell, hovered ? 'rgb(214, 228, 248)' : 'rgb(246, 244, 238)');
+                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
+                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
             }
-            const ink = lit ? 'rgb(70, 25, 0)' : 'rgb(10, 10, 12)';
-            if(key.glyph === 'origin') {
-                drawGlyph(ctx, glyph, cell.cx, cell.cy + 2, 34, ink, 3);
+            ctx.fillStyle = tile;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
+                ctx.shadowBlur = 14;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgb(28, 25, 22)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
+            const size = key.ring === OUTER ? 30 : 34;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+                ctx.shadowBlur = 8;
+                drawGlyph(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
+                ctx.shadowBlur = 0;
             } else {
-                drawConstellation(ctx, key.glyph, cell.cx, cell.cy + (cell.up ? 3 : -3), SIDE * 0.42, ink, ink, 1.35);
+                drawGlyph(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
+                drawGlyph(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
             }
         });
 
-        // Dial button: the grey centre triangle, glowing red once the address is complete.
+        // Dome: the big red crystal. It glows once a full address is entered.
         const ready = this.entered.length === 7;
+        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
+        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
+        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
+        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
+        dome.addColorStop(1, 'rgb(60, 8, 6)');
         if(ready) {
-            const g = ctx.createRadialGradient(DIAL_CELL.cx, DIAL_CELL.cy - 6, 3, DIAL_CELL.cx, DIAL_CELL.cy, SIDE * 0.6);
-            g.addColorStop(0, 'rgb(255, 190, 160)');
-            g.addColorStop(0.5, 'rgb(230, 50, 30)');
-            g.addColorStop(1, 'rgb(130, 15, 10)');
-            ctx.shadowColor = 'rgba(255, 60, 30, 0.9)';
-            ctx.shadowBlur = 22;
-            tile(DIAL_CELL, g);
-            ctx.shadowBlur = 0;
-        } else {
-            tile(DIAL_CELL, this.hover === 'dome' ? 'rgb(150, 150, 150)' : 'rgb(128, 128, 128)');
+            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
+            ctx.shadowBlur = 30;
         }
-
-        // Thick black borders, like the chart.
-        ctx.strokeStyle = 'rgb(12, 12, 14)';
-        ctx.lineWidth = 2.6;
-        CELLS.forEach(cell => {
-            tracePath(ctx, cell.points);
+        ctx.fillStyle = dome;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Facets inside the crystal.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 12; i++) {
+            const a = i * Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
+            ctx.stroke();
+        }
+        [18, 42].forEach(rr => {
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, 0, Math.PI * 2);
             ctx.stroke();
         });
-        tracePath(ctx, ORIGIN_CELL.points);
-        ctx.stroke();
-        ctx.font = '9px Bungee, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(240, 225, 205, 0.85)';
-        ctx.fillText('ORIGIN', ORIGIN_CELL.cx, ORIGIN_CELL.points[0][1] + 13);
+        // Specular highlight.
+        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(-60, -64, 70, 70);
+        ctx.restore();
+        if(this.hover === 'dome' || ready) {
+            ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+            ctx.stroke();
+        }
         ctx.restore();
 
         // Hovered key name.
@@ -318,14 +340,9 @@ class DHD {
             const key = KEYS[this.hover];
             const name = key.glyph === 'origin' ? 'Point of origin · ' + this.options.originName : CONSTELLATIONS[key.glyph];
             ctx.font = '14px Bungee, sans-serif';
-            ctx.textAlign = 'right';
+            ctx.textAlign = 'center';
             ctx.fillStyle = '#fff';
-            ctx.fillText(name, WIDTH - 6, HEIGHT - 6);
-        } else if(this.hover === 'dome') {
-            ctx.font = '14px Bungee, sans-serif';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = '#fff';
-            ctx.fillText('Dial', WIDTH - 6, HEIGHT - 6);
+            ctx.fillText(name, c, SIZE - 6);
         }
 
         // Address bar: seven slots.

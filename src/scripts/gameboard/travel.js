@@ -62,123 +62,56 @@ export const drawWormhole = (ctx, w, h, time, progress) => {
     }
 };
 
-// Hyperspace, as in the show: soft, blurred blue-white rays streaming out of a bright,
-// crystalline vanishing point, with dark bands between them, and the ship flying in the
-// middle. The rays are drawn into a small offscreen canvas and scaled up, which blurs them
-// cheaply.
-let rayCanvas = null;
-const RAYS = [];
-for(let i = 0; i < 46; i++) {
-    RAYS.push({ angle: Math.random() * Math.PI * 2, width: 0.05 + Math.random() * 0.16, light: Math.random() < 0.55,
-        speed: 0.6 + Math.random() * 1.4, phase: Math.random() * 10, drift: (Math.random() - 0.5) * 0.06 });
-}
+// Hyperspace: a deep blue tunnel with streaming light clouds and star streaks.
+export const drawHyperspace = (ctx, w, h, time, progress, label) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const max = Math.sqrt(w * w + h * h) * 0.6;
 
-export const hyperVanishingPoint = (w, h, time) => ({
-    x: w * (0.3 + Math.sin(time * 0.31) * 0.025),
-    y: h * (0.24 + Math.cos(time * 0.27) * 0.025)
-});
-
-// `drawShip(ctx, x, y, angle, scale)` draws the player's ship in the tunnel (optional).
-export const drawHyperspace = (ctx, w, h, time, progress, label, drawShip) => {
-    const vp = hyperVanishingPoint(w, h, time);
-    const scale = 8;
-    const sw = Math.max(32, Math.ceil(w / scale));
-    const sh = Math.max(24, Math.ceil(h / scale));
-    if(!rayCanvas) rayCanvas = document.createElement('canvas');
-    if(rayCanvas.width !== sw || rayCanvas.height !== sh) {
-        rayCanvas.width = sw;
-        rayCanvas.height = sh;
-    }
-    const r = rayCanvas.getContext('2d');
-    const vx = vp.x / scale;
-    const vy = vp.y / scale;
-    const far = Math.sqrt(sw * sw + sh * sh) * 1.2;
-
-    // Pale blue base, brighter towards the vanishing point.
-    const base = r.createRadialGradient(vx, vy, 0, vx, vy, far);
-    base.addColorStop(0, 'rgb(235, 245, 255)');
-    base.addColorStop(0.2, 'rgb(165, 200, 240)');
-    base.addColorStop(0.6, 'rgb(110, 150, 210)');
-    base.addColorStop(1, 'rgb(70, 100, 165)');
-    r.fillStyle = base;
-    r.fillRect(0, 0, sw, sh);
-
-    // Wedge-shaped rays: light streams and dark bands, slowly turning and pulsing.
-    RAYS.forEach(ray => {
-        const a = ray.angle + time * ray.drift;
-        const pulse = 0.5 + 0.5 * Math.sin(time * ray.speed + ray.phase);
-        const half = ray.width * (0.7 + 0.5 * pulse);
-        r.fillStyle = ray.light ? 'rgba(235, 245, 255, ' + (0.18 + 0.3 * pulse) + ')' : 'rgba(8, 16, 40, ' + (0.2 + 0.35 * pulse) + ')';
-        r.beginPath();
-        r.moveTo(vx, vy);
-        r.lineTo(vx + Math.cos(a - half) * far, vy + Math.sin(a - half) * far);
-        r.lineTo(vx + Math.cos(a + half) * far, vy + Math.sin(a + half) * far);
-        r.closePath();
-        r.fill();
-    });
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, max);
+    bg.addColorStop(0, 'rgb(200, 225, 255)');
+    bg.addColorStop(0.12, 'rgb(60, 110, 220)');
+    bg.addColorStop(0.5, 'rgb(15, 35, 110)');
+    bg.addColorStop(1, 'rgb(5, 10, 40)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
     ctx.save();
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(rayCanvas, 0, 0, sw * scale, sh * scale);
-
-    // Light streaming outwards along the rays.
     ctx.globalCompositeOperation = 'lighter';
+    // Light clouds rushing past.
+    for(let i = 0; i < 24; i++) {
+        const z = ((i / 24) + time * 0.7) % 1;
+        const a = i * 2.4 + time * 0.3;
+        const r = Math.pow(z, 2) * max;
+        const size = 40 + z * 380;
+        ctx.globalAlpha = 0.12 + 0.25 * z;
+        stamp(ctx, glowSprite(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
+    }
+    ctx.globalAlpha = 1;
+    // Long star streaks.
     ctx.lineCap = 'round';
-    const max = Math.sqrt(w * w + h * h);
-    STREAKS.forEach(st => {
-        const z = (st.depth + time * st.speed * 0.8) % 1;
-        const r1 = Math.pow(z, 2.2) * max;
-        const r2 = Math.pow(Math.min(1, z + 0.12), 2.2) * max;
-        ctx.strokeStyle = 'rgba(225, 240, 255, ' + (0.02 + 0.08 * z) + ')';
-        ctx.lineWidth = st.width * (4 + z * 16);
+    STREAKS.forEach(s => {
+        const z = (s.depth + time * s.speed * 1.4) % 1;
+        const r1 = Math.pow(z, 2.6) * max;
+        const r2 = Math.pow(Math.min(1, z + 0.1), 2.6) * max;
+        ctx.strokeStyle = 'rgba(235, 245, 255, ' + (0.1 + 0.8 * z) + ')';
+        ctx.lineWidth = s.width * (0.4 + z * 1.6);
         ctx.beginPath();
-        ctx.moveTo(vp.x + Math.cos(st.angle) * r1, vp.y + Math.sin(st.angle) * r1);
-        ctx.lineTo(vp.x + Math.cos(st.angle) * r2, vp.y + Math.sin(st.angle) * r2);
+        ctx.moveTo(cx + Math.cos(s.angle) * r1, cy + Math.sin(s.angle) * r1);
+        ctx.lineTo(cx + Math.cos(s.angle) * r2, cy + Math.sin(s.angle) * r2);
         ctx.stroke();
     });
-
-    // The crystalline glare at the vanishing point: overlapping flickering glows and
-    // fine facets.
-    for(let i = 0; i < 7; i++) {
-        const a = i * 0.9 + time * 0.7;
-        const d = 18 + 14 * Math.sin(time * 1.3 + i);
-        const size = 90 + 50 * Math.sin(time * 2 + i * 1.7);
-        ctx.globalAlpha = 0.45;
-        stamp(ctx, glowSprite(i % 2 ? '200,225,255' : '240,248,255'), vp.x + Math.cos(a) * d, vp.y + Math.sin(a) * d, size, size);
-    }
-    ctx.globalAlpha = 0.9;
-    stamp(ctx, glowSprite('250,252,255'), vp.x, vp.y, 120, 120);
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = 'rgba(240, 248, 255, 0.35)';
-    ctx.lineWidth = 1;
-    for(let i = 0; i < 10; i++) {
-        const a = i * Math.PI / 5 + time * 0.4;
-        const len = 20 + 18 * Math.sin(time * 3 + i * 2.1);
-        ctx.beginPath();
-        ctx.moveTo(vp.x + Math.cos(a) * 6, vp.y + Math.sin(a) * 6);
-        ctx.lineTo(vp.x + Math.cos(a + 0.4) * len, vp.y + Math.sin(a + 0.4) * len);
-        ctx.lineTo(vp.x + Math.cos(a - 0.3) * len * 0.6, vp.y + Math.sin(a - 0.3) * len * 0.6);
-        ctx.stroke();
-    }
     ctx.restore();
 
-    // The ship, flying away from the camera towards the vanishing point.
-    if(drawShip) {
-        const sx = w * 0.52 + Math.sin(time * 0.9) * 6;
-        const sy = h * 0.58 + Math.cos(time * 1.1) * 5;
-        drawShip(ctx, sx, sy, Math.atan2(vp.y - sy, vp.x - sx), Math.min(w, h) / 520);
-    }
-
     // Progress and destination.
-    const cx = w / 2;
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(10, 20, 50, 0.85)';
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.9)';
     ctx.fillText(label, cx, h - 80);
-    ctx.strokeStyle = 'rgba(10, 20, 50, 0.6)';
+    ctx.strokeStyle = 'rgba(230, 240, 255, 0.6)';
     ctx.strokeRect(cx - 150, h - 64, 300, 8);
-    ctx.fillStyle = 'rgba(20, 50, 120, 0.9)';
+    ctx.fillStyle = 'rgba(160, 210, 255, 0.9)';
     ctx.fillRect(cx - 149, h - 63, 298 * progress, 6);
     ctx.restore();
 };

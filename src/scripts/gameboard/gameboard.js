@@ -1630,26 +1630,6 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
-// The player's ship drawn in the hyperspace tunnel, pointing at (x, y) heading `angle`.
-const drawShipInTunnel = (c, x, y, angle, scale) => {
-    const ship = state.ship;
-    const hidden = ship.hidden;
-    const shield = ship.shieldLevel;
-    ship.hidden = false;
-    ship.shieldLevel = 0;
-    c.save();
-    c.translate(x, y);
-    // Big enough to read, whatever the hull's size.
-    const k = Math.min(world.width, world.height) * 0.2 / Math.max(20, ship.radius || 40) * Math.min(1.5, scale);
-    c.scale(k, k);
-    c.rotate(angle - ship.angle);
-    c.translate(-ship.x, -ship.y);
-    ship.draw(c);
-    c.restore();
-    ship.hidden = hidden;
-    ship.shieldLevel = shield;
-};
-
 const renderTunnel = () => {
     const tr = state.transition;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
@@ -1658,8 +1638,7 @@ const renderTunnel = () => {
     else {
         const remaining = Math.max(0, tr.duration - tr.t);
         drawHyperspace(ctx, world.width, world.height, time, Math.min(1, tr.t / tr.duration),
-            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s',
-            drawShipInTunnel);
+            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s');
     }
 };
 

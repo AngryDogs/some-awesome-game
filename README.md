@@ -60,12 +60,11 @@ fields and ore mix (Abydos is rich in naquadah, Dakara in gold, and so on).
   fit a hyperdrive module. Pick a destination on the starmap and engage: a hyperspace window opens,
   and the trip takes longer the further you go.
 
-The DHD is a hexagon of triangular tiles, one per constellation (36), each showing its star
-figure; the grey centre triangle dials, and the gate's point of origin has its own tile at the
-top left. Glyphs follow the Milky Way glyph chart (glyph 1, the pyramid, is Earth's point of
-origin); the gate's ring shows all 39. Dialling follows the Carter Addon Pack's DHD dial
-sequence and timing (ring rolls, chevrons 1-6 encode, ring stops, chevron 7 locks, the gate
-opens 7 seconds after the dial button), using the same sound files.
+The DHD's glyphs follow the Milky Way glyph chart (glyph 1, the pyramid, is Earth's point of
+origin), and on the starmap each constellation is drawn as its star figure. Dialling follows the
+Carter Addon Pack's DHD dial sequence and timing (ring rolls, chevrons 1-6 encode, ring stops,
+chevron 7 locks, the gate opens 7 seconds after the dome), using the same sound files. The sounds
+also work when index.html is opened straight from disk.
 
 ## Sound credits
 

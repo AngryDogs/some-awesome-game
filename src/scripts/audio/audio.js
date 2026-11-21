@@ -448,21 +448,57 @@ const loops = {};
 const lastShots = {};
 let samplesRequested = false;
 
+// Fallback for when the files can't be fetched into Web Audio, above all when the game is
+// opened straight from disk (file://), where browsers block fetch(): plain <audio>
+// elements can still play them.
+const elements = {};
+const loadElement = (name, i, file) => {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.src = CAP + file;
+    elements[name][i] = audio;
+};
+
 function loadSamples(c) {
-    if(samplesRequested || !window.fetch) return;
+    if(samplesRequested) return;
     samplesRequested = true;
+    const local = window.location.protocol === 'file:' || !window.fetch;
     Object.keys(SAMPLE_FILES).forEach(name => {
         buffers[name] = [];
+        elements[name] = [];
         SAMPLE_FILES[name].forEach((file, i) => {
+            if(local) {
+                loadElement(name, i, file);
+                return;
+            }
             window.fetch(CAP + file)
                 .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(file))))
                 // Callback form: older Safari has no promise-returning decodeAudioData.
                 .then(data => new Promise((resolve, reject) => c.decodeAudioData(data, resolve, reject)))
                 .then(buffer => { buffers[name][i] = buffer; })
-                .catch(() => {});
+                .catch(() => loadElement(name, i, file));
         });
     });
 }
+
+// Play through an <audio> element (fallback path). Returns true if one was available.
+const playElement = (name, index, level, opts) => {
+    const list = elements[name];
+    const audio = list && (list[index] || list.filter(Boolean)[0]);
+    if(!audio || audio.error) return false;
+    const clip = LOOPING_SAMPLES[name] ? audio : audio.cloneNode();
+    clip.volume = Math.max(0, Math.min(1, level));
+    clip.playbackRate = opts.rate || 1;
+    if(LOOPING_SAMPLES[name]) {
+        if(loops[name]) return true;
+        clip.loop = true;
+        loops[name] = { element: clip };
+    } else {
+        lastShots[name] = { element: clip };
+    }
+    safePlay(clip);
+    return true;
+};
 
 // Play sample `name` (a random variant, or options.variant). Returns false if it isn't
 // loaded yet so the caller can fall back to the synthesized sound.
@@ -474,13 +510,13 @@ const playSample = (name, volume, options) => {
     const count = SAMPLE_FILES[name].length;
     const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
     const buffer = list[index] || list.filter(Boolean)[0];
-    if(!buffer) return false;
     const level = volume === undefined ? 0.9 : volume;
+    if(!buffer) return playElement(name, index, level, opts);
 
     if(LOOPING_SAMPLES[name]) {
         const playing = loops[name];
         if(playing) {
-            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            if(playing.gain) playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
             return true;
         }
     }
@@ -512,6 +548,10 @@ const cutSample = (name, fade) => {
     const shot = lastShots[name];
     if(!shot || !ac) return;
     delete lastShots[name];
+    if(shot.element) {
+        shot.element.pause();
+        return;
+    }
     shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
     try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
 };
@@ -520,6 +560,11 @@ const stopSample = (name) => {
     const playing = loops[name];
     if(!playing || !ac) return;
     delete loops[name];
+    if(playing.element) {
+        playing.element.pause();
+        playing.element.currentTime = 0;
+        return;
+    }
     playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
     try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
 };
@@ -633,7 +678,7 @@ const hyperVoice = createVoice(c => {
 const gateSounds = {
     // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
     dhdPress(index) {
-        if(playSample('dhd_press', 0.8, { variant: index })) return;
+        if(playSample('dhd_press', 0.9, { rate: 0.97 + Math.random() * 0.06 })) return;
         const c = context();
         if(!c) return;
         const f = 520 + (index % 13) * 22;
@@ -926,7 +971,6 @@ const sounds = {
         const c = throttle('shield', 0.07);
         if(!c) return;
         const s = Math.max(0.3, Math.min(1.5, strength || 1));
-        if(playSample('shield_hit', 0.35 + 0.35 * Math.min(1, s), { rate: vary(0.05) })) return;
         tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
         tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
         noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
