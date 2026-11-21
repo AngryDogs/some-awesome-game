@@ -7077,6 +7077,36 @@ const drawMinimap = () => {
         ctx.stroke();
     }
 
+    // Missiles (orange-red darts) and drones (gold diamonds), each with a short tail
+    // showing which way it's heading.
+    state.missiles.forEach(missile => {
+        const x = cx + (missile.x - ship.x) * scale;
+        const y = cy + (missile.y - ship.y) * scale;
+        if(x < left || x > left + size || y < top || y > top + size) return;
+        const drone = missile.kind === 'drone';
+        const color = drone ? '255, 215, 110' : '255, 120, 80';
+        const speed = Math.sqrt(missile.vx * missile.vx + missile.vy * missile.vy) || 1;
+        ctx.strokeStyle = 'rgba(' + color + ', 0.45)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - missile.vx / speed * 6, y - missile.vy / speed * 6);
+        ctx.stroke();
+        ctx.fillStyle = 'rgb(' + color + ')';
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(missile.angle);
+        ctx.beginPath();
+        if(drone) {
+            ctx.moveTo(2.6, 0); ctx.lineTo(0, -1.8); ctx.lineTo(-2.6, 0); ctx.lineTo(0, 1.8);
+        } else {
+            ctx.moveTo(3.2, 0); ctx.lineTo(-2.2, -1.8); ctx.lineTo(-2.2, 1.8);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
+
     // Station (Lantea only) and Stargate, clamped to the edge when far away.
     const limit = size / 2 - 6;
     const marker = (x, y) => {
