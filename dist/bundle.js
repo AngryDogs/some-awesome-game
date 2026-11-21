@@ -4845,6 +4845,8 @@ class TouchControls {
         target.addEventListener('pointerdown', (event) => {
             if(event.pointerType === 'mouse' || !this.visible) return;
             event.preventDefault();
+            // Taps on the game's own canvas UI (the weapon panel) aren't steering or firing.
+            if(this.actions.uiTap && this.actions.uiTap(event.clientX, event.clientY)) return;
             const leftSide = event.clientX < window.innerWidth * 0.45;
             // A second finger on the same side as an active control is a pinch-zoom: let go
             // of that control so pinching doesn't steer or shoot.
@@ -6627,7 +6629,29 @@ const drawStationPointer = () => {
 };
 
 // Weapon readiness: heat for miniguns, recharge for beams, reload for launchers.
+// Screen rectangles of the weapon panel rows (for clicking/tapping a weapon on or off).
+let weaponRows = [];
+
+const toggleWeapon = (kind) => {
+    if(!state || state.paused || !state.ship.alive) return;
+    const ship = state.ship;
+    const on = ship.toggleWeapon(kind);
+    const row = ship.weaponStatus().filter(w => w.kind === kind)[0];
+    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].toggle(on);
+    banner((row ? row.name : kind) + (on ? ' ON' : ' OFF'), 1.1);
+};
+
+// A click/tap on the weapon panel toggles that weapon (and doesn't fire).
+const weaponPanelClick = (x, y) => {
+    if(!state || state.paused) return false;
+    const row = weaponRows.filter(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)[0];
+    if(!row) return false;
+    toggleWeapon(row.kind);
+    return true;
+};
+
 const drawWeaponPanel = () => {
+    weaponRows = [];
     const weapons = state.ship.weaponStatus();
     if(!weapons.length) return;
     // On touch screens the bottom corners belong to the thumbs: a compact panel sits left
@@ -6652,12 +6676,15 @@ const drawWeaponPanel = () => {
         ctx.fillText('WEAPONS', left + 8, top + 14);
     }
 
-    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
+    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD', off: 'OFF' };
     weapons.forEach((w, i) => {
         const y = top + header + i * rowHeight - (TOUCH ? 2 : 0);
+        weaponRows.push({ x: left, y: y, w: width, h: rowHeight, kind: w.kind });
+        ctx.globalAlpha = w.off ? 0.4 : 1;
         ctx.fillStyle = 'rgb(' + w.color + ')';
         ctx.font = (TOUCH ? '9px' : '11px') + ' Bungee, sans-serif';
-        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
+        // The number key that switches this weapon on/off.
+        ctx.fillText((i < 5 && !TOUCH ? (i + 1) + ' ' : '') + w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
 
         const barX = left + barOffset;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -6667,7 +6694,8 @@ const drawWeaponPanel = () => {
         ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
 
         ctx.font = (TOUCH ? '8px' : '9px') + ' Bungee, sans-serif';
-        ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = w.off ? 'rgba(255, 110, 90, 0.95)' : w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
         ctx.fillText(labels[w.state], barX + barW + 5, y + 11);
     });
     ctx.restore();
@@ -7202,6 +7230,18 @@ const initialize = () => {
     };
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
 
+    // 1-5: switch the weapons in the weapon panel on/off; clicking a row does the same.
+    ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].forEach((code, i) => {
+        Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])(code, () => {
+            if(!state || state.paused || !state.ship.alive) return false;
+            const weapons = state.ship.weaponStatus();
+            if(!weapons[i]) return false;
+            toggleWeapon(weapons[i].kind);
+            return true;
+        });
+    });
+    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* setClickFilter */])(weaponPanelClick);
+
     // X: stabilizer on/off.
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyX', () => {
         if(!state || state.paused || !state.ship.alive) return false;
@@ -7278,10 +7318,11 @@ const initialize = () => {
         document.body.classList.add('touch');
         starmapButton.textContent = 'Starmap';
         touchControls = new __WEBPACK_IMPORTED_MODULE_19__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], canvas, {
-            interact: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyB'),
-            toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyG'),
-            toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyX'),
-            pause: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('Escape'),
+            interact: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyB'),
+            toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyG'),
+            toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyX'),
+            uiTap: weaponPanelClick,
+            pause: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('Escape'),
             zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
         });
         // Two-finger pinch on the play area zooms the view.
@@ -7480,6 +7521,7 @@ class Ship {
         this.angularVelocity = 0;
         this.alive = true;
         this.stabilizer = false;   // toggled with X / the Stabilizer button
+        this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
         this.autoTarget = true;
         this.time = 0;
         this.exhaustTimer = 0;
@@ -7891,9 +7933,10 @@ class Ship {
             // Manual fire always aims at the cursor; otherwise the guidance computer
             // leads the locked target.
             let desired = Math.atan2(input.aimY - p.y, input.aimX - p.x);
-            let shouldFire = input.firing;
+            const enabled = !this.weaponsOff[turret.kind];
+            let shouldFire = input.firing && enabled;
 
-            if(!input.firing && turret.target) {
+            if(!input.firing && turret.target && enabled) {
                 const target = turret.target;
                 let d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target);
                 const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
@@ -8047,7 +8090,7 @@ class Ship {
         for(let i = 0; i < this.launchers.length; i++) {
             const index = (this.nextLauncher + i) % this.launchers.length;
             const launcher = this.launchers[index];
-            if(launcher.cooldown > 0) continue;
+            if(launcher.cooldown > 0 || this.weaponsOff[launcher.kind]) continue;
 
             if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
             if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
@@ -8154,8 +8197,15 @@ class Ship {
         });
         return Object.keys(groups).map(kind => {
             const g = groups[kind];
-            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: g.state };
+            const off = !!this.weaponsOff[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
         });
+    }
+
+    // Switch a weapon type on or off. Returns the new state (true = on).
+    toggleWeapon(kind) {
+        this.weaponsOff[kind] = !this.weaponsOff[kind];
+        return !this.weaponsOff[kind];
     }
 
     // Returns true if damage was applied.
@@ -8837,9 +8887,16 @@ const onKeyPress = (code, handler) => {
 /* harmony export (immutable) */ __webpack_exports__["c"] = onKeyPress;
 
 
+// Lets the game claim a click on its own canvas UI (e.g. the weapon panel) so it doesn't
+// also fire the guns: `filter(x, y)` returns true if it handled the click.
+let clickFilter = null;
+const setClickFilter = (filter) => { clickFilter = filter; };
+/* harmony export (immutable) */ __webpack_exports__["d"] = setClickFilter;
+
+
 // Runs the same action a key press would (used by the on-screen touch buttons).
 const triggerKey = (code) => !!(pressHandlers[code] && pressHandlers[code]({ code: code }));
-/* harmony export (immutable) */ __webpack_exports__["d"] = triggerKey;
+/* harmony export (immutable) */ __webpack_exports__["e"] = triggerKey;
 
 
 let initialized = false;
@@ -8873,6 +8930,7 @@ const loadInputHandlers = () => {
         if(!input.enabled) return;
         // Clicking HUD buttons shouldn't fire the guns.
         if(event.target && event.target.closest && event.target.closest('button, .cargo-panel')) return;
+        if(clickFilter && clickFilter(event.clientX, event.clientY)) return;
         if(event.button === 0) input.mouseDown = true;
         if(event.button === 2) input.rightMouseDown = true;
     });

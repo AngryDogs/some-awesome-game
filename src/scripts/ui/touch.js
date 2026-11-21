@@ -103,6 +103,8 @@ class TouchControls {
         target.addEventListener('pointerdown', (event) => {
             if(event.pointerType === 'mouse' || !this.visible) return;
             event.preventDefault();
+            // Taps on the game's own canvas UI (the weapon panel) aren't steering or firing.
+            if(this.actions.uiTap && this.actions.uiTap(event.clientX, event.clientY)) return;
             const leftSide = event.clientX < window.innerWidth * 0.45;
             // A second finger on the same side as an active control is a pinch-zoom: let go
             // of that control so pinching doesn't steer or shoot.

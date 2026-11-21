@@ -51,6 +51,11 @@ export const onKeyPress = (code, handler) => {
     pressHandlers[code] = handler;
 };
 
+// Lets the game claim a click on its own canvas UI (e.g. the weapon panel) so it doesn't
+// also fire the guns: `filter(x, y)` returns true if it handled the click.
+let clickFilter = null;
+export const setClickFilter = (filter) => { clickFilter = filter; };
+
 // Runs the same action a key press would (used by the on-screen touch buttons).
 export const triggerKey = (code) => !!(pressHandlers[code] && pressHandlers[code]({ code: code }));
 
@@ -85,6 +90,7 @@ const loadInputHandlers = () => {
         if(!input.enabled) return;
         // Clicking HUD buttons shouldn't fire the guns.
         if(event.target && event.target.closest && event.target.closest('button, .cargo-panel')) return;
+        if(clickFilter && clickFilter(event.clientX, event.clientY)) return;
         if(event.button === 0) input.mouseDown = true;
         if(event.button === 2) input.rightMouseDown = true;
     });

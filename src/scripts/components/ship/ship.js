@@ -138,6 +138,7 @@ class Ship {
         this.angularVelocity = 0;
         this.alive = true;
         this.stabilizer = false;   // toggled with X / the Stabilizer button
+        this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
         this.autoTarget = true;
         this.time = 0;
         this.exhaustTimer = 0;
@@ -549,9 +550,10 @@ class Ship {
             // Manual fire always aims at the cursor; otherwise the guidance computer
             // leads the locked target.
             let desired = Math.atan2(input.aimY - p.y, input.aimX - p.x);
-            let shouldFire = input.firing;
+            const enabled = !this.weaponsOff[turret.kind];
+            let shouldFire = input.firing && enabled;
 
-            if(!input.firing && turret.target) {
+            if(!input.firing && turret.target && enabled) {
                 const target = turret.target;
                 let d = delta(p, target);
                 const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
@@ -705,7 +707,7 @@ class Ship {
         for(let i = 0; i < this.launchers.length; i++) {
             const index = (this.nextLauncher + i) % this.launchers.length;
             const launcher = this.launchers[index];
-            if(launcher.cooldown > 0) continue;
+            if(launcher.cooldown > 0 || this.weaponsOff[launcher.kind]) continue;
 
             if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
             if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
@@ -812,8 +814,15 @@ class Ship {
         });
         return Object.keys(groups).map(kind => {
             const g = groups[kind];
-            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: g.state };
+            const off = !!this.weaponsOff[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
         });
+    }
+
+    // Switch a weapon type on or off. Returns the new state (true = on).
+    toggleWeapon(kind) {
+        this.weaponsOff[kind] = !this.weaponsOff[kind];
+        return !this.weaponsOff[kind];
     }
 
     // Returns true if damage was applied.

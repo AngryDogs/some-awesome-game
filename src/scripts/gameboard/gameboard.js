@@ -2,7 +2,7 @@ import Ship from '../components/ship/ship';
 import { MAX_MERGE_RADIUS, VISUAL_RADIUS, resetRebuildBudget } from '../components/rock/rock';
 import Particle from '../components/particle/particle';
 import Ore from '../components/ore/ore';
-import loadInputHandlers, { input, onKeyPress, triggerKey } from '../components/ship/handlers';
+import loadInputHandlers, { input, onKeyPress, triggerKey, setClickFilter } from '../components/ship/handlers';
 import sounds from '../audio/audio';
 import { world, delta, gravityAt } from '../physics/physics';
 import MATERIALS, { MATERIAL_ORDER } from '../world/materials';
@@ -1547,7 +1547,29 @@ const drawStationPointer = () => {
 };
 
 // Weapon readiness: heat for miniguns, recharge for beams, reload for launchers.
+// Screen rectangles of the weapon panel rows (for clicking/tapping a weapon on or off).
+let weaponRows = [];
+
+const toggleWeapon = (kind) => {
+    if(!state || state.paused || !state.ship.alive) return;
+    const ship = state.ship;
+    const on = ship.toggleWeapon(kind);
+    const row = ship.weaponStatus().filter(w => w.kind === kind)[0];
+    sounds.toggle(on);
+    banner((row ? row.name : kind) + (on ? ' ON' : ' OFF'), 1.1);
+};
+
+// A click/tap on the weapon panel toggles that weapon (and doesn't fire).
+const weaponPanelClick = (x, y) => {
+    if(!state || state.paused) return false;
+    const row = weaponRows.filter(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)[0];
+    if(!row) return false;
+    toggleWeapon(row.kind);
+    return true;
+};
+
 const drawWeaponPanel = () => {
+    weaponRows = [];
     const weapons = state.ship.weaponStatus();
     if(!weapons.length) return;
     // On touch screens the bottom corners belong to the thumbs: a compact panel sits left
@@ -1572,12 +1594,15 @@ const drawWeaponPanel = () => {
         ctx.fillText('WEAPONS', left + 8, top + 14);
     }
 
-    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
+    const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD', off: 'OFF' };
     weapons.forEach((w, i) => {
         const y = top + header + i * rowHeight - (TOUCH ? 2 : 0);
+        weaponRows.push({ x: left, y: y, w: width, h: rowHeight, kind: w.kind });
+        ctx.globalAlpha = w.off ? 0.4 : 1;
         ctx.fillStyle = 'rgb(' + w.color + ')';
         ctx.font = (TOUCH ? '9px' : '11px') + ' Bungee, sans-serif';
-        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
+        // The number key that switches this weapon on/off.
+        ctx.fillText((i < 5 && !TOUCH ? (i + 1) + ' ' : '') + w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
 
         const barX = left + barOffset;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
@@ -1587,7 +1612,8 @@ const drawWeaponPanel = () => {
         ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
 
         ctx.font = (TOUCH ? '8px' : '9px') + ' Bungee, sans-serif';
-        ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = w.off ? 'rgba(255, 110, 90, 0.95)' : w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
         ctx.fillText(labels[w.state], barX + barW + 5, y + 11);
     });
     ctx.restore();
@@ -2122,6 +2148,18 @@ const initialize = () => {
     };
     onKeyPress('KeyH', toggleShields);
 
+    // 1-5: switch the weapons in the weapon panel on/off; clicking a row does the same.
+    ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].forEach((code, i) => {
+        onKeyPress(code, () => {
+            if(!state || state.paused || !state.ship.alive) return false;
+            const weapons = state.ship.weaponStatus();
+            if(!weapons[i]) return false;
+            toggleWeapon(weapons[i].kind);
+            return true;
+        });
+    });
+    setClickFilter(weaponPanelClick);
+
     // X: stabilizer on/off.
     onKeyPress('KeyX', () => {
         if(!state || state.paused || !state.ship.alive) return false;
@@ -2201,6 +2239,7 @@ const initialize = () => {
             interact: () => triggerKey('KeyB'),
             toggleAuto: () => triggerKey('KeyG'),
             toggleStabilizer: () => triggerKey('KeyX'),
+            uiTap: weaponPanelClick,
             pause: () => triggerKey('Escape'),
             zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
         });

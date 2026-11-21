@@ -28,6 +28,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Shields on / off | H (or the button at the top of the screen) |
 | Cargo hold (view / eject ore) | C (or the cargo button, top right) |
 | Zoom | Mouse wheel or + / - (0 resets) |
+| Weapons on / off | 1-5 (the rows of the weapon panel), or click / tap a row |
 | Pause | Esc |
 
 ### Phones and tablets
