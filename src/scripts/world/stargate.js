@@ -21,7 +21,14 @@ const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
 const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
 const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
 const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
-const KAWOOSH_DELAY = 0.25;           // opening sound to the vortex bursting out
+const FORM_TIME = 0.8;                // horizon water rushing in from the rim before the burst
+
+// Churning foam blobs for the horizon forming (fixed layout, animated).
+const FOAM = [];
+for(let i = 0; i < 46; i++) {
+    FOAM.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), size: 0.5 + Math.random(),
+        spin: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6), phase: Math.random() * 10 });
+}
 const KAWOOSH_TIME = 1.3;
 const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
 const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
@@ -210,7 +217,7 @@ class Stargate {
             if(this.lockFlash > 0) this.lockFlash -= dt;
             if(t >= this.openTime) {
                 this.state = 'opening';
-                this.timer = KAWOOSH_DELAY;
+                this.timer = FORM_TIME;
                 sounds.kawoosh();
             }
         } else if(this.state === 'opening') {
@@ -243,6 +250,11 @@ class Stargate {
 
         ctx.save();
         ctx.translate(this.x, this.y);
+
+        // The horizon forming: water rushing in from the rim (and still there under the
+        // first moments of the kawoosh).
+        if(this.state === 'opening') this.drawForming(ctx, time, 1 - Math.max(0, this.timer) / FORM_TIME);
+        if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
 
         // Event horizon behind the ring.
         if(this.state === 'open' || this.state === 'closing' || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
@@ -312,6 +324,47 @@ class Stargate {
                 }
                 ctx.stroke();
             }
+        }
+        ctx.restore();
+    }
+
+    // The event horizon forming, as seen in the show: churning icy white-blue water rushes in
+    // from the rim while the middle is still see-through. `f` 0..1 is how far it has closed.
+    drawForming(ctx, time, f) {
+        const r = GATE_INNER;
+        const e = f * f * (3 - 2 * f);
+        const inner = r * (1 - e) * 0.95;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+        // Translucent watery band, brightest and thickest at the rim.
+        const g = ctx.createRadialGradient(0, 0, Math.max(0, inner * 0.85), 0, 0, r);
+        g.addColorStop(0, 'rgba(150, 190, 240, 0)');
+        g.addColorStop(0.2, 'rgba(170, 205, 250, ' + (0.35 + 0.3 * e) + ')');
+        g.addColorStop(0.65, 'rgba(215, 235, 255, ' + (0.7 + 0.2 * e) + ')');
+        g.addColorStop(1, 'rgba(150, 195, 250, 0.95)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        // Churning foam swirling around in the band.
+        ctx.globalCompositeOperation = 'lighter';
+        FOAM.forEach(blob => {
+            const a = blob.angle + time * blob.spin;
+            const d = inner + (r - inner) * (0.15 + 0.85 * blob.depth) + Math.sin(time * 6 + blob.phase) * 2;
+            const size = (6 + 12 * blob.size) * (0.6 + 0.4 * Math.sin(time * 7 + blob.phase));
+            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(time * 9 + blob.phase);
+            stamp(ctx, glowSprite(blob.spin > 0 ? '230,242,255' : '185,215,255'), Math.cos(a) * d, Math.sin(a) * d, size * 1.6, size);
+        });
+        // Ripple lines racing round the band.
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = 'rgb(235, 245, 255)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 7; i++) {
+            const rr = inner + (r - inner) * ((i + 0.5) / 7);
+            const a0 = time * (i % 2 ? 3 : -2.4) + i;
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, a0, a0 + 0.8 + 0.5 * Math.sin(time * 4 + i));
+            ctx.stroke();
         }
         ctx.restore();
     }

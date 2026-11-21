@@ -71,7 +71,7 @@ also work when index.html is opened straight from disk.
 The Stargate, DHD, wormhole, hyperspace window, weapon, shield, door and button sounds come from
 the [Stargate Carter Addon Pack resources](https://github.com/RafaelDeJongh/cap_resources) by the
 CAP team, licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). They are
-used unmodified, in `assets/sounds/cap/` (see `CREDITS.txt` there). Because of that licence, this
+used (larger files converted to MP3), in `assets/sounds/cap/` (see `CREDITS.txt` there). Because of that licence, this
 game must stay non-commercial, and redistributions of those sounds must keep the same licence.
 Anything not covered by a sample is synthesized with the Web Audio API.
 

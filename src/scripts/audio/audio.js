@@ -410,17 +410,16 @@ const tractorVoice = createVoice(c => {
 //
 // Stargate, weapon and ship sounds from the Stargate Carter Addon Pack (CAP) resources
 // (https://github.com/RafaelDeJongh/cap_resources, CC BY-NC-SA 4.0, see
-// assets/sounds/cap/CREDITS.txt). They're decoded into Web Audio buffers when audio
-// starts; until a sample has loaded (or if it fails to), the synthesized version plays.
+// assets/sounds/cap/CREDITS.txt). Until a sample has been decoded (or if it fails to),
+// the synthesized version plays.
 
-const CAP = './assets/sounds/cap/';
 const SAMPLE_FILES = {
     dhd_press: ['stargate/dhd/sg1/press.mp3', 'stargate/dhd/sg1/press_2.mp3', 'stargate/dhd/sg1/press_3.mp3',
         'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
-    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.wav'],
+    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.mp3'],
     dial_fail: ['stargate/dial_fail_sg1.mp3'],
     // Same files CAP's Milky Way gate uses for a DHD dial (stargate_sg1, event_horizon).
-    gate_spin: ['alexalx/stargate/gate_roll_long.wav'],
+    gate_spin: ['alexalx/stargate/gate_roll_long.mp3'],
     chevron: ['stargate/chevron_dhd.mp3'],
     chevron_lock: ['stargate/chevron_lock.mp3'],
     kawoosh: ['stargate/sg1/open.mp3'],
@@ -428,16 +427,16 @@ const SAMPLE_FILES = {
     gate_enter: ['stargate/teleport.mp3', 'stargate/teleport_2.mp3', 'stargate/teleport_3.mp3', 'stargate/teleport_4.mp3'],
     wormhole: ['stargate/gate_travel.mp3'],
     gate_close: ['stargate/gate_close.mp3'],
-    hyper_window: ['tech/hyperwindow.wav'],
+    hyper_window: ['tech/hyperwindow.mp3'],
     railgun: ['weapons/railgun_shoot.wav'],
     staff: ['pulse_weapon/staff_weapon.mp3'],
-    missile: ['f302/missilefire.wav'],
+    missile: ['f302/missilefire.mp3'],
     drone: ['weapons/drone_shot.mp3'],
-    asgard_beam: ['weapons/asgard_beam.wav'],
+    asgard_beam: ['weapons/asgard_beam.mp3'],
     shield_hit: ['shields/shield_hit.mp3'],
     shield_up: ['shields/shield_engage.mp3'],
     shield_down: ['shields/shield_disengage.mp3'],
-    door: ['door/atlantis_door_open.wav'],
+    door: ['door/atlantis_door_open.mp3'],
     button: ['button/ancient_button1.wav', 'button/ancient_button2.wav'],
     scan: ['glebqip/tracking.wav'],
     ship_explosion: ['jumper/jumperexplosion.mp3']
@@ -448,57 +447,51 @@ const loops = {};
 const lastShots = {};
 let samplesRequested = false;
 
-// Fallback for when the files can't be fetched into Web Audio, above all when the game is
-// opened straight from disk (file://), where browsers block fetch(): plain <audio>
-// elements can still play them.
-const elements = {};
-const loadElement = (name, i, file) => {
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.src = CAP + file;
-    elements[name][i] = audio;
+// The sound files are packed into assets/sounds/cap-sounds.js (tools/pack-sounds.js), a
+// local script that sets window.CAP_SOUNDS, so nothing is fetched and it also works when
+// index.html is opened from disk. Each sound is decoded once into a Web Audio buffer, which
+// is cheap to play any number of times.
+const toArrayBuffer = (base64) => {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
 };
 
 function loadSamples(c) {
     if(samplesRequested) return;
+    const packed = window.CAP_SOUNDS;
+    if(!packed) {
+        // The sound script is still loading: try again shortly.
+        setTimeout(() => loadSamples(c), 300);
+        return;
+    }
     samplesRequested = true;
-    const local = window.location.protocol === 'file:' || !window.fetch;
+    // Decode one file at a time so starting the game doesn't stall.
+    const queue = [];
     Object.keys(SAMPLE_FILES).forEach(name => {
         buffers[name] = [];
-        elements[name] = [];
-        SAMPLE_FILES[name].forEach((file, i) => {
-            if(local) {
-                loadElement(name, i, file);
-                return;
-            }
-            window.fetch(CAP + file)
-                .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(file))))
-                // Callback form: older Safari has no promise-returning decodeAudioData.
-                .then(data => new Promise((resolve, reject) => c.decodeAudioData(data, resolve, reject)))
-                .then(buffer => { buffers[name][i] = buffer; })
-                .catch(() => loadElement(name, i, file));
-        });
+        SAMPLE_FILES[name].forEach((file, i) => { if(packed[file]) queue.push([name, i, file]); });
     });
+    const next = () => {
+        const item = queue.shift();
+        if(!item) {
+            window.CAP_SOUNDS = null;   // free the encoded copies
+            return;
+        }
+        const done = (buffer) => {
+            if(buffer) buffers[item[0]][item[1]] = buffer;
+            setTimeout(next, 0);
+        };
+        try {
+            // Callback form: older Safari has no promise-returning decodeAudioData.
+            c.decodeAudioData(toArrayBuffer(packed[item[2]]), done, () => done(null));
+        } catch(e) {
+            done(null);
+        }
+    };
+    next();
 }
-
-// Play through an <audio> element (fallback path). Returns true if one was available.
-const playElement = (name, index, level, opts) => {
-    const list = elements[name];
-    const audio = list && (list[index] || list.filter(Boolean)[0]);
-    if(!audio || audio.error) return false;
-    const clip = LOOPING_SAMPLES[name] ? audio : audio.cloneNode();
-    clip.volume = Math.max(0, Math.min(1, level));
-    clip.playbackRate = opts.rate || 1;
-    if(LOOPING_SAMPLES[name]) {
-        if(loops[name]) return true;
-        clip.loop = true;
-        loops[name] = { element: clip };
-    } else {
-        lastShots[name] = { element: clip };
-    }
-    safePlay(clip);
-    return true;
-};
 
 // Play sample `name` (a random variant, or options.variant). Returns false if it isn't
 // loaded yet so the caller can fall back to the synthesized sound.
@@ -511,12 +504,12 @@ const playSample = (name, volume, options) => {
     const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
     const buffer = list[index] || list.filter(Boolean)[0];
     const level = volume === undefined ? 0.9 : volume;
-    if(!buffer) return playElement(name, index, level, opts);
+    if(!buffer) return false;
 
     if(LOOPING_SAMPLES[name]) {
         const playing = loops[name];
         if(playing) {
-            if(playing.gain) playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
             return true;
         }
     }
@@ -548,10 +541,6 @@ const cutSample = (name, fade) => {
     const shot = lastShots[name];
     if(!shot || !ac) return;
     delete lastShots[name];
-    if(shot.element) {
-        shot.element.pause();
-        return;
-    }
     shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
     try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
 };
@@ -560,11 +549,6 @@ const stopSample = (name) => {
     const playing = loops[name];
     if(!playing || !ac) return;
     delete loops[name];
-    if(playing.element) {
-        playing.element.pause();
-        playing.element.currentTime = 0;
-        return;
-    }
     playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
     try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
 };
