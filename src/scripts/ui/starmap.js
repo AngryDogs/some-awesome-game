@@ -46,7 +46,7 @@ class Starmap {
 
         const side = el('div', 'starmap-side');
         side.appendChild(el('div', 'starmap-title', 'Starmap'));
-        side.appendChild(el('div', 'starmap-hint', 'Drag to rotate, wheel to zoom, click a world to see its gate address.'));
+        side.appendChild(el('div', 'starmap-hint', (('ontouchstart' in window) ? 'Drag to rotate, pinch to zoom, tap a world to see its gate address.' : 'Drag to rotate, wheel to zoom, click a world to see its gate address.')));
         this.info = el('div', 'starmap-info');
         side.appendChild(this.info);
         const close = el('button', 'sy-button small', 'Close (M / Esc)');
@@ -58,22 +58,52 @@ class Starmap {
         this.root = root;
         this.ctx = this.canvas.getContext('2d');
 
+        // Pointer events cover mouse and touch: one pointer drags to rotate (a tap picks a
+        // world), two pointers pinch to zoom.
         let drag = null;
-        this.canvas.addEventListener('mousedown', (event) => {
-            drag = { x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+        const pointers = {};
+        let pinch = null;
+        const pinchDistance = () => {
+            const ids = Object.keys(pointers);
+            const a = pointers[ids[0]], b = pointers[ids[1]];
+            return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        };
+        this.canvas.style.touchAction = 'none';
+        this.canvas.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(this.canvas.setPointerCapture) {
+                try { this.canvas.setPointerCapture(event.pointerId); } catch(e) { /* ignore */ }
+            }
+            if(Object.keys(pointers).length === 2) {
+                drag = null;
+                pinch = { distance: pinchDistance(), zoom: this.zoom };
+            } else if(!pinch) {
+                drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+            }
         });
-        window.addEventListener('mousemove', (event) => {
-            if(!drag || !this.isOpen) return;
+        this.canvas.addEventListener('pointermove', (event) => {
+            if(!this.isOpen || !pointers[event.pointerId]) return;
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(pinch && Object.keys(pointers).length >= 2) {
+                this.zoom = Math.max(0.5, Math.min(3, pinch.zoom * pinchDistance() / pinch.distance));
+                return;
+            }
+            if(!drag || drag.id !== event.pointerId) return;
             const dx = event.clientX - drag.x;
             const dy = event.clientY - drag.y;
-            if(Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+            if(Math.abs(dx) + Math.abs(dy) > (event.pointerType === 'mouse' ? 4 : 10)) drag.moved = true;
             this.yaw = drag.yaw + dx * 0.008;
             this.pitch = Math.max(-1.4, Math.min(1.4, drag.pitch + dy * 0.008));
         });
-        window.addEventListener('mouseup', (event) => {
-            if(drag && !drag.moved && this.isOpen) this.pick(event);
-            drag = null;
-        });
+        const release = (event) => {
+            if(drag && drag.id === event.pointerId && !drag.moved && this.isOpen && event.type === 'pointerup') this.pick(event);
+            if(drag && drag.id === event.pointerId) drag = null;
+            delete pointers[event.pointerId];
+            if(Object.keys(pointers).length === 0) pinch = null;
+        };
+        this.canvas.addEventListener('pointerup', release);
+        this.canvas.addEventListener('pointercancel', release);
         this.canvas.addEventListener('wheel', (event) => {
             event.preventDefault();
             this.zoom = Math.max(0.5, Math.min(3, this.zoom * Math.exp(-event.deltaY * 0.0012)));
@@ -148,7 +178,8 @@ class Starmap {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         let best = null;
-        let bestDist = 22 * 22;
+        const reach = event.pointerType && event.pointerType !== 'mouse' ? 34 : 22;
+        let bestDist = reach * reach;
         SYSTEMS.forEach(system => {
             const p = this.project(system.map);
             const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);

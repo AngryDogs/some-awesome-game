@@ -53,6 +53,9 @@ export const onKeyPress = (code, handler) => {
     pressHandlers[code] = handler;
 };
 
+// Runs the same action a key press would (used by the on-screen touch buttons).
+export const triggerKey = (code) => !!(pressHandlers[code] && pressHandlers[code]({ code: code }));
+
 let initialized = false;
 
 const loadInputHandlers = () => {

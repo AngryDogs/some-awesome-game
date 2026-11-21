@@ -30,6 +30,20 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Zoom | Mouse wheel or + / - (0 resets) |
 | Pause | Esc |
 
+### Phones and tablets
+
+Touch screens get on-screen controls automatically (play in landscape; the game goes full screen
+on launch where the browser allows it):
+
+- **Left thumb**: a joystick appears where you touch. Push towards where you want to fly: the
+  ship turns to face that way (cancelling spin) and thrusts once lined up. Push harder to thrust sooner.
+- **Right thumb**: touch and hold anywhere on the right side to aim there and fire the guns.
+- **Missile** and **Brake** (stabilize): hold. **Dock** / **DHD** appears when you are close enough.
+  **Auto** toggles auto-targeting when a targeting computer is fitted.
+- **+ / -** zoom (or pinch with two fingers on one side), **II** pauses.
+- Shields, cargo hold and starmap buttons sit on the left under the HUD. The starmap rotates by
+  dragging and zooms by pinching; the DHD is tapped glyph by glyph.
+
 ## Travel
 
 The galaxy has several star systems: **Lantea** (Atlantis, the shipyard and ore market), **Earth**,

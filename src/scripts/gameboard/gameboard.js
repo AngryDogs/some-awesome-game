@@ -2,7 +2,7 @@ import Ship from '../components/ship/ship';
 import { MAX_MERGE_RADIUS, VISUAL_RADIUS, resetRebuildBudget } from '../components/rock/rock';
 import Particle from '../components/particle/particle';
 import Ore from '../components/ore/ore';
-import loadInputHandlers, { input, onKeyPress } from '../components/ship/handlers';
+import loadInputHandlers, { input, onKeyPress, triggerKey } from '../components/ship/handlers';
 import sounds from '../audio/audio';
 import { world, delta, gravityAt } from '../physics/physics';
 import MATERIALS, { MATERIAL_ORDER } from '../world/materials';
@@ -17,6 +17,7 @@ import { getStarmap, isStarmapOpen, hyperTravelTime } from '../ui/starmap';
 import { planetSprite, nebulaSprite } from '../render/planets';
 import { drawWormhole, drawHyperspace, drawHyperWindow } from './travel';
 import { glowSprite, stamp } from '../render/sprites';
+import TouchControls, { isTouchDevice } from '../ui/touch';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
 const MAX_STEPS_PER_FRAME = 4;   // on slow frames, slow the game slightly rather than spiral
@@ -28,6 +29,11 @@ const ROCK_BOUNCE = 0.2;
 const MISSILE_PUSH = 60000;
 const SECTOR_UPDATE_INTERVAL = 0.5;
 const MINIMAP_SIZE = 180;
+
+// Phones and tablets get on-screen controls and a layout that keeps the thumbs' areas clear.
+const TOUCH = isTouchDevice();
+let touchControls = null;
+const hint = (key) => TOUCH ? '' : ' (' + key + ')';
 const MINIMAP_RANGE = 3500;
 
 const gameboard = document.getElementById('gameboard');
@@ -164,7 +170,7 @@ const renderInfo = () => {
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
-    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + ' (G)' : '');
+    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : '');
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -174,11 +180,11 @@ const renderInfo = () => {
         hud.shieldState = shieldState;
         shieldButton.className = 'shield-button ' + shieldState;
         shieldButton.textContent = {
-            none: 'No shields', up: 'Shields: UP (H)', depleted: 'Shields: DEPLETED', down: 'Shields: DOWN (H)'
+            none: 'No shields', up: 'Shields: UP' + hint('H'), depleted: 'Shields: DEPLETED', down: 'Shields: DOWN' + hint('H')
         }[shieldState];
     }
     setBar('cargoBar', used / ship.cargoCapacity);
-    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + ' (C)');
+    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + hint('C'));
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
 
@@ -1496,7 +1502,8 @@ const drawDockPrompt = () => {
     if(!state.canDock) return;
     const ship = state.ship;
     const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    const text = speed > STATION.maxDockSpeed ? 'Slow down to dock (X stabilizes)' : 'Press B to dock at the shipyard';
+    const text = speed > STATION.maxDockSpeed ? (TOUCH ? 'Slow down to dock (hold Brake)' : 'Slow down to dock (X stabilizes)')
+        : (TOUCH ? 'Tap Dock to enter the shipyard' : 'Press B to dock at the shipyard');
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
@@ -1540,37 +1547,45 @@ const drawStationPointer = () => {
 const drawWeaponPanel = () => {
     const weapons = state.ship.weaponStatus();
     if(!weapons.length) return;
-    const left = 16;
-    const rowHeight = 22;
-    const top = world.height - 16 - weapons.length * rowHeight - 18;
+    // On touch screens the bottom corners belong to the thumbs: a compact panel sits left
+    // of the minimap instead.
+    const rowHeight = TOUCH ? 16 : 22;
+    const header = TOUCH ? 6 : 22;
+    const width = TOUCH ? 196 : 230;
+    const barOffset = TOUCH ? 86 : 108;
+    const barW = TOUCH ? 50 : 70;
+    const left = TOUCH ? world.width - Math.min(120, Math.round(world.height * 0.28)) - 20 - width : 16;
+    const top = TOUCH ? 10 : world.height - 16 - weapons.length * rowHeight - 18;
+    const height = weapons.length * rowHeight + header + (TOUCH ? 2 : 0);
 
     ctx.save();
     ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
     ctx.strokeStyle = 'rgba(140, 180, 255, 0.4)';
-    ctx.fillRect(left, top, 230, weapons.length * rowHeight + 22);
-    ctx.strokeRect(left, top, 230, weapons.length * rowHeight + 22);
-    ctx.font = '10px Bungee, sans-serif';
-    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
-    ctx.fillText('WEAPONS', left + 8, top + 14);
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+    if(!TOUCH) {
+        ctx.font = '10px Bungee, sans-serif';
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+        ctx.fillText('WEAPONS', left + 8, top + 14);
+    }
 
     const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
     weapons.forEach((w, i) => {
-        const y = top + 22 + i * rowHeight;
+        const y = top + header + i * rowHeight - (TOUCH ? 2 : 0);
         ctx.fillStyle = 'rgb(' + w.color + ')';
-        ctx.font = '11px Bungee, sans-serif';
-        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + 8, y + 11);
+        ctx.font = (TOUCH ? '9px' : '11px') + ' Bungee, sans-serif';
+        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
 
-        const barX = left + 108;
-        const barW = 70;
+        const barX = left + barOffset;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.strokeRect(barX, y + 3, barW, 8);
         const warn = w.state === 'overheated' || w.state === 'hot';
         ctx.fillStyle = warn ? (w.state === 'overheated' ? 'rgb(255, 80, 60)' : 'rgb(255, 170, 70)') : 'rgb(' + w.color + ')';
         ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
 
-        ctx.font = '9px Bungee, sans-serif';
+        ctx.font = (TOUCH ? '8px' : '9px') + ' Bungee, sans-serif';
         ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
-        ctx.fillText(labels[w.state], barX + barW + 6, y + 11);
+        ctx.fillText(labels[w.state], barX + barW + 5, y + 11);
     });
     ctx.restore();
 };
@@ -1665,9 +1680,9 @@ const drawGatePointer = () => {
 };
 
 const drawMinimap = () => {
-    const size = MINIMAP_SIZE;
-    const left = world.width - size - 16;
-    const top = world.height - size - 16;
+    const size = TOUCH ? Math.min(120, Math.round(world.height * 0.28)) : MINIMAP_SIZE;
+    const left = world.width - size - (TOUCH ? 10 : 16);
+    const top = TOUCH ? 10 : world.height - size - 16;
     const scale = (size / 2) / MINIMAP_RANGE;
     const cx = left + size / 2;
     const cy = top + size / 2;
@@ -1834,7 +1849,7 @@ const render = () => {
     drawScannerPointer();
     drawWeaponPanel();
     drawDockPrompt();
-    if(!state.paused) drawCrosshair();
+    if(!state.paused && (!TOUCH || input.mouseDown)) drawCrosshair();
     drawBanner();
 };
 
@@ -1948,6 +1963,7 @@ const freeze = (frozen) => {
     cargoButton.style.display = state && !frozen ? '' : 'none';
     starmapButton.style.display = state && !frozen ? '' : 'none';
     backdrop.style.display = state ? '' : 'none';
+    if(touchControls) touchControls.show(!!state && !frozen);
     if(frozen) toggleCargoPanel(false);
     if(frozen) {
         sounds.stopAll();
@@ -2032,6 +2048,12 @@ const frame = (now) => {
         state.transitionClock = (state.transitionClock || 0) + elapsed;
         inTunnel = updateTransition(elapsed);
         if(inTunnel) accumulator = 0;
+    }
+
+    if(touchControls && !state.paused) {
+        touchControls.update(state.ship, {
+            interactLabel: state.transition ? '' : state.canDock ? 'Dock' : state.nearDHD ? 'DHD' : ''
+        });
     }
 
     if(!state.paused && !inTunnel) {
@@ -2159,6 +2181,36 @@ const initialize = () => {
     onKeyPress('KeyM', toggleStarmap);
     onKeyPress('KeyJ', toggleStarmap);
     starmapButton.addEventListener('click', () => toggleStarmap());
+
+    if(TOUCH) {
+        document.body.classList.add('touch');
+        starmapButton.textContent = 'Starmap';
+        touchControls = new TouchControls(input, canvas, {
+            interact: () => triggerKey('KeyB'),
+            toggleAuto: () => triggerKey('KeyG'),
+            pause: () => triggerKey('Escape'),
+            zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
+        });
+        // Two-finger pinch on the play area zooms the view.
+        const pinch = {};
+        canvas.addEventListener('touchstart', (event) => {
+            if(event.touches.length === 2) {
+                const a = event.touches[0], b = event.touches[1];
+                pinch.distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                pinch.zoom = targetZoom;
+            }
+        }, { passive: true });
+        canvas.addEventListener('touchmove', (event) => {
+            // Only when neither finger is steering or shooting would pinch be unambiguous;
+            // with the stick + aim split, a pinch is two fingers on the same side.
+            if(event.touches.length !== 2 || !pinch.distance || !state || state.paused) return;
+            const a = event.touches[0], b = event.touches[1];
+            const sameSide = (a.clientX < window.innerWidth * 0.45) === (b.clientX < window.innerWidth * 0.45);
+            if(!sameSide) return;
+            const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+            targetZoom = clampZoom(pinch.zoom * d / pinch.distance);
+        }, { passive: true });
+    }
 
     document.getElementById('resumeGame').addEventListener('click', () => setPaused(false));
     document.getElementById('abandonGame').addEventListener('click', () => {

@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 12);
+/******/ 	return __webpack_require__(__webpack_require__.s = 13);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -4501,16 +4501,257 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+// Touch controls for phones and tablets.
+//
+//  - Left: a virtual joystick. Push towards where you want to go: an autopilot turns the
+//    ship to face that way (countering spin, since this is zero-g) and thrusts once lined up.
+//  - Right: touch and hold anywhere on the right part of the screen to aim the guns at that
+//    point and fire.
+//  - Buttons: missiles (hold), brake/stabilize (hold), a context button (Dock / DHD),
+//    auto-target, zoom and pause.
+//
+// The controls write into the same `input` object the keyboard and mouse use, so the rest
+// of the game doesn't need to know where the input came from.
+
+const isTouchDevice = () => ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+/* harmony export (immutable) */ __webpack_exports__["b"] = isTouchDevice;
+
+
+const JOYSTICK_RADIUS = 60;
+const TURN_DEADZONE = 0.08;
+
+const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if(className) node.className = className;
+    if(text !== undefined) node.textContent = text;
+    return node;
+};
+
+const angleDifference = (a, b) => {
+    let d = b - a;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    return d;
+};
+
+class TouchControls {
+
+    // actions: { interact(), pause(), toggleAuto(), zoom(factor) }
+    constructor(input, canvas, actions) {
+        this.input = input;
+        this.canvas = canvas;
+        this.actions = actions;
+        this.stick = null;      // { id, cx, cy, x, y }
+        this.aim = null;        // pointer id aiming/firing
+        this.build();
+        this.bindCanvas();
+    }
+
+    build() {
+        const root = el('div', 'touch-ui');
+
+        this.base = el('div', 'touch-stick');
+        this.knob = el('div', 'touch-knob');
+        this.base.appendChild(this.knob);
+        root.appendChild(this.base);
+
+        const cluster = el('div', 'touch-buttons');
+        const hold = (label, className, key) => {
+            const button = el('button', 'touch-button ' + className, label);
+            const set = (on) => (event) => {
+                event.preventDefault();
+                this.input[key] = on;
+                button.classList.toggle('pressed', on);
+            };
+            button.addEventListener('pointerdown', set(true));
+            button.addEventListener('pointerup', set(false));
+            button.addEventListener('pointercancel', set(false));
+            button.addEventListener('pointerleave', set(false));
+            return button;
+        };
+        const tap = (label, className, action) => {
+            const button = el('button', 'touch-button ' + className, label);
+            button.addEventListener('pointerdown', (event) => {
+                event.preventDefault();
+                action();
+            });
+            return button;
+        };
+
+        this.interactButton = tap('Dock', 'interact', () => this.actions.interact());
+        this.autoButton = tap('Auto', 'auto', () => this.actions.toggleAuto());
+        cluster.appendChild(this.interactButton);
+        cluster.appendChild(this.autoButton);
+        cluster.appendChild(hold('Brake', 'brake', 'stabilize'));
+        cluster.appendChild(hold('Missile', 'missile', 'missileKey'));
+        root.appendChild(cluster);
+
+        const corner = el('div', 'touch-corner');
+        corner.appendChild(tap('+', 'small', () => this.actions.zoom(1.25)));
+        corner.appendChild(tap('-', 'small', () => this.actions.zoom(0.8)));
+        corner.appendChild(tap('II', 'small', () => this.actions.pause()));
+        root.appendChild(corner);
+
+        this.rotateHint = el('div', 'touch-rotate', 'Turn your phone sideways for the best view');
+        root.appendChild(this.rotateHint);
+
+        document.body.appendChild(root);
+        this.root = root;
+        this.show(false);
+    }
+
+    bindCanvas() {
+        const target = this.canvas;
+        target.style.touchAction = 'none';
+
+        target.addEventListener('pointerdown', (event) => {
+            if(event.pointerType === 'mouse' || !this.visible) return;
+            event.preventDefault();
+            const leftSide = event.clientX < window.innerWidth * 0.45;
+            // A second finger on the same side as an active control is a pinch-zoom: let go
+            // of that control so pinching doesn't steer or shoot.
+            const stickSide = this.stick && this.stick.left === leftSide;
+            const aimSide = this.aim !== null && this.aimLeft === leftSide;
+            if(stickSide || aimSide) {
+                if(stickSide) { this.stick = null; this.placeStick(); }
+                if(aimSide) { this.aim = null; this.input.mouseDown = false; }
+                return;
+            }
+            if(leftSide && !this.stick) {
+                // Joystick appears where the thumb lands (within the left side).
+                this.stick = { left: true, id: event.pointerId, cx: event.clientX, cy: event.clientY, x: event.clientX, y: event.clientY };
+                this.placeStick();
+            } else if(!this.aim) {
+                this.aim = event.pointerId;
+                this.aimLeft = leftSide;
+                this.input.mouseX = event.clientX;
+                this.input.mouseY = event.clientY;
+                this.input.mouseDown = true;
+            }
+        });
+        target.addEventListener('pointermove', (event) => {
+            if(event.pointerType === 'mouse') return;
+            if(this.stick && event.pointerId === this.stick.id) {
+                this.stick.x = event.clientX;
+                this.stick.y = event.clientY;
+                this.placeStick();
+            } else if(event.pointerId === this.aim) {
+                this.input.mouseX = event.clientX;
+                this.input.mouseY = event.clientY;
+            }
+        });
+        const release = (event) => {
+            if(this.stick && event.pointerId === this.stick.id) {
+                this.stick = null;
+                this.placeStick();
+            }
+            if(event.pointerId === this.aim) {
+                this.aim = null;
+                this.input.mouseDown = false;
+            }
+        };
+        target.addEventListener('pointerup', release);
+        target.addEventListener('pointercancel', release);
+    }
+
+    placeStick() {
+        const stick = this.stick;
+        if(!stick) {
+            this.base.classList.remove('active');
+            this.knob.style.transform = 'translate(-50%, -50%)';
+            return;
+        }
+        this.base.classList.add('active');
+        this.base.style.left = stick.cx + 'px';
+        this.base.style.top = stick.cy + 'px';
+        let dx = stick.x - stick.cx;
+        let dy = stick.y - stick.cy;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if(length > JOYSTICK_RADIUS) {
+            dx *= JOYSTICK_RADIUS / length;
+            dy *= JOYSTICK_RADIUS / length;
+        }
+        this.knob.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))';
+    }
+
+    show(visible) {
+        this.visible = visible;
+        this.root.style.display = visible ? '' : 'none';
+        if(!visible) {
+            this.stick = null;
+            this.aim = null;
+            this.placeStick();
+        }
+    }
+
+    // Called every frame while playing: turns the joystick into thrust and turning, and
+    // updates the context buttons.
+    update(ship, context) {
+        const input = this.input;
+        this.rotateHint.style.display = window.innerHeight > window.innerWidth ? '' : 'none';
+
+        this.interactButton.style.display = context.interactLabel ? '' : 'none';
+        this.interactButton.textContent = context.interactLabel || '';
+        this.autoButton.style.display = ship.guidance ? '' : 'none';
+        this.autoButton.classList.toggle('pressed', !!ship.autoTarget);
+
+        const stick = this.stick;
+        if(!stick || !ship.alive) {
+            input.forward = false;
+            input.rotateLeft = false;
+            input.rotateRight = false;
+            return;
+        }
+        const dx = stick.x - stick.cx;
+        const dy = stick.y - stick.cy;
+        const push = Math.min(1, Math.sqrt(dx * dx + dy * dy) / JOYSTICK_RADIUS);
+        if(push < 0.15) {
+            input.forward = false;
+            input.rotateLeft = false;
+            input.rotateRight = false;
+            return;
+        }
+
+        // Steer: aim for an angular velocity proportional to the heading error, so the
+        // ship turns briskly and settles without overshooting.
+        const desired = Math.atan2(dy, dx);
+        const error = angleDifference(ship.angle, desired);
+        const maxTurn = ship.stats.maxTurn;
+        const wanted = Math.max(-maxTurn, Math.min(maxTurn, error * 3));
+        input.rotateRight = Math.abs(error) > TURN_DEADZONE && ship.angularVelocity < wanted - 0.05;
+        input.rotateLeft = Math.abs(error) > TURN_DEADZONE && ship.angularVelocity > wanted + 0.05;
+        if(Math.abs(error) <= TURN_DEADZONE) {
+            // Lined up: cancel leftover spin.
+            input.rotateRight = ship.angularVelocity < -0.1;
+            input.rotateLeft = ship.angularVelocity > 0.1;
+        }
+        // Thrust once roughly facing the stick direction; harder push = thrust sooner.
+        input.forward = push > 0.35 && Math.abs(error) < 0.35 + push * 0.4;
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (TouchControls);
+
+
+/***/ }),
+/* 13 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(11);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(12);
 
 
 
 
+
+
+if(Object(__WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__["b" /* isTouchDevice */])()) document.body.classList.add('touch');
 
 const startGame = document.getElementById('startGame');
 const openShipyard = document.getElementById('openShipyard');
@@ -4541,7 +4782,25 @@ Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["k" /* onProfileC
     renderDebug();
 });
 
+// On phones, go full screen in landscape when launching so the browser bars don't eat
+// the view. Both calls may be refused (iOS Safari has no fullscreen API); that's fine.
+const goFullscreen = () => {
+    if(!Object(__WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__["b" /* isTouchDevice */])()) return;
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if(!request || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try {
+        const result = request.call(root, { navigationUI: 'hide' });
+        if(result && result.then) {
+            result.then(() => {
+                if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+            }).catch(() => {});
+        }
+    } catch(e) { /* not allowed */ }
+};
+
 startGame.addEventListener('click', () => {
+    goFullscreen();
     menu.style.visibility = 'hidden';
     Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
 });
@@ -4556,29 +4815,31 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(19);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(8);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(11);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__world_systems__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_stargate__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ui_dhd__ = __webpack_require__(22);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_starmap__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__render_planets__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__travel__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_stargate__ = __webpack_require__(22);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ui_dhd__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_starmap__ = __webpack_require__(24);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__render_planets__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__travel__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__render_sprites__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ui_touch__ = __webpack_require__(12);
+
 
 
 
@@ -4609,6 +4870,11 @@ const ROCK_BOUNCE = 0.2;
 const MISSILE_PUSH = 60000;
 const SECTOR_UPDATE_INTERVAL = 0.5;
 const MINIMAP_SIZE = 180;
+
+// Phones and tablets get on-screen controls and a layout that keeps the thumbs' areas clear.
+const TOUCH = Object(__WEBPACK_IMPORTED_MODULE_19__ui_touch__["b" /* isTouchDevice */])();
+let touchControls = null;
+const hint = (key) => TOUCH ? '' : ' (' + key + ')';
 const MINIMAP_RANGE = 3500;
 
 const gameboard = document.getElementById('gameboard');
@@ -4745,7 +5011,7 @@ const renderInfo = () => {
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
-    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + ' (G)' : '');
+    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : '');
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -4755,11 +5021,11 @@ const renderInfo = () => {
         hud.shieldState = shieldState;
         shieldButton.className = 'shield-button ' + shieldState;
         shieldButton.textContent = {
-            none: 'No shields', up: 'Shields: UP (H)', depleted: 'Shields: DEPLETED', down: 'Shields: DOWN (H)'
+            none: 'No shields', up: 'Shields: UP' + hint('H'), depleted: 'Shields: DEPLETED', down: 'Shields: DOWN' + hint('H')
         }[shieldState];
     }
     setBar('cargoBar', used / ship.cargoCapacity);
-    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + ' (C)');
+    setText('cargoButton', 'Cargo ' + used + '/' + ship.cargoCapacity + hint('C'));
     setText('cargoText', used + ' / ' + ship.cargoCapacity);
 };
 
@@ -6077,7 +6343,8 @@ const drawDockPrompt = () => {
     if(!state.canDock) return;
     const ship = state.ship;
     const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    const text = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? 'Slow down to dock (X stabilizes)' : 'Press B to dock at the shipyard';
+    const text = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? (TOUCH ? 'Slow down to dock (hold Brake)' : 'Slow down to dock (X stabilizes)')
+        : (TOUCH ? 'Tap Dock to enter the shipyard' : 'Press B to dock at the shipyard');
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
@@ -6121,37 +6388,45 @@ const drawStationPointer = () => {
 const drawWeaponPanel = () => {
     const weapons = state.ship.weaponStatus();
     if(!weapons.length) return;
-    const left = 16;
-    const rowHeight = 22;
-    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 16 - weapons.length * rowHeight - 18;
+    // On touch screens the bottom corners belong to the thumbs: a compact panel sits left
+    // of the minimap instead.
+    const rowHeight = TOUCH ? 16 : 22;
+    const header = TOUCH ? 6 : 22;
+    const width = TOUCH ? 196 : 230;
+    const barOffset = TOUCH ? 86 : 108;
+    const barW = TOUCH ? 50 : 70;
+    const left = TOUCH ? __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height * 0.28)) - 20 - width : 16;
+    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 16 - weapons.length * rowHeight - 18;
+    const height = weapons.length * rowHeight + header + (TOUCH ? 2 : 0);
 
     ctx.save();
     ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
     ctx.strokeStyle = 'rgba(140, 180, 255, 0.4)';
-    ctx.fillRect(left, top, 230, weapons.length * rowHeight + 22);
-    ctx.strokeRect(left, top, 230, weapons.length * rowHeight + 22);
-    ctx.font = '10px Bungee, sans-serif';
-    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
-    ctx.fillText('WEAPONS', left + 8, top + 14);
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+    if(!TOUCH) {
+        ctx.font = '10px Bungee, sans-serif';
+        ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+        ctx.fillText('WEAPONS', left + 8, top + 14);
+    }
 
     const labels = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD' };
     weapons.forEach((w, i) => {
-        const y = top + 22 + i * rowHeight;
+        const y = top + header + i * rowHeight - (TOUCH ? 2 : 0);
         ctx.fillStyle = 'rgb(' + w.color + ')';
-        ctx.font = '11px Bungee, sans-serif';
-        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + 8, y + 11);
+        ctx.font = (TOUCH ? '9px' : '11px') + ' Bungee, sans-serif';
+        ctx.fillText(w.name + (w.count > 1 ? ' x' + w.count : ''), left + (TOUCH ? 6 : 8), y + 11);
 
-        const barX = left + 108;
-        const barW = 70;
+        const barX = left + barOffset;
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.strokeRect(barX, y + 3, barW, 8);
         const warn = w.state === 'overheated' || w.state === 'hot';
         ctx.fillStyle = warn ? (w.state === 'overheated' ? 'rgb(255, 80, 60)' : 'rgb(255, 170, 70)') : 'rgb(' + w.color + ')';
         ctx.fillRect(barX + 1, y + 4, (barW - 2) * w.ready, 6);
 
-        ctx.font = '9px Bungee, sans-serif';
+        ctx.font = (TOUCH ? '8px' : '9px') + ' Bungee, sans-serif';
         ctx.fillStyle = w.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
-        ctx.fillText(labels[w.state], barX + barW + 6, y + 11);
+        ctx.fillText(labels[w.state], barX + barW + 5, y + 11);
     });
     ctx.restore();
 };
@@ -6246,9 +6521,9 @@ const drawGatePointer = () => {
 };
 
 const drawMinimap = () => {
-    const size = MINIMAP_SIZE;
-    const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - size - 16;
-    const top = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - size - 16;
+    const size = TOUCH ? Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height * 0.28)) : MINIMAP_SIZE;
+    const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - size - (TOUCH ? 10 : 16);
+    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - size - 16;
     const scale = (size / 2) / MINIMAP_RANGE;
     const cx = left + size / 2;
     const cy = top + size / 2;
@@ -6415,7 +6690,7 @@ const render = () => {
     drawScannerPointer();
     drawWeaponPanel();
     drawDockPrompt();
-    if(!state.paused) drawCrosshair();
+    if(!state.paused && (!TOUCH || __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseDown)) drawCrosshair();
     drawBanner();
 };
 
@@ -6529,6 +6804,7 @@ const freeze = (frozen) => {
     cargoButton.style.display = state && !frozen ? '' : 'none';
     starmapButton.style.display = state && !frozen ? '' : 'none';
     backdrop.style.display = state ? '' : 'none';
+    if(touchControls) touchControls.show(!!state && !frozen);
     if(frozen) toggleCargoPanel(false);
     if(frozen) {
         __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
@@ -6613,6 +6889,12 @@ const frame = (now) => {
         state.transitionClock = (state.transitionClock || 0) + elapsed;
         inTunnel = updateTransition(elapsed);
         if(inTunnel) accumulator = 0;
+    }
+
+    if(touchControls && !state.paused) {
+        touchControls.update(state.ship, {
+            interactLabel: state.transition ? '' : state.canDock ? 'Dock' : state.nearDHD ? 'DHD' : ''
+        });
     }
 
     if(!state.paused && !inTunnel) {
@@ -6741,6 +7023,36 @@ const initialize = () => {
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyJ', toggleStarmap);
     starmapButton.addEventListener('click', () => toggleStarmap());
 
+    if(TOUCH) {
+        document.body.classList.add('touch');
+        starmapButton.textContent = 'Starmap';
+        touchControls = new __WEBPACK_IMPORTED_MODULE_19__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], canvas, {
+            interact: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyB'),
+            toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyG'),
+            pause: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('Escape'),
+            zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
+        });
+        // Two-finger pinch on the play area zooms the view.
+        const pinch = {};
+        canvas.addEventListener('touchstart', (event) => {
+            if(event.touches.length === 2) {
+                const a = event.touches[0], b = event.touches[1];
+                pinch.distance = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                pinch.zoom = targetZoom;
+            }
+        }, { passive: true });
+        canvas.addEventListener('touchmove', (event) => {
+            // Only when neither finger is steering or shooting would pinch be unambiguous;
+            // with the stick + aim split, a pinch is two fingers on the same side.
+            if(event.touches.length !== 2 || !pinch.distance || !state || state.paused) return;
+            const a = event.touches[0], b = event.touches[1];
+            const sameSide = (a.clientX < window.innerWidth * 0.45) === (b.clientX < window.innerWidth * 0.45);
+            if(!sameSide) return;
+            const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+            targetZoom = clampZoom(pinch.zoom * d / pinch.distance);
+        }, { passive: true });
+    }
+
     document.getElementById('resumeGame').addEventListener('click', () => setPaused(false));
     document.getElementById('abandonGame').addEventListener('click', () => {
         if(state) endGame('Returned to base. Cargo in the hold is kept.');
@@ -6764,12 +7076,12 @@ const constructGameBoard = () => {
 
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(15);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
@@ -7836,7 +8148,7 @@ class Ship {
 
 
 /***/ }),
-/* 15 */
+/* 16 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7907,7 +8219,7 @@ class Bullet {
 
 
 /***/ }),
-/* 16 */
+/* 17 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8079,7 +8391,7 @@ class Missile {
 
 
 /***/ }),
-/* 17 */
+/* 18 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8197,7 +8509,7 @@ class Ore {
 
 
 /***/ }),
-/* 18 */
+/* 19 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8260,6 +8572,11 @@ const onKeyPress = (code, handler) => {
 /* harmony export (immutable) */ __webpack_exports__["c"] = onKeyPress;
 
 
+// Runs the same action a key press would (used by the on-screen touch buttons).
+const triggerKey = (code) => !!(pressHandlers[code] && pressHandlers[code]({ code: code }));
+/* harmony export (immutable) */ __webpack_exports__["d"] = triggerKey;
+
+
 let initialized = false;
 
 const loadInputHandlers = () => {
@@ -8312,7 +8629,7 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8480,7 +8797,7 @@ class SectorManager {
 
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8740,7 +9057,7 @@ const drawStation = (ctx, time, canDock) => {
 
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9123,7 +9440,7 @@ class Stargate {
 
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9266,8 +9583,11 @@ class DHD {
 
     keyAt(event) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left - SIZE / 2;
-        const y = event.clientY - rect.top - SIZE / 2;
+        // The canvas may be scaled down by CSS on small screens.
+        const sx = SIZE / (rect.width || SIZE);
+        const sy = SIZE / (rect.height || SIZE);
+        const x = (event.clientX - rect.left) * sx - SIZE / 2;
+        const y = (event.clientY - rect.top) * sy - SIZE / 2;
         const r = Math.sqrt(x * x + y * y);
         if(r < DOME) return 'dome';
         let a = Math.atan2(y, x);
@@ -9432,7 +9752,7 @@ const isDHDOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9488,7 +9808,7 @@ class Starmap {
 
         const side = el('div', 'starmap-side');
         side.appendChild(el('div', 'starmap-title', 'Starmap'));
-        side.appendChild(el('div', 'starmap-hint', 'Drag to rotate, wheel to zoom, click a world to see its gate address.'));
+        side.appendChild(el('div', 'starmap-hint', (('ontouchstart' in window) ? 'Drag to rotate, pinch to zoom, tap a world to see its gate address.' : 'Drag to rotate, wheel to zoom, click a world to see its gate address.')));
         this.info = el('div', 'starmap-info');
         side.appendChild(this.info);
         const close = el('button', 'sy-button small', 'Close (M / Esc)');
@@ -9500,22 +9820,52 @@ class Starmap {
         this.root = root;
         this.ctx = this.canvas.getContext('2d');
 
+        // Pointer events cover mouse and touch: one pointer drags to rotate (a tap picks a
+        // world), two pointers pinch to zoom.
         let drag = null;
-        this.canvas.addEventListener('mousedown', (event) => {
-            drag = { x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+        const pointers = {};
+        let pinch = null;
+        const pinchDistance = () => {
+            const ids = Object.keys(pointers);
+            const a = pointers[ids[0]], b = pointers[ids[1]];
+            return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        };
+        this.canvas.style.touchAction = 'none';
+        this.canvas.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(this.canvas.setPointerCapture) {
+                try { this.canvas.setPointerCapture(event.pointerId); } catch(e) { /* ignore */ }
+            }
+            if(Object.keys(pointers).length === 2) {
+                drag = null;
+                pinch = { distance: pinchDistance(), zoom: this.zoom };
+            } else if(!pinch) {
+                drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+            }
         });
-        window.addEventListener('mousemove', (event) => {
-            if(!drag || !this.isOpen) return;
+        this.canvas.addEventListener('pointermove', (event) => {
+            if(!this.isOpen || !pointers[event.pointerId]) return;
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(pinch && Object.keys(pointers).length >= 2) {
+                this.zoom = Math.max(0.5, Math.min(3, pinch.zoom * pinchDistance() / pinch.distance));
+                return;
+            }
+            if(!drag || drag.id !== event.pointerId) return;
             const dx = event.clientX - drag.x;
             const dy = event.clientY - drag.y;
-            if(Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+            if(Math.abs(dx) + Math.abs(dy) > (event.pointerType === 'mouse' ? 4 : 10)) drag.moved = true;
             this.yaw = drag.yaw + dx * 0.008;
             this.pitch = Math.max(-1.4, Math.min(1.4, drag.pitch + dy * 0.008));
         });
-        window.addEventListener('mouseup', (event) => {
-            if(drag && !drag.moved && this.isOpen) this.pick(event);
-            drag = null;
-        });
+        const release = (event) => {
+            if(drag && drag.id === event.pointerId && !drag.moved && this.isOpen && event.type === 'pointerup') this.pick(event);
+            if(drag && drag.id === event.pointerId) drag = null;
+            delete pointers[event.pointerId];
+            if(Object.keys(pointers).length === 0) pinch = null;
+        };
+        this.canvas.addEventListener('pointerup', release);
+        this.canvas.addEventListener('pointercancel', release);
         this.canvas.addEventListener('wheel', (event) => {
             event.preventDefault();
             this.zoom = Math.max(0.5, Math.min(3, this.zoom * Math.exp(-event.deltaY * 0.0012)));
@@ -9590,7 +9940,8 @@ class Starmap {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         let best = null;
-        let bestDist = 22 * 22;
+        const reach = event.pointerType && event.pointerType !== 'mouse' ? 34 : 22;
+        let bestDist = reach * reach;
         __WEBPACK_IMPORTED_MODULE_0__world_systems__["b" /* SYSTEMS */].forEach(system => {
             const p = this.project(system.map);
             const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
@@ -9766,7 +10117,7 @@ const isStarmapOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9925,7 +10276,7 @@ const nebulaSprite = (system) => {
 
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10097,13 +10448,13 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
 
 
 /***/ }),
-/* 26 */
+/* 27 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(27);
+var content = __webpack_require__(28);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -10111,7 +10462,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(29)(content, options);
+var update = __webpack_require__(30)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -10128,21 +10479,21 @@ if(false) {
 }
 
 /***/ }),
-/* 27 */
+/* 28 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(28)(undefined);
+exports = module.exports = __webpack_require__(29)(undefined);
 // imports
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n", ""]);
 
 // exports
 
 
 /***/ }),
-/* 28 */
+/* 29 */
 /***/ (function(module, exports) {
 
 /*
@@ -10224,7 +10575,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -10280,7 +10631,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(30);
+var	fixUrls = __webpack_require__(31);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -10596,7 +10947,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports) {
 
 

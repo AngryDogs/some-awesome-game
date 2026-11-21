@@ -134,8 +134,11 @@ class DHD {
 
     keyAt(event) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left - SIZE / 2;
-        const y = event.clientY - rect.top - SIZE / 2;
+        // The canvas may be scaled down by CSS on small screens.
+        const sx = SIZE / (rect.width || SIZE);
+        const sy = SIZE / (rect.height || SIZE);
+        const x = (event.clientX - rect.left) * sx - SIZE / 2;
+        const y = (event.clientY - rect.top) * sy - SIZE / 2;
         const r = Math.sqrt(x * x + y * y);
         if(r < DOME) return 'dome';
         let a = Math.atan2(y, x);

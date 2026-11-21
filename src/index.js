@@ -2,6 +2,9 @@ import constructGameBoard from './scripts/gameboard/gameboard';
 import { getShipyard } from './scripts/shipyard/shipyard';
 import { getProfile, onProfileChange, isDebug, setDebug } from './scripts/shipyard/profile';
 import './styles/main.css';
+import { isTouchDevice } from './scripts/ui/touch';
+
+if(isTouchDevice()) document.body.classList.add('touch');
 
 const startGame = document.getElementById('startGame');
 const openShipyard = document.getElementById('openShipyard');
@@ -32,7 +35,25 @@ onProfileChange(() => {
     renderDebug();
 });
 
+// On phones, go full screen in landscape when launching so the browser bars don't eat
+// the view. Both calls may be refused (iOS Safari has no fullscreen API); that's fine.
+const goFullscreen = () => {
+    if(!isTouchDevice()) return;
+    const root = document.documentElement;
+    const request = root.requestFullscreen || root.webkitRequestFullscreen;
+    if(!request || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try {
+        const result = request.call(root, { navigationUI: 'hide' });
+        if(result && result.then) {
+            result.then(() => {
+                if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+            }).catch(() => {});
+        }
+    } catch(e) { /* not allowed */ }
+};
+
 startGame.addEventListener('click', () => {
+    goFullscreen();
     menu.style.visibility = 'hidden';
     constructGameBoard();
 });
