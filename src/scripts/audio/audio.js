@@ -110,6 +110,7 @@ const context = () => {
         noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const data = noiseBuffer.getChannelData(0);
         for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        loadSamples(ac);
     } catch(e) {
         ac = null;
     }
@@ -405,59 +406,109 @@ const tractorVoice = createVoice(c => {
 
 // ------------------------------------------------------------ public API
 
-// ------------------------------------------------------------ Stargate & hyperspace
+// ------------------------------------------------------------ recorded samples
 //
-// These are synthesized stand-ins. If you own recordings you'd rather use, put them in
-// assets/sounds/stargate/ with these names (mp3), list the names in manifest.json there,
-// and they are played instead:
-//   dhd_press, dhd_dome, dial_fail, gate_spin (loop), chevron, kawoosh, horizon (loop),
-//   wormhole, gate_close, hyper_open, hyper_travel (loop), hyper_exit
+// Stargate, weapon and ship sounds from the Stargate Carter Addon Pack (CAP) resources
+// (https://github.com/RafaelDeJongh/cap_resources, CC BY-NC-SA 4.0, see
+// assets/sounds/cap/CREDITS.txt). They're decoded into Web Audio buffers when audio
+// starts; until a sample has loaded (or if it fails to), the synthesized version plays.
 
-const SAMPLE_NAMES = ['dhd_press', 'dhd_dome', 'dial_fail', 'gate_spin', 'chevron', 'kawoosh', 'horizon',
-    'wormhole', 'gate_close', 'hyper_open', 'hyper_travel', 'hyper_exit'];
-const LOOPING_SAMPLES = { gate_spin: true, horizon: true, hyper_travel: true };
-const samples = {};
-
-// Only the files listed in manifest.json are loaded (so missing files don't cause errors).
-const loadSample = (name) => {
-    if(SAMPLE_NAMES.indexOf(name) === -1 || samples[name]) return;
-    const audio = new Audio();
-    const entry = { audio: audio, ready: false };
-    audio.preload = 'auto';
-    audio.loop = !!LOOPING_SAMPLES[name];
-    audio.addEventListener('canplaythrough', () => { entry.ready = true; }, { once: true });
-    audio.src = './assets/sounds/stargate/' + name + '.mp3';
-    samples[name] = entry;
+const CAP = './assets/sounds/cap/';
+const SAMPLE_FILES = {
+    dhd_press: ['stargate/dhd/sg1/press.mp3', 'stargate/dhd/sg1/press_2.mp3', 'stargate/dhd/sg1/press_3.mp3',
+        'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
+    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.wav'],
+    dial_fail: ['stargate/dial_fail_sg1.mp3'],
+    gate_spin: ['stargate/gate_roll.mp3'],
+    chevron: ['stargate/sg1/chevron.mp3', 'stargate/sg1/chevron_2.mp3'],
+    chevron_lock: ['stargate/sg1/lock.mp3'],
+    kawoosh: ['stargate/sg1/open.mp3'],
+    horizon: ['stargate/wormhole_loop.wav'],
+    gate_enter: ['stargate/stargate/eh/eh_go_1.wav', 'stargate/stargate/eh/eh_go_2.wav', 'stargate/stargate/eh/eh_go_3.wav'],
+    wormhole: ['stargate/gate_travel.mp3'],
+    gate_close: ['stargate/gate_close.mp3'],
+    hyper_window: ['tech/hyperwindow.wav'],
+    railgun: ['weapons/railgun_shoot.wav'],
+    staff: ['pulse_weapon/staff_weapon.mp3'],
+    missile: ['f302/missilefire.wav'],
+    drone: ['weapons/drone_shot.mp3'],
+    asgard_beam: ['weapons/asgard_beam.wav'],
+    shield_hit: ['shields/shield_hit.mp3'],
+    shield_up: ['shields/shield_engage.mp3'],
+    shield_down: ['shields/shield_disengage.mp3'],
+    door: ['door/atlantis_door_open.wav'],
+    button: ['button/ancient_button1.wav', 'button/ancient_button2.wav'],
+    scan: ['glebqip/tracking.wav'],
+    ship_explosion: ['jumper/jumperexplosion.mp3']
 };
+const LOOPING_SAMPLES = { gate_spin: true, horizon: true };
+const buffers = {};
+const loops = {};
+let samplesRequested = false;
 
-if(window.fetch) {
-    window.fetch('./assets/sounds/stargate/manifest.json')
-        .then(response => (response.ok ? response.json() : []))
-        .then(list => { if(Array.isArray(list)) list.forEach(loadSample); })
-        .catch(() => {});
+function loadSamples(c) {
+    if(samplesRequested || !window.fetch) return;
+    samplesRequested = true;
+    Object.keys(SAMPLE_FILES).forEach(name => {
+        buffers[name] = [];
+        SAMPLE_FILES[name].forEach((file, i) => {
+            window.fetch(CAP + file)
+                .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(file))))
+                // Callback form: older Safari has no promise-returning decodeAudioData.
+                .then(data => new Promise((resolve, reject) => c.decodeAudioData(data, resolve, reject)))
+                .then(buffer => { buffers[name][i] = buffer; })
+                .catch(() => {});
+        });
+    });
 }
 
-// Play a user-supplied sample if present. Returns true if it played.
-const playSample = (name, volume) => {
-    const entry = samples[name];
-    if(!entry || !entry.ready) return false;
+// Play sample `name` (a random variant, or options.variant). Returns false if it isn't
+// loaded yet so the caller can fall back to the synthesized sound.
+//   options: { variant, rate, wet (reverb send 0..1) }
+const playSample = (name, volume, options) => {
+    const list = buffers[name];
+    if(!ac || !list) return false;
+    const opts = options || {};
+    const count = SAMPLE_FILES[name].length;
+    const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
+    const buffer = list[index] || list.filter(Boolean)[0];
+    if(!buffer) return false;
+    const level = volume === undefined ? 0.9 : volume;
+
     if(LOOPING_SAMPLES[name]) {
-        entry.audio.volume = volume === undefined ? 0.8 : volume;
-        if(entry.audio.paused) safePlay(entry.audio);
-    } else {
-        const clip = entry.audio.cloneNode();
-        clip.volume = volume === undefined ? 0.9 : volume;
-        safePlay(clip);
+        const playing = loops[name];
+        if(playing) {
+            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            return true;
+        }
     }
+    const source = ac.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = opts.rate || 1;
+    const gain = ac.createGain();
+    gain.gain.value = level;
+    source.connect(gain);
+    gain.connect(master);
+    if(opts.wet) {
+        const send = ac.createGain();
+        send.gain.value = opts.wet;
+        gain.connect(send);
+        send.connect(reverb);
+    }
+    if(LOOPING_SAMPLES[name]) {
+        source.loop = true;
+        loops[name] = { source: source, gain: gain };
+    }
+    source.start();
     return true;
 };
 
 const stopSample = (name) => {
-    const entry = samples[name];
-    if(entry && entry.ready && !entry.audio.paused) {
-        entry.audio.pause();
-        entry.audio.currentTime = 0;
-    }
+    const playing = loops[name];
+    if(!playing || !ac) return;
+    delete loops[name];
+    playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
+    try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
 };
 
 // Grinding rumble of the inner ring turning.
@@ -569,7 +620,7 @@ const hyperVoice = createVoice(c => {
 const gateSounds = {
     // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
     dhdPress(index) {
-        if(playSample('dhd_press', 0.8)) return;
+        if(playSample('dhd_press', 0.8, { variant: index })) return;
         const c = context();
         if(!c) return;
         const f = 520 + (index % 13) * 22;
@@ -607,7 +658,7 @@ const gateSounds = {
 
     // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
     chevronLock(final) {
-        if(playSample('chevron', final ? 1 : 0.85)) return;
+        if(playSample(final ? 'chevron_lock' : 'chevron', final ? 1 : 0.85, { wet: 0.15 })) return;
         const c = context();
         if(!c) return;
         noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
@@ -625,7 +676,7 @@ const gateSounds = {
 
     // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
     kawoosh() {
-        if(playSample('kawoosh', 1)) return;
+        if(playSample('kawoosh', 1, { wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
@@ -651,7 +702,8 @@ const gateSounds = {
 
     // Riding the wormhole: a long, roaring, flanging rush.
     wormhole() {
-        if(playSample('wormhole', 1)) return;
+        const entered = playSample('gate_enter', 0.9);
+        if(playSample('wormhole', 1) || entered) return;
         const c = context();
         if(!c) return;
         sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
@@ -670,7 +722,7 @@ const gateSounds = {
 
     // Hyperspace window opening: a deep "whoomph" and a swirling rising rush.
     hyperOpen() {
-        if(playSample('hyper_open', 1)) return;
+        if(playSample('hyper_window', 1, { wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         tone(c, 'sine', 70, 28, 1.2, heavy(c, 0.8, 0.01, 1.2, 0.6));
@@ -680,15 +732,14 @@ const gateSounds = {
 
     hyperTravel(on) {
         if(!on) {
-            stopSample('hyper_travel');
             hyperVoice.stop();
             return;
         }
-        if(!playSample('hyper_travel', 0.6)) hyperVoice.start();
+        hyperVoice.start();
     },
 
     hyperExit() {
-        if(playSample('hyper_exit', 1)) return;
+        if(playSample('hyper_window', 1, { rate: 1.08, wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         noise(c, 0.1, 'lowpass', 3000, 800, heavy(c, 0.4, 0.001, 0.1));
@@ -720,6 +771,7 @@ const sounds = {
     beamCharge() {
         const c = throttle('beamCharge', 0.2);
         if(!c) return;
+        if(playSample('asgard_beam', 0.85, { wet: 0.2 })) return;
         ringTone(c, 'sawtooth', 90, 600, 60, 0.22, heavy(c, 0.35, 0.01, 0.22, 0.4));
         tone(c, 'sine', 70, 38, 0.5, heavy(c, 0.7, 0.002, 0.5, 0.4));
         noise(c, 0.15, 'lowpass', 3000, 600, heavy(c, 0.25, 0.001, 0.15, 0.3));
@@ -728,6 +780,16 @@ const sounds = {
     setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
 
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
+    // The player's ship blowing up.
+    shipExplosion() {
+        if(!playSample('ship_explosion', 1, { wet: 0.3 })) sounds.explosion(1);
+    },
+    // Console button (stabilizer and other toggles).
+    toggle(on) {
+        if(playSample('button', 0.6, { variant: on ? 0 : 1 })) return;
+        const c = context();
+        if(c) tone(c, 'sine', on ? 700 : 500, on ? 900 : 380, 0.12, envelope(c, 0.08, 0.003, 0.12));
+    },
 
     // Heavy minigun round: a deep chest-punch thump, a gritty saturated body and a
     // low-mid crack (no thin high tones), randomised so the stream sounds like a growl.
@@ -735,6 +797,11 @@ const sounds = {
         const c = throttle('minigun', 0.035);
         if(!c) return;
         const v = vary(0.08);
+        // Recorded railgun round with a sub-bass thump underneath for weight.
+        if(playSample('railgun', 0.5, { rate: vary(0.06) })) {
+            tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.45, 0.001, 0.13, 0.12));
+            return;
+        }
         tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.75, 0.001, 0.13, 0.12));
         tone(c, 'sawtooth', 170 * v, 55, 0.07, heavy(c, 0.32, 0.001, 0.07, 0.1));
         noise(c, 0.06, 'lowpass', 3200 * v, 500, heavy(c, 0.45, 0.0008, 0.06, 0.15));
@@ -757,6 +824,10 @@ const sounds = {
         const c = throttle('staff', 0.08);
         if(!c) return;
         const v = vary(0.05);
+        if(playSample('staff', 0.85, { rate: vary(0.04), wet: 0.25 })) {
+            tone(c, 'sine', 120 * v, 28, 0.6, heavy(c, 0.5, 0.002, 0.6, 0.3));
+            return;
+        }
         ringTone(c, 'sawtooth', 1100 * v, 120, 58, 0.36, heavy(c, 0.38, 0.002, 0.36, 0.5));
         sweep(c, 0.32, 3200 * v, 300, 3, heavy(c, 0.35, 0.001, 0.32, 0.45));
         tone(c, 'sine', 120 * v, 28, 0.7, heavy(c, 0.8, 0.002, 0.7, 0.4));
@@ -776,6 +847,7 @@ const sounds = {
     missileLaunch() {
         const c = throttle('missile', 0.05);
         if(!c) return;
+        if(playSample('missile', 0.9, { rate: vary(0.04), wet: 0.2 })) return;
         tone(c, 'sine', 100, 30, 0.4, heavy(c, 0.7, 0.002, 0.4, 0.3));
         noise(c, 0.06, 'lowpass', 3000, 800, heavy(c, 0.3, 0.001, 0.06));
         sweep(c, 1.2, 250, 1600, 0.8, heavy(c, 0.4, 0.04, 1.15, 0.45));
@@ -795,6 +867,7 @@ const sounds = {
         const c = throttle('drones', 0.07);
         if(!c) return;
         const v = vary(0.06);
+        if(playSample('drone', 0.75, { rate: v, wet: 0.25 })) return;
         sweep(c, 0.75, 250 * v, 1400, 2.2, heavy(c, 0.45, 0.02, 0.72, 0.5));
         tone(c, 'sawtooth', 110 * v, 220, 0.6, heavy(c, 0.22, 0.03, 0.58, 0.5));
         tone(c, 'sine', 380 * v, 720, 0.55, heavy(c, 0.12, 0.03, 0.52, 0.6));
@@ -828,6 +901,7 @@ const sounds = {
         const c = throttle('shield', 0.07);
         if(!c) return;
         const s = Math.max(0.3, Math.min(1.5, strength || 1));
+        if(playSample('shield_hit', 0.35 + 0.35 * Math.min(1, s), { rate: vary(0.05) })) return;
         tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
         tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
         noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
@@ -836,6 +910,7 @@ const sounds = {
     shieldUp() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
+        if(playSample('shield_up', 0.8)) return;
         tone(c, 'sine', 160, 900, 0.55, envelope(c, 0.2, 0.02, 0.55, 0.5));
         tone(c, 'triangle', 320, 1800, 0.5, envelope(c, 0.07, 0.02, 0.5, 0.5));
     },
@@ -843,6 +918,7 @@ const sounds = {
     shieldDown() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
+        if(playSample('shield_down', 0.8)) return;
         tone(c, 'sine', 900, 110, 0.5, envelope(c, 0.18, 0.01, 0.5, 0.5));
         noise(c, 0.45, 'bandpass', 2000, 300, envelope(c, 0.06, 0.01, 0.45, 0.3), 2);
     },
@@ -900,6 +976,7 @@ const sounds = {
     scanPing() {
         const c = throttle('scan', 0.5);
         if(!c) return;
+        if(playSample('scan', 0.35)) return;
         tone(c, 'sine', 1320, 1240, 0.5, envelope(c, 0.08, 0.004, 0.5, 0.7));
         tone(c, 'sine', 660, 640, 0.6, envelope(c, 0.05, 0.004, 0.6, 0.7));
     },
@@ -907,6 +984,7 @@ const sounds = {
     dock() {
         const c = context();
         if(!c) return;
+        if(playSample('door', 0.8)) return;
         tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25, 0.4));
         setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4, 0.4)); }, 160);
     },
@@ -920,7 +998,7 @@ const sounds = {
         gateSpinVoice.stop();
         horizonVoice.stop();
         hyperVoice.stop();
-        ['gate_spin', 'horizon', 'hyper_travel'].forEach(stopSample);
+        Object.keys(loops).forEach(stopSample);
     }
 };
 

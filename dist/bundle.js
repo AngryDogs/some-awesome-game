@@ -312,6 +312,198 @@ const dominantMaterial = (composition) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+// Star systems you can travel between, the constellations used as Stargate symbols, and
+// the gate addresses.
+//
+// Gate addresses work like coordinates: six constellation symbols form three pairs, and
+// the line between each pair passes through the destination; where the three lines meet
+// is the destination world. The seventh symbol is the point of origin of the gate you
+// dial from. Addresses here are generated from that geometry (constellations sit on a
+// large sphere around the map), so the starmap can draw the three lines meeting exactly
+// at the world.
+
+const CONSTELLATIONS = [
+    'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
+    'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
+    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
+    'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
+    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
+];
+/* harmony export (immutable) */ __webpack_exports__["a"] = CONSTELLATIONS;
+
+
+// Map units: 1 unit = 1 light year. Constellations sit on a sphere around everything.
+const SPHERE_RADIUS = 3600;
+
+const SYSTEMS = [
+    {
+        id: 'lantea', name: 'Lantea', galaxy: 'Pegasus', origin: 'Lantean',
+        description: 'Ocean world of Atlantis. Shipyard and ore market.',
+        map: [1700, -380, 900],
+        station: true, gate: { x: 760, y: -620 },
+        planet: { x: -2600, y: -1900, radius: 900, type: 'ocean' },
+        tint: '60,120,200', materials: {}
+    },
+    {
+        id: 'earth', name: 'Earth', galaxy: 'Milky Way', origin: "Tau'ri",
+        description: 'Home of the SGC. Iron and copper rich belts.',
+        map: [-420, 120, -260],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2400, y: -2100, radius: 950, type: 'earth', moon: true },
+        tint: '70,110,170', materials: { iron: 1.6, copper: 1.8, gold: 0.6 }
+    },
+    {
+        id: 'abydos', name: 'Abydos', galaxy: 'Milky Way', origin: 'Abydonian',
+        description: 'Desert world with naquadah mines. Rich in naquadah.',
+        map: [-180, -340, 110],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2200, y: 2000, radius: 1000, type: 'desert', moon: true },
+        tint: '170,130,70', materials: { naquadah: 4, gold: 1.4, iron: 0.7 }
+    },
+    {
+        id: 'chulak', name: 'Chulak', galaxy: 'Milky Way', origin: 'Chulakian',
+        description: "Jaffa homeworld under Apophis. Titanium-heavy asteroids.",
+        map: [260, 300, -520],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2600, y: 1800, radius: 850, type: 'jungle' },
+        tint: '80,140,90', materials: { titanium: 2.5, copper: 1.2 }
+    },
+    {
+        id: 'dakara', name: 'Dakara', galaxy: 'Milky Way', origin: 'Dakaran',
+        description: 'Ancient temple world. Gold-veined asteroids.',
+        map: [520, -120, 340],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2500, y: -2000, radius: 900, type: 'rocky' },
+        tint: '170,90,70', materials: { gold: 2.6, titanium: 1.2 }
+    },
+    {
+        id: 'langara', name: 'Langara', galaxy: 'Milky Way', origin: 'Langaran',
+        description: 'Industrial world of Kelowna. Dense, metal-rich fields.',
+        map: [-640, -60, 480],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2300, y: 2200, radius: 880, type: 'industrial' },
+        tint: '130,110,150', materials: { naquadah: 2, iron: 1.3, titanium: 1.4 }
+    },
+    {
+        id: 'othala', name: 'Othala', galaxy: 'Ida', origin: 'Asgard',
+        description: 'Asgard homeworld, far from the Milky Way. Pristine titanium and gold.',
+        map: [-1900, 520, -1100],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2300, y: 2100, radius: 920, type: 'ice' },
+        tint: '120,200,220', materials: { titanium: 2.4, gold: 1.8, naquadah: 1.5 }
+    }
+];
+/* harmony export (immutable) */ __webpack_exports__["b"] = SYSTEMS;
+
+
+const systemById = (id) => SYSTEMS.filter(s => s.id === id)[0] || SYSTEMS[0];
+/* harmony export (immutable) */ __webpack_exports__["g"] = systemById;
+
+
+// ------------------------------------------------------------ address geometry
+
+const random = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
+
+// Constellation positions and addresses, built once from a fixed seed so every player
+// has the same addresses.
+const build = () => {
+    const rnd = random(1994);
+    const positions = new Array(CONSTELLATIONS.length);
+    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
+
+    // Anchors: evenly spread over the sphere.
+    for(let i = 0; i < anchorCount; i++) {
+        const y = 1 - (i + 0.5) / anchorCount * 2;
+        const r = Math.sqrt(1 - y * y);
+        const phi = i * 2.399963 + rnd() * 0.2;
+        positions[i] = [Math.cos(phi) * r * SPHERE_RADIUS, y * SPHERE_RADIUS, Math.sin(phi) * r * SPHERE_RADIUS];
+    }
+
+    // For each world, draw three lines from anchors through the world to the far side of
+    // the sphere; the far ends become the remaining constellations.
+    let next = anchorCount;
+    const addresses = {};
+    SYSTEMS.forEach((system, index) => {
+        const d = system.map;
+        const used = {};
+        const glyphs = [];
+        for(let line = 0; line < 3; line++) {
+            let a;
+            do { a = Math.floor(rnd() * anchorCount); } while(used[a]);
+            used[a] = true;
+            const u = normalize(sub(d, positions[a]));
+            // Solve |d + u t| = R for t > 0.
+            const b = dot(d, u);
+            const c = dot(d, d) - SPHERE_RADIUS * SPHERE_RADIUS;
+            const t = -b + Math.sqrt(b * b - c);
+            positions[next] = add(d, scale(u, t));
+            glyphs.push(a, next);
+            next++;
+        }
+        // Mix the order a little so pairs aren't always anchor-first.
+        if(index % 2) glyphs.reverse();
+        addresses[system.id] = glyphs;
+    });
+
+    return { positions: positions, addresses: addresses };
+};
+
+const geometry = build();
+
+const constellationPosition = (index) => geometry.positions[index];
+/* harmony export (immutable) */ __webpack_exports__["e"] = constellationPosition;
+
+
+// Six constellation indices for a destination.
+const addressOf = (systemId) => geometry.addresses[systemId].slice();
+/* harmony export (immutable) */ __webpack_exports__["d"] = addressOf;
+
+
+// Which system (if any) a 6-symbol address leads to.
+const systemForAddress = (glyphs) => {
+    const key = glyphs.join(',');
+    const match = SYSTEMS.filter(s => geometry.addresses[s.id].join(',') === key)[0];
+    return match || null;
+};
+/* harmony export (immutable) */ __webpack_exports__["h"] = systemForAddress;
+
+
+// The three lines of an address, as pairs of 3D points (for the starmap).
+const addressLines = (systemId) => {
+    const g = geometry.addresses[systemId];
+    return [[g[0], g[1]], [g[2], g[3]], [g[4], g[5]]].map(pair => [geometry.positions[pair[0]], geometry.positions[pair[1]]]);
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = addressLines;
+
+
+const distanceBetween = (a, b) => {
+    const d = sub(systemById(a).map, systemById(b).map);
+    return Math.sqrt(dot(d, d));
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = distanceBetween;
+
+
+
+/***/ }),
+/* 3 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 // Shared physics helpers for an open, endless zero-gravity world.
 // Units: pixels and seconds. World coordinates are unbounded; the camera follows the ship.
 
@@ -370,7 +562,7 @@ const gravityAt = (body, attractors) => {
 
 
 /***/ }),
-/* 3 */
+/* 4 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -486,6 +678,7 @@ const context = () => {
         noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const data = noiseBuffer.getChannelData(0);
         for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        loadSamples(ac);
     } catch(e) {
         ac = null;
     }
@@ -781,59 +974,109 @@ const tractorVoice = createVoice(c => {
 
 // ------------------------------------------------------------ public API
 
-// ------------------------------------------------------------ Stargate & hyperspace
+// ------------------------------------------------------------ recorded samples
 //
-// These are synthesized stand-ins. If you own recordings you'd rather use, put them in
-// assets/sounds/stargate/ with these names (mp3), list the names in manifest.json there,
-// and they are played instead:
-//   dhd_press, dhd_dome, dial_fail, gate_spin (loop), chevron, kawoosh, horizon (loop),
-//   wormhole, gate_close, hyper_open, hyper_travel (loop), hyper_exit
+// Stargate, weapon and ship sounds from the Stargate Carter Addon Pack (CAP) resources
+// (https://github.com/RafaelDeJongh/cap_resources, CC BY-NC-SA 4.0, see
+// assets/sounds/cap/CREDITS.txt). They're decoded into Web Audio buffers when audio
+// starts; until a sample has loaded (or if it fails to), the synthesized version plays.
 
-const SAMPLE_NAMES = ['dhd_press', 'dhd_dome', 'dial_fail', 'gate_spin', 'chevron', 'kawoosh', 'horizon',
-    'wormhole', 'gate_close', 'hyper_open', 'hyper_travel', 'hyper_exit'];
-const LOOPING_SAMPLES = { gate_spin: true, horizon: true, hyper_travel: true };
-const samples = {};
-
-// Only the files listed in manifest.json are loaded (so missing files don't cause errors).
-const loadSample = (name) => {
-    if(SAMPLE_NAMES.indexOf(name) === -1 || samples[name]) return;
-    const audio = new Audio();
-    const entry = { audio: audio, ready: false };
-    audio.preload = 'auto';
-    audio.loop = !!LOOPING_SAMPLES[name];
-    audio.addEventListener('canplaythrough', () => { entry.ready = true; }, { once: true });
-    audio.src = './assets/sounds/stargate/' + name + '.mp3';
-    samples[name] = entry;
+const CAP = './assets/sounds/cap/';
+const SAMPLE_FILES = {
+    dhd_press: ['stargate/dhd/sg1/press.mp3', 'stargate/dhd/sg1/press_2.mp3', 'stargate/dhd/sg1/press_3.mp3',
+        'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
+    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.wav'],
+    dial_fail: ['stargate/dial_fail_sg1.mp3'],
+    gate_spin: ['stargate/gate_roll.mp3'],
+    chevron: ['stargate/sg1/chevron.mp3', 'stargate/sg1/chevron_2.mp3'],
+    chevron_lock: ['stargate/sg1/lock.mp3'],
+    kawoosh: ['stargate/sg1/open.mp3'],
+    horizon: ['stargate/wormhole_loop.wav'],
+    gate_enter: ['stargate/stargate/eh/eh_go_1.wav', 'stargate/stargate/eh/eh_go_2.wav', 'stargate/stargate/eh/eh_go_3.wav'],
+    wormhole: ['stargate/gate_travel.mp3'],
+    gate_close: ['stargate/gate_close.mp3'],
+    hyper_window: ['tech/hyperwindow.wav'],
+    railgun: ['weapons/railgun_shoot.wav'],
+    staff: ['pulse_weapon/staff_weapon.mp3'],
+    missile: ['f302/missilefire.wav'],
+    drone: ['weapons/drone_shot.mp3'],
+    asgard_beam: ['weapons/asgard_beam.wav'],
+    shield_hit: ['shields/shield_hit.mp3'],
+    shield_up: ['shields/shield_engage.mp3'],
+    shield_down: ['shields/shield_disengage.mp3'],
+    door: ['door/atlantis_door_open.wav'],
+    button: ['button/ancient_button1.wav', 'button/ancient_button2.wav'],
+    scan: ['glebqip/tracking.wav'],
+    ship_explosion: ['jumper/jumperexplosion.mp3']
 };
+const LOOPING_SAMPLES = { gate_spin: true, horizon: true };
+const buffers = {};
+const loops = {};
+let samplesRequested = false;
 
-if(window.fetch) {
-    window.fetch('./assets/sounds/stargate/manifest.json')
-        .then(response => (response.ok ? response.json() : []))
-        .then(list => { if(Array.isArray(list)) list.forEach(loadSample); })
-        .catch(() => {});
+function loadSamples(c) {
+    if(samplesRequested || !window.fetch) return;
+    samplesRequested = true;
+    Object.keys(SAMPLE_FILES).forEach(name => {
+        buffers[name] = [];
+        SAMPLE_FILES[name].forEach((file, i) => {
+            window.fetch(CAP + file)
+                .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(file))))
+                // Callback form: older Safari has no promise-returning decodeAudioData.
+                .then(data => new Promise((resolve, reject) => c.decodeAudioData(data, resolve, reject)))
+                .then(buffer => { buffers[name][i] = buffer; })
+                .catch(() => {});
+        });
+    });
 }
 
-// Play a user-supplied sample if present. Returns true if it played.
-const playSample = (name, volume) => {
-    const entry = samples[name];
-    if(!entry || !entry.ready) return false;
+// Play sample `name` (a random variant, or options.variant). Returns false if it isn't
+// loaded yet so the caller can fall back to the synthesized sound.
+//   options: { variant, rate, wet (reverb send 0..1) }
+const playSample = (name, volume, options) => {
+    const list = buffers[name];
+    if(!ac || !list) return false;
+    const opts = options || {};
+    const count = SAMPLE_FILES[name].length;
+    const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
+    const buffer = list[index] || list.filter(Boolean)[0];
+    if(!buffer) return false;
+    const level = volume === undefined ? 0.9 : volume;
+
     if(LOOPING_SAMPLES[name]) {
-        entry.audio.volume = volume === undefined ? 0.8 : volume;
-        if(entry.audio.paused) safePlay(entry.audio);
-    } else {
-        const clip = entry.audio.cloneNode();
-        clip.volume = volume === undefined ? 0.9 : volume;
-        safePlay(clip);
+        const playing = loops[name];
+        if(playing) {
+            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            return true;
+        }
     }
+    const source = ac.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = opts.rate || 1;
+    const gain = ac.createGain();
+    gain.gain.value = level;
+    source.connect(gain);
+    gain.connect(master);
+    if(opts.wet) {
+        const send = ac.createGain();
+        send.gain.value = opts.wet;
+        gain.connect(send);
+        send.connect(reverb);
+    }
+    if(LOOPING_SAMPLES[name]) {
+        source.loop = true;
+        loops[name] = { source: source, gain: gain };
+    }
+    source.start();
     return true;
 };
 
 const stopSample = (name) => {
-    const entry = samples[name];
-    if(entry && entry.ready && !entry.audio.paused) {
-        entry.audio.pause();
-        entry.audio.currentTime = 0;
-    }
+    const playing = loops[name];
+    if(!playing || !ac) return;
+    delete loops[name];
+    playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
+    try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
 };
 
 // Grinding rumble of the inner ring turning.
@@ -945,7 +1188,7 @@ const hyperVoice = createVoice(c => {
 const gateSounds = {
     // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
     dhdPress(index) {
-        if(playSample('dhd_press', 0.8)) return;
+        if(playSample('dhd_press', 0.8, { variant: index })) return;
         const c = context();
         if(!c) return;
         const f = 520 + (index % 13) * 22;
@@ -983,7 +1226,7 @@ const gateSounds = {
 
     // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
     chevronLock(final) {
-        if(playSample('chevron', final ? 1 : 0.85)) return;
+        if(playSample(final ? 'chevron_lock' : 'chevron', final ? 1 : 0.85, { wet: 0.15 })) return;
         const c = context();
         if(!c) return;
         noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
@@ -1001,7 +1244,7 @@ const gateSounds = {
 
     // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
     kawoosh() {
-        if(playSample('kawoosh', 1)) return;
+        if(playSample('kawoosh', 1, { wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
@@ -1027,7 +1270,8 @@ const gateSounds = {
 
     // Riding the wormhole: a long, roaring, flanging rush.
     wormhole() {
-        if(playSample('wormhole', 1)) return;
+        const entered = playSample('gate_enter', 0.9);
+        if(playSample('wormhole', 1) || entered) return;
         const c = context();
         if(!c) return;
         sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
@@ -1046,7 +1290,7 @@ const gateSounds = {
 
     // Hyperspace window opening: a deep "whoomph" and a swirling rising rush.
     hyperOpen() {
-        if(playSample('hyper_open', 1)) return;
+        if(playSample('hyper_window', 1, { wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         tone(c, 'sine', 70, 28, 1.2, heavy(c, 0.8, 0.01, 1.2, 0.6));
@@ -1056,15 +1300,14 @@ const gateSounds = {
 
     hyperTravel(on) {
         if(!on) {
-            stopSample('hyper_travel');
             hyperVoice.stop();
             return;
         }
-        if(!playSample('hyper_travel', 0.6)) hyperVoice.start();
+        hyperVoice.start();
     },
 
     hyperExit() {
-        if(playSample('hyper_exit', 1)) return;
+        if(playSample('hyper_window', 1, { rate: 1.08, wet: 0.2 })) return;
         const c = context();
         if(!c) return;
         noise(c, 0.1, 'lowpass', 3000, 800, heavy(c, 0.4, 0.001, 0.1));
@@ -1096,6 +1339,7 @@ const sounds = {
     beamCharge() {
         const c = throttle('beamCharge', 0.2);
         if(!c) return;
+        if(playSample('asgard_beam', 0.85, { wet: 0.2 })) return;
         ringTone(c, 'sawtooth', 90, 600, 60, 0.22, heavy(c, 0.35, 0.01, 0.22, 0.4));
         tone(c, 'sine', 70, 38, 0.5, heavy(c, 0.7, 0.002, 0.5, 0.4));
         noise(c, 0.15, 'lowpass', 3000, 600, heavy(c, 0.25, 0.001, 0.15, 0.3));
@@ -1104,6 +1348,16 @@ const sounds = {
     setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
 
     explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
+    // The player's ship blowing up.
+    shipExplosion() {
+        if(!playSample('ship_explosion', 1, { wet: 0.3 })) sounds.explosion(1);
+    },
+    // Console button (stabilizer and other toggles).
+    toggle(on) {
+        if(playSample('button', 0.6, { variant: on ? 0 : 1 })) return;
+        const c = context();
+        if(c) tone(c, 'sine', on ? 700 : 500, on ? 900 : 380, 0.12, envelope(c, 0.08, 0.003, 0.12));
+    },
 
     // Heavy minigun round: a deep chest-punch thump, a gritty saturated body and a
     // low-mid crack (no thin high tones), randomised so the stream sounds like a growl.
@@ -1111,6 +1365,11 @@ const sounds = {
         const c = throttle('minigun', 0.035);
         if(!c) return;
         const v = vary(0.08);
+        // Recorded railgun round with a sub-bass thump underneath for weight.
+        if(playSample('railgun', 0.5, { rate: vary(0.06) })) {
+            tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.45, 0.001, 0.13, 0.12));
+            return;
+        }
         tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.75, 0.001, 0.13, 0.12));
         tone(c, 'sawtooth', 170 * v, 55, 0.07, heavy(c, 0.32, 0.001, 0.07, 0.1));
         noise(c, 0.06, 'lowpass', 3200 * v, 500, heavy(c, 0.45, 0.0008, 0.06, 0.15));
@@ -1133,6 +1392,10 @@ const sounds = {
         const c = throttle('staff', 0.08);
         if(!c) return;
         const v = vary(0.05);
+        if(playSample('staff', 0.85, { rate: vary(0.04), wet: 0.25 })) {
+            tone(c, 'sine', 120 * v, 28, 0.6, heavy(c, 0.5, 0.002, 0.6, 0.3));
+            return;
+        }
         ringTone(c, 'sawtooth', 1100 * v, 120, 58, 0.36, heavy(c, 0.38, 0.002, 0.36, 0.5));
         sweep(c, 0.32, 3200 * v, 300, 3, heavy(c, 0.35, 0.001, 0.32, 0.45));
         tone(c, 'sine', 120 * v, 28, 0.7, heavy(c, 0.8, 0.002, 0.7, 0.4));
@@ -1152,6 +1415,7 @@ const sounds = {
     missileLaunch() {
         const c = throttle('missile', 0.05);
         if(!c) return;
+        if(playSample('missile', 0.9, { rate: vary(0.04), wet: 0.2 })) return;
         tone(c, 'sine', 100, 30, 0.4, heavy(c, 0.7, 0.002, 0.4, 0.3));
         noise(c, 0.06, 'lowpass', 3000, 800, heavy(c, 0.3, 0.001, 0.06));
         sweep(c, 1.2, 250, 1600, 0.8, heavy(c, 0.4, 0.04, 1.15, 0.45));
@@ -1171,6 +1435,7 @@ const sounds = {
         const c = throttle('drones', 0.07);
         if(!c) return;
         const v = vary(0.06);
+        if(playSample('drone', 0.75, { rate: v, wet: 0.25 })) return;
         sweep(c, 0.75, 250 * v, 1400, 2.2, heavy(c, 0.45, 0.02, 0.72, 0.5));
         tone(c, 'sawtooth', 110 * v, 220, 0.6, heavy(c, 0.22, 0.03, 0.58, 0.5));
         tone(c, 'sine', 380 * v, 720, 0.55, heavy(c, 0.12, 0.03, 0.52, 0.6));
@@ -1204,6 +1469,7 @@ const sounds = {
         const c = throttle('shield', 0.07);
         if(!c) return;
         const s = Math.max(0.3, Math.min(1.5, strength || 1));
+        if(playSample('shield_hit', 0.35 + 0.35 * Math.min(1, s), { rate: vary(0.05) })) return;
         tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
         tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
         noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
@@ -1212,6 +1478,7 @@ const sounds = {
     shieldUp() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
+        if(playSample('shield_up', 0.8)) return;
         tone(c, 'sine', 160, 900, 0.55, envelope(c, 0.2, 0.02, 0.55, 0.5));
         tone(c, 'triangle', 320, 1800, 0.5, envelope(c, 0.07, 0.02, 0.5, 0.5));
     },
@@ -1219,6 +1486,7 @@ const sounds = {
     shieldDown() {
         const c = throttle('shieldToggle', 0.2);
         if(!c) return;
+        if(playSample('shield_down', 0.8)) return;
         tone(c, 'sine', 900, 110, 0.5, envelope(c, 0.18, 0.01, 0.5, 0.5));
         noise(c, 0.45, 'bandpass', 2000, 300, envelope(c, 0.06, 0.01, 0.45, 0.3), 2);
     },
@@ -1276,6 +1544,7 @@ const sounds = {
     scanPing() {
         const c = throttle('scan', 0.5);
         if(!c) return;
+        if(playSample('scan', 0.35)) return;
         tone(c, 'sine', 1320, 1240, 0.5, envelope(c, 0.08, 0.004, 0.5, 0.7));
         tone(c, 'sine', 660, 640, 0.6, envelope(c, 0.05, 0.004, 0.6, 0.7));
     },
@@ -1283,6 +1552,7 @@ const sounds = {
     dock() {
         const c = context();
         if(!c) return;
+        if(playSample('door', 0.8)) return;
         tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25, 0.4));
         setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4, 0.4)); }, 160);
     },
@@ -1296,205 +1566,13 @@ const sounds = {
         gateSpinVoice.stop();
         horizonVoice.stop();
         hyperVoice.stop();
-        ['gate_spin', 'horizon', 'hyper_travel'].forEach(stopSample);
+        Object.keys(loops).forEach(stopSample);
     }
 };
 
 Object.assign(sounds, gateSounds);
 
 /* harmony default export */ __webpack_exports__["a"] = (sounds);
-
-
-/***/ }),
-/* 4 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// Star systems you can travel between, the constellations used as Stargate symbols, and
-// the gate addresses.
-//
-// Gate addresses work like coordinates: six constellation symbols form three pairs, and
-// the line between each pair passes through the destination; where the three lines meet
-// is the destination world. The seventh symbol is the point of origin of the gate you
-// dial from. Addresses here are generated from that geometry (constellations sit on a
-// large sphere around the map), so the starmap can draw the three lines meeting exactly
-// at the world.
-
-const CONSTELLATIONS = [
-    'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
-    'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
-    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
-    'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
-    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
-];
-/* harmony export (immutable) */ __webpack_exports__["a"] = CONSTELLATIONS;
-
-
-// Map units: 1 unit = 1 light year. Constellations sit on a sphere around everything.
-const SPHERE_RADIUS = 3600;
-
-const SYSTEMS = [
-    {
-        id: 'lantea', name: 'Lantea', galaxy: 'Pegasus', origin: 'Lantean',
-        description: 'Ocean world of Atlantis. Shipyard and ore market.',
-        map: [1700, -380, 900],
-        station: true, gate: { x: 760, y: -620 },
-        planet: { x: -2600, y: -1900, radius: 900, type: 'ocean' },
-        tint: '60,120,200', materials: {}
-    },
-    {
-        id: 'earth', name: 'Earth', galaxy: 'Milky Way', origin: "Tau'ri",
-        description: 'Home of the SGC. Iron and copper rich belts.',
-        map: [-420, 120, -260],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2400, y: -2100, radius: 950, type: 'earth', moon: true },
-        tint: '70,110,170', materials: { iron: 1.6, copper: 1.8, gold: 0.6 }
-    },
-    {
-        id: 'abydos', name: 'Abydos', galaxy: 'Milky Way', origin: 'Abydonian',
-        description: 'Desert world with naquadah mines. Rich in naquadah.',
-        map: [-180, -340, 110],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2200, y: 2000, radius: 1000, type: 'desert', moon: true },
-        tint: '170,130,70', materials: { naquadah: 4, gold: 1.4, iron: 0.7 }
-    },
-    {
-        id: 'chulak', name: 'Chulak', galaxy: 'Milky Way', origin: 'Chulakian',
-        description: "Jaffa homeworld under Apophis. Titanium-heavy asteroids.",
-        map: [260, 300, -520],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2600, y: 1800, radius: 850, type: 'jungle' },
-        tint: '80,140,90', materials: { titanium: 2.5, copper: 1.2 }
-    },
-    {
-        id: 'dakara', name: 'Dakara', galaxy: 'Milky Way', origin: 'Dakaran',
-        description: 'Ancient temple world. Gold-veined asteroids.',
-        map: [520, -120, 340],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2500, y: -2000, radius: 900, type: 'rocky' },
-        tint: '170,90,70', materials: { gold: 2.6, titanium: 1.2 }
-    },
-    {
-        id: 'langara', name: 'Langara', galaxy: 'Milky Way', origin: 'Langaran',
-        description: 'Industrial world of Kelowna. Dense, metal-rich fields.',
-        map: [-640, -60, 480],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2300, y: 2200, radius: 880, type: 'industrial' },
-        tint: '130,110,150', materials: { naquadah: 2, iron: 1.3, titanium: 1.4 }
-    },
-    {
-        id: 'othala', name: 'Othala', galaxy: 'Ida', origin: 'Asgard',
-        description: 'Asgard homeworld, far from the Milky Way. Pristine titanium and gold.',
-        map: [-1900, 520, -1100],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2300, y: 2100, radius: 920, type: 'ice' },
-        tint: '120,200,220', materials: { titanium: 2.4, gold: 1.8, naquadah: 1.5 }
-    }
-];
-/* harmony export (immutable) */ __webpack_exports__["b"] = SYSTEMS;
-
-
-const systemById = (id) => SYSTEMS.filter(s => s.id === id)[0] || SYSTEMS[0];
-/* harmony export (immutable) */ __webpack_exports__["g"] = systemById;
-
-
-// ------------------------------------------------------------ address geometry
-
-const random = (seed) => {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-};
-
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
-
-// Constellation positions and addresses, built once from a fixed seed so every player
-// has the same addresses.
-const build = () => {
-    const rnd = random(1994);
-    const positions = new Array(CONSTELLATIONS.length);
-    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
-
-    // Anchors: evenly spread over the sphere.
-    for(let i = 0; i < anchorCount; i++) {
-        const y = 1 - (i + 0.5) / anchorCount * 2;
-        const r = Math.sqrt(1 - y * y);
-        const phi = i * 2.399963 + rnd() * 0.2;
-        positions[i] = [Math.cos(phi) * r * SPHERE_RADIUS, y * SPHERE_RADIUS, Math.sin(phi) * r * SPHERE_RADIUS];
-    }
-
-    // For each world, draw three lines from anchors through the world to the far side of
-    // the sphere; the far ends become the remaining constellations.
-    let next = anchorCount;
-    const addresses = {};
-    SYSTEMS.forEach((system, index) => {
-        const d = system.map;
-        const used = {};
-        const glyphs = [];
-        for(let line = 0; line < 3; line++) {
-            let a;
-            do { a = Math.floor(rnd() * anchorCount); } while(used[a]);
-            used[a] = true;
-            const u = normalize(sub(d, positions[a]));
-            // Solve |d + u t| = R for t > 0.
-            const b = dot(d, u);
-            const c = dot(d, d) - SPHERE_RADIUS * SPHERE_RADIUS;
-            const t = -b + Math.sqrt(b * b - c);
-            positions[next] = add(d, scale(u, t));
-            glyphs.push(a, next);
-            next++;
-        }
-        // Mix the order a little so pairs aren't always anchor-first.
-        if(index % 2) glyphs.reverse();
-        addresses[system.id] = glyphs;
-    });
-
-    return { positions: positions, addresses: addresses };
-};
-
-const geometry = build();
-
-const constellationPosition = (index) => geometry.positions[index];
-/* harmony export (immutable) */ __webpack_exports__["e"] = constellationPosition;
-
-
-// Six constellation indices for a destination.
-const addressOf = (systemId) => geometry.addresses[systemId].slice();
-/* harmony export (immutable) */ __webpack_exports__["d"] = addressOf;
-
-
-// Which system (if any) a 6-symbol address leads to.
-const systemForAddress = (glyphs) => {
-    const key = glyphs.join(',');
-    const match = SYSTEMS.filter(s => geometry.addresses[s.id].join(',') === key)[0];
-    return match || null;
-};
-/* harmony export (immutable) */ __webpack_exports__["h"] = systemForAddress;
-
-
-// The three lines of an address, as pairs of 3D points (for the starmap).
-const addressLines = (systemId) => {
-    const g = geometry.addresses[systemId];
-    return [[g[0], g[1]], [g[2], g[3]], [g[4], g[5]]].map(pair => [geometry.positions[pair[0]], geometry.positions[pair[1]]]);
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = addressLines;
-
-
-const distanceBetween = (a, b) => {
-    const d = sub(systemById(a).map, systemById(b).map);
-    return Math.sqrt(dot(d, d));
-};
-/* harmony export (immutable) */ __webpack_exports__["f"] = distanceBetween;
-
 
 
 /***/ }),
@@ -2852,95 +2930,159 @@ const spendCredits = (amount) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-// Stargate symbols. Each of the 38 constellations gets its own glyph, generated from its
-// index out of a few stroke primitives (lines between grid points, arcs, dots), so every
-// symbol is distinct and stable. Each gate also has a point-of-origin glyph: a pyramid
-// motif with a varying crown.
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(2);
+// Stargate symbols, traced after the Milky Way glyph chart (glyphs 1-39). Each glyph is a
+// few polylines in a -1..1 box (y down); they're drawn as thick strokes, optionally with a
+// darker outline like the chart's embossed symbols.
+//
+// Glyph 1 (the pyramid with the sun above it) is Earth's point of origin; other gates get
+// variants of the same motif.
+//
+// The same shapes double as the constellations' star figures on the starmap: in the show
+// the glyphs are stylised constellations, so each polyline vertex becomes a star.
 
-const rng = (seed) => {
-    let a = (seed * 2654435761) >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+
+
+// Shapes by constellation name, in chart order (glyph number in the comment).
+const SHAPES = {
+    'Crater':            [[[-0.6, -0.8], [-0.3, -0.45], [-0.3, 0.1], [0.3, 0.1], [0.3, -0.45], [0.6, -0.8]], [[0, 0.1], [0, 0.5]], [[-0.45, 0.82], [0, 0.5], [0.45, 0.82]]],        // 2
+    'Virgo':             [[[-0.45, -0.3], [-0.45, -0.8], [0.3, -0.8], [0.0, -0.2], [0.45, 0.1], [-0.1, 0.45], [0.15, 0.85]]],                                                   // 3
+    'Bootes':            [[[0.6, -0.8], [0.25, -0.8], [-0.15, -0.45], [0.3, -0.05], [-0.25, 0.35], [0.1, 0.85]]],                                                                // 4
+    'Centaurus':         [[[-0.65, -0.6], [-0.1, -0.1]], [[0.65, -0.65], [0.15, -0.15], [0.2, 0.25]], [[-0.55, 0.35], [-0.05, 0.25], [-0.25, 0.8]]],                            // 5
+    'Libra':             [[[-0.65, -0.65], [0.5, -0.65], [0.55, 0.15], [0.0, 0.45], [-0.25, 0.85]], [[-0.65, -0.65], [-0.5, -0.25]]],                                           // 6
+    'Serpens Caput':     [[[0.35, -0.85], [-0.2, -0.6], [-0.35, 0.35], [0.05, 0.65], [0.5, 0.45]], [[0.35, -0.85], [0.45, -0.55]]],                                             // 7
+    'Norma':             [[[-0.65, -0.5], [0.15, -0.55], [-0.3, 0.15], [-0.65, -0.5]], [[0.25, 0.15], [0.65, 0.55]]],                                                           // 8
+    'Scorpius':          [[[-0.75, 0.55], [0.35, 0.55], [0.7, 0.2], [0.55, -0.3]], [[-0.4, 0.55], [0.1, -0.15], [0.45, -0.6]]],                                                 // 9
+    'Corona Australis':  [[[0.55, -0.7], [-0.4, -0.7], [-0.65, 0.0], [-0.25, 0.65], [0.55, 0.6]], [[0.1, -0.25], [0.5, 0.15]]],                                                 // 10
+    'Scutum':            [[[-0.75, 0.6], [0.6, -0.6], [0.6, 0.55], [-0.2, 0.15]], [[0.6, -0.6], [0.8, -0.8]]],                                                                  // 11
+    'Sagittarius':       [[[-0.75, -0.35], [-0.25, -0.75], [0.15, -0.25], [0.7, -0.55]], [[0.15, -0.25], [-0.05, 0.4], [0.55, 0.75]], [[-0.5, 0.15], [-0.05, 0.4]], [[0.35, 0.1], [0.65, 0.2]]], // 12
+    'Aquila':            [[[-0.75, -0.5], [-0.15, 0.65], [0.2, -0.2], [0.75, -0.6]], [[0.2, -0.2], [0.55, 0.15]]],                                                              // 13
+    'Microscopium':      [[[-0.3, -0.75], [-0.6, 0.5], [0.75, 0.25]], [[-0.45, -0.1], [0.3, -0.45]]],                                                                           // 14
+    'Capricornus':       [[[-0.75, 0.6], [0.55, -0.6], [0.5, 0.6], [-0.75, 0.6]], [[0.55, -0.6], [0.8, -0.85]]],                                                                // 15
+    'Piscis Austrinus':  [[[0.3, -0.85], [-0.3, -0.5], [-0.35, 0.45], [0.25, 0.85]], [[-0.3, -0.5], [0.05, -0.35]]],                                                            // 16
+    'Equuleus':          [[[-0.75, -0.3], [0.3, -0.35], [0.55, 0.0], [0.3, 0.45]], [[-0.2, -0.32], [-0.45, 0.35]]],                                                             // 17
+    'Aquarius':          [[[-0.65, 0.55], [-0.5, -0.4], [0.45, -0.5], [0.65, 0.3]], [[-0.05, -0.45], [0.1, 0.15]]],                                                             // 18
+    'Pegasus':           [[[0.5, -0.85], [0.0, -0.2], [0.35, 0.1], [-0.4, 0.85]], [[0.0, -0.2], [-0.35, -0.45]]],                                                               // 19
+    'Sculptor':          [[[-0.5, -0.65], [0.05, -0.65], [-0.2, 0.0], [0.55, 0.65]], [[0.55, 0.65], [0.35, 0.2]]],                                                              // 20
+    'Pisces':            [[[-0.5, -0.75], [0.0, 0.1], [0.5, -0.45]], [[0.0, 0.1], [-0.2, 0.85]]],                                                                               // 21
+    'Andromeda':         [[[0.0, -0.85], [0.2, -0.35], [-0.12, 0.0], [0.12, 0.4], [0.0, 0.85]]],                                                                                // 22
+    'Triangulum':        [[[-0.75, -0.4], [0.75, -0.4], [-0.1, 0.4], [-0.75, -0.4]]],                                                                                           // 23
+    'Aries':             [[[0.5, -0.75], [0.1, -0.2], [-0.45, 0.75]]],                                                                                                          // 24
+    'Perseus':           [[[0.3, -0.85], [-0.2, -0.45], [-0.2, 0.2], [0.2, 0.6], [0.0, 0.85]]],                                                                                 // 25
+    'Cetus':             [[[-0.65, -0.4], [0.5, -0.4], [0.65, 0.1], [0.0, 0.45]], [[-0.65, -0.4], [-0.3, 0.35]]],                                                               // 26
+    'Taurus':            [[[-0.85, 0.05], [0.85, 0.0]], [[0.2, 0.02], [0.6, -0.4]], [[-0.45, 0.04], [-0.75, -0.3]]],                                                            // 27
+    'Auriga':            [[[-0.4, -0.75], [-0.5, 0.35], [0.0, 0.7], [0.5, 0.35], [0.4, -0.75]], [[-0.15, -0.35], [0.15, -0.35]]],                                               // 28
+    'Eridanus':          [[[0.45, -0.85], [0.1, -0.3], [0.45, 0.0], [-0.35, 0.85]]],                                                                                            // 29
+    'Orion':             [[[-0.5, -0.75], [0.5, -0.75], [-0.5, 0.75], [0.5, 0.75], [-0.5, -0.75]]],                                                                             // 30
+    'Canis Minor':       [[[-0.45, -0.75], [0.45, -0.05], [-0.45, 0.15], [0.45, 0.8]]],                                                                                         // 31
+    'Monoceros':         [[[-0.6, -0.2], [-0.6, -0.6], [0.2, -0.6], [0.2, 0.2], [0.65, 0.75]], [[0.2, -0.15], [-0.25, 0.25]]],                                                  // 32
+    'Gemini':            [[[-0.3, -0.85], [0.3, -0.85], [0.3, 0.85], [-0.3, 0.85], [-0.3, -0.85]], [[-0.3, 0.0], [0.3, 0.0]]],                                                  // 33
+    'Hydra':             [[[-0.2, -0.85], [0.2, -0.5], [-0.2, -0.1], [0.2, 0.3], [-0.1, 0.85]]],                                                                                // 34
+    'Lynx':              [[[-0.5, -0.75], [0.2, -0.2], [0.5, 0.75]]],                                                                                                           // 35
+    'Cancer':            [[[-0.65, -0.65], [0.05, 0.2]], [[0.45, 0.6]]],                                                                                                        // 36
+    'Sextans':           [[[-0.7, -0.55], [-0.3, -0.4]], [[-0.05, 0.0], [0.35, 0.2]], [[0.65, 0.6]]],                                                                           // 37
+    'Leo Minor':         [[[-0.6, -0.75], [0.1, 0.1], [0.5, 0.75]], [[0.1, 0.1], [0.45, -0.15]]],                                                                               // 38
+    'Leo':               [[[0.3, -0.85], [0.55, -0.5], [0.0, 0.2], [0.1, 0.85]], [[0.0, 0.2], [-0.45, -0.05]]]                                                                  // 39
 };
 
-// 3x3 grid of anchor points in a unit box (-1..1).
-const GRID = [];
-for(let y = -1; y <= 1; y++) for(let x = -1; x <= 1; x++) GRID.push([x * 0.8, y * 0.8]);
+// Chart order (glyphs 2-39), used to lay out the DHD keys.
+const GLYPH_ORDER = Object.keys(SHAPES).map(name => __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */].indexOf(name));
+/* harmony export (immutable) */ __webpack_exports__["a"] = GLYPH_ORDER;
+
+
+// Glyph 1: the pyramid with the sun above it. Other gates' points of origin vary the crown.
+const origin = (index) => {
+    const shape = [
+        [[-0.75, 0.8], [-0.1, -0.35]],
+        [[0.75, 0.8], [0.1, -0.35]],
+        [[-0.3, 0.8], [0.0, 0.35], [0.3, 0.8]]
+    ];
+    const variant = index % 4;
+    if(variant === 1) shape.push([[-0.45, -0.75], [0.45, -0.75]]);
+    if(variant === 2) shape.push([[-0.4, -0.5], [0, -0.85], [0.4, -0.5]]);
+    if(variant === 3) shape.push([[-0.75, 0.8], [0.75, 0.8]]);
+    return { lines: shape, sun: variant === 0 || variant === 3 ? [0, -0.62, 0.2] : null };
+};
 
 const cache = {};
+const shapeOf = (id) => {
+    if(cache[id]) return cache[id];
+    let shape;
+    if(typeof id === 'string') shape = origin(parseInt(id.split(':')[1], 10) || 0);
+    else shape = { lines: SHAPES[__WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][id]] || [[[0, -0.8], [0, 0.8]]], sun: null };
+    cache[id] = shape;
+    return shape;
+};
 
-const buildGlyph = (index) => {
-    const r = rng(index + 11);
-    const strokes = [];
-    const count = 2 + Math.floor(r() * 3);
-    for(let i = 0; i < count; i++) {
-        const kind = r();
-        if(kind < 0.55) {
-            // Polyline through 2-3 grid points.
-            const pts = [];
-            const n = 2 + Math.floor(r() * 2);
-            for(let k = 0; k < n; k++) pts.push(GRID[Math.floor(r() * GRID.length)]);
-            strokes.push({ type: 'line', pts: pts });
-        } else if(kind < 0.85) {
-            const c = GRID[Math.floor(r() * GRID.length)];
-            const start = Math.floor(r() * 4) * Math.PI / 2;
-            strokes.push({ type: 'arc', x: c[0] * 0.6, y: c[1] * 0.6, r: 0.35 + r() * 0.4, a1: start, a2: start + Math.PI * (0.5 + Math.floor(r() * 3) * 0.5) });
-        } else {
-            const c = GRID[Math.floor(r() * GRID.length)];
-            strokes.push({ type: 'dot', x: c[0], y: c[1] });
+const tracePath = (ctx, shape, s) => {
+    ctx.beginPath();
+    shape.lines.forEach(line => {
+        if(line.length === 1) {
+            // A lone dot.
+            ctx.moveTo(line[0][0] * s + 0.01, line[0][1] * s);
+            ctx.lineTo(line[0][0] * s, line[0][1] * s);
+            return;
         }
+        line.forEach((p, i) => {
+            if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
+            else ctx.lineTo(p[0] * s, p[1] * s);
+        });
+    });
+    if(shape.sun) {
+        ctx.moveTo(shape.sun[0] * s + shape.sun[2] * s, shape.sun[1] * s);
+        ctx.arc(shape.sun[0] * s, shape.sun[1] * s, shape.sun[2] * s, 0, Math.PI * 2);
     }
-    return strokes;
 };
 
-const buildOrigin = (index) => {
-    // Pyramid (triangle) with a varying crown: sun disc, bar, chevron, ring...
-    const strokes = [{ type: 'line', pts: [[-0.85, 0.75], [0, -0.55], [0.85, 0.75], [-0.85, 0.75]] }];
-    const crown = index % 4;
-    if(crown === 0) strokes.push({ type: 'arc', x: 0, y: -0.82, r: 0.18, a1: 0, a2: Math.PI * 2 });
-    if(crown === 1) strokes.push({ type: 'line', pts: [[-0.4, -0.85], [0.4, -0.85]] });
-    if(crown === 2) strokes.push({ type: 'line', pts: [[-0.35, -0.65], [0, -0.95], [0.35, -0.65]] });
-    if(crown === 3) strokes.push({ type: 'dot', x: 0, y: -0.85 });
-    if(index >= 4) strokes.push({ type: 'line', pts: [[0, 0.75], [0, 0.15]] });
-    return strokes;
+// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y). With an
+// `outline` colour the stroke gets a darker rim, like the glyph chart.
+const drawGlyph = (ctx, id, x, y, size, color, lineWidth, outline) => {
+    const shape = shapeOf(id);
+    const s = size / 2;
+    const width = lineWidth || Math.max(1, size * 0.1);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    tracePath(ctx, shape, s * 0.92);
+    if(outline) {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = width * 1.9;
+        ctx.stroke();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.restore();
 };
+/* harmony export (immutable) */ __webpack_exports__["c"] = drawGlyph;
 
-// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y).
-const drawGlyph = (ctx, id, x, y, size, color, lineWidth) => {
-    if(!cache[id]) cache[id] = typeof id === 'string' ? buildOrigin(parseInt(id.split(':')[1], 10)) : buildGlyph(id);
-    const strokes = cache[id];
+
+// The constellation as a star figure: stars at the glyph's vertices joined by faint lines.
+const drawConstellation = (ctx, id, x, y, size, color, starColor) => {
+    const shape = shapeOf(id);
     const s = size / 2;
     ctx.save();
     ctx.translate(x, y);
     ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = lineWidth || Math.max(1, size * 0.09);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    strokes.forEach(stroke => {
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    shape.lines.forEach(line => line.forEach((p, i) => {
+        if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
+        else ctx.lineTo(p[0] * s, p[1] * s);
+    }));
+    ctx.stroke();
+    ctx.fillStyle = starColor || color;
+    shape.lines.forEach(line => line.forEach((p, i) => {
+        // Line ends are the brighter stars.
+        const r = (i === 0 || i === line.length - 1) ? 1.9 : 1.4;
         ctx.beginPath();
-        if(stroke.type === 'line') {
-            stroke.pts.forEach((p, i) => {
-                if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
-                else ctx.lineTo(p[0] * s, p[1] * s);
-            });
-            ctx.stroke();
-        } else if(stroke.type === 'arc') {
-            ctx.arc(stroke.x * s, stroke.y * s, stroke.r * s, stroke.a1, stroke.a2);
-            ctx.stroke();
-        } else {
-            ctx.arc(stroke.x * s, stroke.y * s, Math.max(1, s * 0.12), 0, Math.PI * 2);
-            ctx.fill();
-        }
-    });
+        ctx.arc(p[0] * s, p[1] * s, r, 0, Math.PI * 2);
+        ctx.fill();
+    }));
     ctx.restore();
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = drawGlyph;
+/* harmony export (immutable) */ __webpack_exports__["b"] = drawConstellation;
 
 
 
@@ -2950,7 +3092,7 @@ const drawGlyph = (ctx, id, x, y, size, color, lineWidth) => {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
@@ -4507,7 +4649,7 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 //    ship to face that way (countering spin, since this is zero-g) and thrusts once lined up.
 //  - Right: touch and hold anywhere on the right part of the screen to aim the guns at that
 //    point and fire.
-//  - Buttons: missiles (hold), brake/stabilize (hold), a context button (Dock / DHD),
+//  - Buttons: missiles (hold), stabilizer (tap on/off), a context button (Dock / DHD),
 //    auto-target, zoom and pause.
 //
 // The controls write into the same `input` object the keyboard and mouse use, so the rest
@@ -4536,7 +4678,7 @@ const angleDifference = (a, b) => {
 
 class TouchControls {
 
-    // actions: { interact(), pause(), toggleAuto(), zoom(factor) }
+    // actions: { interact(), pause(), toggleAuto(), toggleStabilizer(), zoom(factor) }
     constructor(input, canvas, actions) {
         this.input = input;
         this.canvas = canvas;
@@ -4582,7 +4724,8 @@ class TouchControls {
         this.autoButton = tap('Auto', 'auto', () => this.actions.toggleAuto());
         cluster.appendChild(this.interactButton);
         cluster.appendChild(this.autoButton);
-        cluster.appendChild(hold('Brake', 'brake', 'stabilize'));
+        this.stabButton = tap('Stabilize', 'brake', () => this.actions.toggleStabilizer());
+        cluster.appendChild(this.stabButton);
         cluster.appendChild(hold('Missile', 'missile', 'missileKey'));
         root.appendChild(cluster);
 
@@ -4694,6 +4837,7 @@ class TouchControls {
         this.interactButton.textContent = context.interactLabel || '';
         this.autoButton.style.display = ship.guidance ? '' : 'none';
         this.autoButton.classList.toggle('pressed', !!ship.autoTarget);
+        this.stabButton.classList.toggle('pressed', !!ship.stabilizer);
 
         const stick = this.stick;
         if(!stick || !ship.alive) {
@@ -4824,14 +4968,14 @@ openShipyard.addEventListener('click', () => {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(8);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__world_systems__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_stargate__ = __webpack_require__(22);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ui_dhd__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_starmap__ = __webpack_require__(24);
@@ -5011,7 +5155,8 @@ const renderInfo = () => {
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
-    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : '');
+    setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
+        (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : ''));
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -6343,7 +6488,7 @@ const drawDockPrompt = () => {
     if(!state.canDock) return;
     const ship = state.ship;
     const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    const text = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? (TOUCH ? 'Slow down to dock (hold Brake)' : 'Slow down to dock (X stabilizes)')
+    const text = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? (TOUCH ? 'Slow down to dock (turn on Stabilizer)' : 'Slow down to dock (X: stabilizer)')
         : (TOUCH ? 'Tap Dock to enter the shipyard' : 'Press B to dock at the shipyard');
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
@@ -6960,6 +7105,15 @@ const initialize = () => {
     };
     Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
 
+    // X: stabilizer on/off.
+    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyX', () => {
+        if(!state || state.paused || !state.ship.alive) return false;
+        state.ship.stabilizer = !state.ship.stabilizer;
+        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].toggle(state.ship.stabilizer);
+        banner('Stabilizer ' + (state.ship.stabilizer ? 'ON: cancelling drift and spin' : 'OFF: free drift'), 1.4);
+        return true;
+    });
+
     const zoomKey = (event, down) => {
         if(event.code === 'Equal' || event.code === 'NumpadAdd') zoomKeys.in = down;
         if(event.code === 'Minus' || event.code === 'NumpadSubtract') zoomKeys.out = down;
@@ -7029,6 +7183,7 @@ const initialize = () => {
         touchControls = new __WEBPACK_IMPORTED_MODULE_19__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], canvas, {
             interact: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyB'),
             toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyG'),
+            toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('KeyX'),
             pause: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* triggerKey */])('Escape'),
             zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
         });
@@ -7086,8 +7241,8 @@ const constructGameBoard = () => {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(4);
 
 
 
@@ -7098,7 +7253,7 @@ const constructGameBoard = () => {
 
 
 // Zero-g flight model: thrusters change velocity, nothing slows you down
-// except firing thrusters the other way (or the X stabilizer).
+// except firing thrusters the other way (or switching on the X stabilizer).
 const SECONDARY_THRUST = 0.55;    // retro / strafe thrust relative to main engines
 const MAX_SPEED = 600;            // px/s, safety cap only
 const MASS_UNIT = 300;            // physics mass per hull mass point
@@ -7227,6 +7382,7 @@ class Ship {
         this.angle = -Math.PI / 2;
         this.angularVelocity = 0;
         this.alive = true;
+        this.stabilizer = false;   // toggled with X / the Stabilizer button
         this.autoTarget = true;
         this.time = 0;
         this.exhaustTimer = 0;
@@ -7460,17 +7616,31 @@ class Ship {
         if(input.rotateRight) torque += angularThrust;
         if(input.rotateLeft) torque -= angularThrust;
 
-        // Stabilizer: fire whatever thrusters are needed to cancel drift and spin.
-        if(input.stabilize) {
-            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            if(speed > 1) {
-                const brake = Math.min(secondaryThrust, speed / dt);
-                const worldX = -this.vx / speed * brake;
-                const worldY = -this.vy / speed * brake;
+        // Stabilizer (toggled on/off): fires whatever thrusters are needed to cancel drift
+        // and spin that the pilot isn't asking for. With no thrust input it brakes to a
+        // stop; while thrusting it only cancels sideways drift, so the ship flies where it
+        // points. Spin is cancelled whenever the pilot isn't turning.
+        if(this.stabilizer) {
+            let driftX = this.vx;
+            let driftY = this.vy;
+            const commanded = Math.sqrt(localX * localX + localY * localY);
+            if(commanded > 0) {
+                // Keep the velocity along the commanded direction (if moving that way).
+                const dirX = (localX * cos - localY * sin) / commanded;
+                const dirY = (localX * sin + localY * cos) / commanded;
+                const along = Math.max(0, this.vx * dirX + this.vy * dirY);
+                driftX -= dirX * along;
+                driftY -= dirY * along;
+            }
+            const drift = Math.sqrt(driftX * driftX + driftY * driftY);
+            if(drift > 1) {
+                const brake = Math.min(secondaryThrust, drift / dt);
+                const worldX = -driftX / drift * brake;
+                const worldY = -driftY / drift * brake;
                 localX += worldX * cos + worldY * sin;
                 localY += -worldX * sin + worldY * cos;
             }
-            if(Math.abs(this.angularVelocity) > 0.01) {
+            if(!input.rotateLeft && !input.rotateRight && Math.abs(this.angularVelocity) > 0.01) {
                 torque -= clamp(this.angularVelocity / dt, -angularThrust, angularThrust);
             }
         }
@@ -7919,7 +8089,7 @@ class Ship {
             this.hp = 0;
             this.alive = false;
             this.explode(particles, 40 + this.radius * 2);
-            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].explosion(1);
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shipExplosion();
         }
         return true;
     }
@@ -8224,7 +8394,7 @@ class Bullet {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
@@ -8523,7 +8693,6 @@ const KEY_MAP = {
     KeyD: 'rotateRight',
     KeyQ: 'strafeLeft',
     KeyE: 'strafeRight',
-    KeyX: 'stabilize',
     KeyF: 'missileKey',
     Space: 'fire'
 };
@@ -8538,7 +8707,6 @@ const input = {
     rotateRight: false,
     strafeLeft: false,
     strafeRight: false,
-    stabilize: false,
     fire: false,
     missileKey: false,
     mouseDown: false,
@@ -9063,8 +9231,8 @@ const drawStation = (ctx, time, canDock) => {
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__systems__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__systems__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__audio_audio__ = __webpack_require__(4);
 // The Stargate in each system, and the DHD (dial-home device) next to it.
 //
 // Dialling: for each of the seven chevrons the inner ring spins to the next symbol, then
@@ -9149,7 +9317,7 @@ const buildSymbols = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__[
         const a = i * Math.PI * 2 / SYMBOLS;
         ctx.save();
         ctx.rotate(a);
-        Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* drawGlyph */])(ctx, i < __WEBPACK_IMPORTED_MODULE_2__systems__["a" /* CONSTELLATIONS */].length ? i : 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(ctx, i < __WEBPACK_IMPORTED_MODULE_2__systems__["a" /* CONSTELLATIONS */].length ? i : 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
         ctx.restore();
     }
 }, 2);
@@ -9444,9 +9612,9 @@ class Stargate {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
 // DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
 // origin, then press the dome to dial.
 
@@ -9466,10 +9634,11 @@ const el = (tag, className, text) => {
     return node;
 };
 
-// Key layout: 19 outer constellations, 19 inner constellations + the point of origin.
+// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
+// origin on the inner ring.
 const KEYS = [];
-for(let i = 0; i < 19; i++) KEYS.push({ glyph: i, ring: OUTER, slot: i, count: 19 });
-for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? 19 + i : 'origin', ring: INNER, slot: i, count: 20 });
+for(let i = 0; i < 19; i++) KEYS.push({ glyph: __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_ORDER */][i], ring: OUTER, slot: i, count: 19 });
+for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_ORDER */][19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
 
 class DHD {
 
@@ -9659,15 +9828,32 @@ class DHD {
         ctx.save();
         ctx.translate(c, c);
 
-        // Base.
-        ctx.fillStyle = 'rgb(58, 55, 52)';
+        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
+        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
+        base.addColorStop(0, 'rgb(96, 92, 86)');
+        base.addColorStop(0.7, 'rgb(62, 59, 55)');
+        base.addColorStop(1, 'rgb(34, 32, 30)');
+        ctx.fillStyle = base;
         ctx.beginPath();
-        for(let i = 0; i < 8; i++) {
-            const a = i * Math.PI / 4 + Math.PI / 8;
-            if(i === 0) ctx.moveTo(Math.cos(a) * 258, Math.sin(a) * 258);
-            else ctx.lineTo(Math.cos(a) * 258, Math.sin(a) * 258);
-        }
-        ctx.closePath();
+        ctx.arc(0, 0, 258, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
+            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Collar around the dome.
+        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
+        collar.addColorStop(0, 'rgb(30, 28, 26)');
+        collar.addColorStop(1, 'rgb(80, 76, 70)');
+        ctx.fillStyle = collar;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
         ctx.fill();
 
         KEYS.forEach((key, i) => {
@@ -9675,33 +9861,93 @@ class DHD {
             const glyph = this.glyphOf(key);
             const lit = this.entered.indexOf(glyph) !== -1;
             const hovered = this.hover === i;
+            const r = (g.r1 + g.r2) / 2;
+            const kx = Math.cos(g.mid) * r;
+            const ky = Math.sin(g.mid) * r;
             ctx.beginPath();
             ctx.arc(0, 0, g.r2, g.a1, g.a2);
             ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
             ctx.closePath();
-            ctx.fillStyle = lit ? 'rgb(240, 140, 50)' : hovered ? 'rgb(150, 140, 125)' : 'rgb(115, 108, 98)';
+            // Each key is a slightly domed tile lit from the top-left.
+            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
+            if(lit) {
+                tile.addColorStop(0, 'rgb(255, 214, 150)');
+                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
+                tile.addColorStop(1, 'rgb(150, 60, 15)');
+            } else {
+                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
+                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
+            }
+            ctx.fillStyle = tile;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
+                ctx.shadowBlur = 14;
+            }
             ctx.fill();
-            ctx.strokeStyle = 'rgb(35, 32, 30)';
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgb(28, 25, 22)';
             ctx.lineWidth = 2;
             ctx.stroke();
-            const r = (g.r1 + g.r2) / 2;
-            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* drawGlyph */])(ctx, glyph, Math.cos(g.mid) * r, Math.sin(g.mid) * r, key.ring === OUTER ? 26 : 30,
-                lit ? 'rgb(255, 245, 220)' : 'rgb(40, 36, 32)', 2.2);
+            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
+            const size = key.ring === OUTER ? 30 : 34;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+                ctx.shadowBlur = 8;
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
+                ctx.shadowBlur = 0;
+            } else {
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
+            }
         });
 
-        // Dome.
+        // Dome: the big red crystal. It glows once a full address is entered.
         const ready = this.entered.length === 7;
-        const dome = ctx.createRadialGradient(-20, -25, 5, 0, 0, DOME);
-        dome.addColorStop(0, ready ? 'rgb(255, 170, 130)' : 'rgb(230, 110, 90)');
-        dome.addColorStop(0.6, ready ? 'rgb(230, 60, 30)' : 'rgb(170, 35, 25)');
-        dome.addColorStop(1, 'rgb(90, 15, 10)');
+        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
+        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
+        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
+        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
+        dome.addColorStop(1, 'rgb(60, 8, 6)');
+        if(ready) {
+            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
+            ctx.shadowBlur = 30;
+        }
         ctx.fillStyle = dome;
         ctx.beginPath();
         ctx.arc(0, 0, DOME, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
+        // Facets inside the crystal.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 12; i++) {
+            const a = i * Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
+            ctx.stroke();
+        }
+        [18, 42].forEach(rr => {
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Specular highlight.
+        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(-60, -64, 70, 70);
+        ctx.restore();
         if(this.hover === 'dome' || ready) {
             ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
             ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
             ctx.stroke();
         }
         ctx.restore();
@@ -9726,7 +9972,7 @@ class DHD {
             bar.lineWidth = 1.5;
             bar.fillRect(x, 8, 56, 56);
             bar.strokeRect(x, 8, 56, 56);
-            if(i < this.entered.length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* drawGlyph */])(bar, this.entered[i], x + 28, 36, 36, 'rgb(255, 225, 190)', 2.4);
+            if(i < this.entered.length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(bar, this.entered[i], x + 28, 36, 38, 'rgb(255, 214, 160)', 3, 'rgba(150, 60, 15, 0.9)');
             else {
                 bar.font = '10px Bungee, sans-serif';
                 bar.textAlign = 'center';
@@ -9756,7 +10002,7 @@ const isDHDOpen = () => !!(instance && instance.isOpen);
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
 // Starmap: a rotatable 3D map of the constellations (gate symbols) and known worlds.
 // Selecting a world draws the three lines of its gate address meeting at it, and shows
@@ -9988,7 +10234,7 @@ class Starmap {
             const color = i < 6 ? 'rgb(' + LINE_COLORS[Math.floor(i / 2)] + ')' : 'rgb(255, 140, 120)';
             sctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
             sctx.strokeRect(i * 40 + 2, 2, 36, 36);
-            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* drawGlyph */])(sctx, g, i * 40 + 20, 20, 26, color, 2);
+            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(sctx, g, i * 40 + 20, 20, 28, color, 2.6, 'rgba(10, 20, 50, 0.9)');
             sctx.font = '7px sans-serif';
             sctx.textAlign = 'center';
             sctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
@@ -10058,11 +10304,16 @@ class Starmap {
             const inAddress = selectedGlyphs.indexOf(i);
             const near = Math.max(0.25, Math.min(1, 0.65 - p.depth / 8000));
             const color = inAddress !== -1 ? 'rgba(' + LINE_COLORS[Math.floor(inAddress / 2)] + ', 1)' : 'rgba(170, 190, 230, ' + near + ')';
-            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* drawGlyph */])(ctx, i, p.x, p.y, inAddress !== -1 ? 22 : 14, color, inAddress !== -1 ? 2 : 1.2);
+            // The constellation's star figure; constellations in the selected address also
+            // show their gate glyph beside it.
+            const size = (inAddress !== -1 ? 40 : 26) * Math.max(0.7, Math.min(1.4, p.scale * 12));
+            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* drawConstellation */])(ctx, i, p.x, p.y, size, inAddress !== -1 ? color : 'rgba(150, 175, 230, ' + (near * 0.55) + ')',
+                inAddress !== -1 ? '#fff' : 'rgba(225, 235, 255, ' + near + ')');
+            if(inAddress !== -1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawGlyph */])(ctx, i, p.x + size * 0.75, p.y - size * 0.45, 20, color, 2.4, 'rgba(5, 10, 30, 0.9)');
             ctx.font = (inAddress !== -1 ? '11px' : '9px') + ' sans-serif';
             ctx.textAlign = 'center';
             ctx.fillStyle = color;
-            ctx.fillText(name, p.x, p.y + (inAddress !== -1 ? 22 : 16));
+            ctx.fillText(name, p.x, p.y + size * 0.5 + (inAddress !== -1 ? 13 : 10));
         });
 
         // Worlds.

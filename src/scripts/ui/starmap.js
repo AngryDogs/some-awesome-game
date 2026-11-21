@@ -4,7 +4,7 @@
 // has a hyperdrive, the travel time and an "Engage hyperdrive" button.
 
 import { CONSTELLATIONS, SYSTEMS, systemById, constellationPosition, addressOf, addressLines, distanceBetween } from '../world/systems';
-import { drawGlyph } from '../render/glyphs';
+import { drawGlyph, drawConstellation } from '../render/glyphs';
 
 const LINE_COLORS = ['255,140,90', '120,220,255', '190,255,140'];
 const PLANET_COLORS = { ocean: '90,150,255', earth: '110,170,255', desert: '235,190,120', jungle: '120,210,140',
@@ -226,7 +226,7 @@ class Starmap {
             const color = i < 6 ? 'rgb(' + LINE_COLORS[Math.floor(i / 2)] + ')' : 'rgb(255, 140, 120)';
             sctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
             sctx.strokeRect(i * 40 + 2, 2, 36, 36);
-            drawGlyph(sctx, g, i * 40 + 20, 20, 26, color, 2);
+            drawGlyph(sctx, g, i * 40 + 20, 20, 28, color, 2.6, 'rgba(10, 20, 50, 0.9)');
             sctx.font = '7px sans-serif';
             sctx.textAlign = 'center';
             sctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
@@ -296,11 +296,16 @@ class Starmap {
             const inAddress = selectedGlyphs.indexOf(i);
             const near = Math.max(0.25, Math.min(1, 0.65 - p.depth / 8000));
             const color = inAddress !== -1 ? 'rgba(' + LINE_COLORS[Math.floor(inAddress / 2)] + ', 1)' : 'rgba(170, 190, 230, ' + near + ')';
-            drawGlyph(ctx, i, p.x, p.y, inAddress !== -1 ? 22 : 14, color, inAddress !== -1 ? 2 : 1.2);
+            // The constellation's star figure; constellations in the selected address also
+            // show their gate glyph beside it.
+            const size = (inAddress !== -1 ? 40 : 26) * Math.max(0.7, Math.min(1.4, p.scale * 12));
+            drawConstellation(ctx, i, p.x, p.y, size, inAddress !== -1 ? color : 'rgba(150, 175, 230, ' + (near * 0.55) + ')',
+                inAddress !== -1 ? '#fff' : 'rgba(225, 235, 255, ' + near + ')');
+            if(inAddress !== -1) drawGlyph(ctx, i, p.x + size * 0.75, p.y - size * 0.45, 20, color, 2.4, 'rgba(5, 10, 30, 0.9)');
             ctx.font = (inAddress !== -1 ? '11px' : '9px') + ' sans-serif';
             ctx.textAlign = 'center';
             ctx.fillStyle = color;
-            ctx.fillText(name, p.x, p.y + (inAddress !== -1 ? 22 : 16));
+            ctx.fillText(name, p.x, p.y + size * 0.5 + (inAddress !== -1 ? 13 : 10));
         });
 
         // Worlds.

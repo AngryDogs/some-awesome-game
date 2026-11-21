@@ -8,7 +8,7 @@ import { delta } from '../../physics/physics';
 import sounds from '../../audio/audio';
 
 // Zero-g flight model: thrusters change velocity, nothing slows you down
-// except firing thrusters the other way (or the X stabilizer).
+// except firing thrusters the other way (or switching on the X stabilizer).
 const SECONDARY_THRUST = 0.55;    // retro / strafe thrust relative to main engines
 const MAX_SPEED = 600;            // px/s, safety cap only
 const MASS_UNIT = 300;            // physics mass per hull mass point
@@ -137,6 +137,7 @@ class Ship {
         this.angle = -Math.PI / 2;
         this.angularVelocity = 0;
         this.alive = true;
+        this.stabilizer = false;   // toggled with X / the Stabilizer button
         this.autoTarget = true;
         this.time = 0;
         this.exhaustTimer = 0;
@@ -370,17 +371,31 @@ class Ship {
         if(input.rotateRight) torque += angularThrust;
         if(input.rotateLeft) torque -= angularThrust;
 
-        // Stabilizer: fire whatever thrusters are needed to cancel drift and spin.
-        if(input.stabilize) {
-            const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-            if(speed > 1) {
-                const brake = Math.min(secondaryThrust, speed / dt);
-                const worldX = -this.vx / speed * brake;
-                const worldY = -this.vy / speed * brake;
+        // Stabilizer (toggled on/off): fires whatever thrusters are needed to cancel drift
+        // and spin that the pilot isn't asking for. With no thrust input it brakes to a
+        // stop; while thrusting it only cancels sideways drift, so the ship flies where it
+        // points. Spin is cancelled whenever the pilot isn't turning.
+        if(this.stabilizer) {
+            let driftX = this.vx;
+            let driftY = this.vy;
+            const commanded = Math.sqrt(localX * localX + localY * localY);
+            if(commanded > 0) {
+                // Keep the velocity along the commanded direction (if moving that way).
+                const dirX = (localX * cos - localY * sin) / commanded;
+                const dirY = (localX * sin + localY * cos) / commanded;
+                const along = Math.max(0, this.vx * dirX + this.vy * dirY);
+                driftX -= dirX * along;
+                driftY -= dirY * along;
+            }
+            const drift = Math.sqrt(driftX * driftX + driftY * driftY);
+            if(drift > 1) {
+                const brake = Math.min(secondaryThrust, drift / dt);
+                const worldX = -driftX / drift * brake;
+                const worldY = -driftY / drift * brake;
                 localX += worldX * cos + worldY * sin;
                 localY += -worldX * sin + worldY * cos;
             }
-            if(Math.abs(this.angularVelocity) > 0.01) {
+            if(!input.rotateLeft && !input.rotateRight && Math.abs(this.angularVelocity) > 0.01) {
                 torque -= clamp(this.angularVelocity / dt, -angularThrust, angularThrust);
             }
         }
@@ -829,7 +844,7 @@ class Ship {
             this.hp = 0;
             this.alive = false;
             this.explode(particles, 40 + this.radius * 2);
-            sounds.explosion(1);
+            sounds.shipExplosion();
         }
         return true;
     }

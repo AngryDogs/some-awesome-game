@@ -170,7 +170,8 @@ const renderInfo = () => {
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
-    setText('targeting', ship.guidance ? 'Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : '');
+    setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
+        (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : ''));
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -1502,7 +1503,7 @@ const drawDockPrompt = () => {
     if(!state.canDock) return;
     const ship = state.ship;
     const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    const text = speed > STATION.maxDockSpeed ? (TOUCH ? 'Slow down to dock (hold Brake)' : 'Slow down to dock (X stabilizes)')
+    const text = speed > STATION.maxDockSpeed ? (TOUCH ? 'Slow down to dock (turn on Stabilizer)' : 'Slow down to dock (X: stabilizer)')
         : (TOUCH ? 'Tap Dock to enter the shipyard' : 'Press B to dock at the shipyard');
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
@@ -2119,6 +2120,15 @@ const initialize = () => {
     };
     onKeyPress('KeyH', toggleShields);
 
+    // X: stabilizer on/off.
+    onKeyPress('KeyX', () => {
+        if(!state || state.paused || !state.ship.alive) return false;
+        state.ship.stabilizer = !state.ship.stabilizer;
+        sounds.toggle(state.ship.stabilizer);
+        banner('Stabilizer ' + (state.ship.stabilizer ? 'ON: cancelling drift and spin' : 'OFF: free drift'), 1.4);
+        return true;
+    });
+
     const zoomKey = (event, down) => {
         if(event.code === 'Equal' || event.code === 'NumpadAdd') zoomKeys.in = down;
         if(event.code === 'Minus' || event.code === 'NumpadSubtract') zoomKeys.out = down;
@@ -2188,6 +2198,7 @@ const initialize = () => {
         touchControls = new TouchControls(input, canvas, {
             interact: () => triggerKey('KeyB'),
             toggleAuto: () => triggerKey('KeyG'),
+            toggleStabilizer: () => triggerKey('KeyX'),
             pause: () => triggerKey('Escape'),
             zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
         });

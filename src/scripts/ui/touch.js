@@ -4,7 +4,7 @@
 //    ship to face that way (countering spin, since this is zero-g) and thrusts once lined up.
 //  - Right: touch and hold anywhere on the right part of the screen to aim the guns at that
 //    point and fire.
-//  - Buttons: missiles (hold), brake/stabilize (hold), a context button (Dock / DHD),
+//  - Buttons: missiles (hold), stabilizer (tap on/off), a context button (Dock / DHD),
 //    auto-target, zoom and pause.
 //
 // The controls write into the same `input` object the keyboard and mouse use, so the rest
@@ -31,7 +31,7 @@ const angleDifference = (a, b) => {
 
 class TouchControls {
 
-    // actions: { interact(), pause(), toggleAuto(), zoom(factor) }
+    // actions: { interact(), pause(), toggleAuto(), toggleStabilizer(), zoom(factor) }
     constructor(input, canvas, actions) {
         this.input = input;
         this.canvas = canvas;
@@ -77,7 +77,8 @@ class TouchControls {
         this.autoButton = tap('Auto', 'auto', () => this.actions.toggleAuto());
         cluster.appendChild(this.interactButton);
         cluster.appendChild(this.autoButton);
-        cluster.appendChild(hold('Brake', 'brake', 'stabilize'));
+        this.stabButton = tap('Stabilize', 'brake', () => this.actions.toggleStabilizer());
+        cluster.appendChild(this.stabButton);
         cluster.appendChild(hold('Missile', 'missile', 'missileKey'));
         root.appendChild(cluster);
 
@@ -189,6 +190,7 @@ class TouchControls {
         this.interactButton.textContent = context.interactLabel || '';
         this.autoButton.style.display = ship.guidance ? '' : 'none';
         this.autoButton.classList.toggle('pressed', !!ship.autoTarget);
+        this.stabButton.classList.toggle('pressed', !!ship.stabilizer);
 
         const stick = this.stick;
         if(!stick || !ship.alive) {

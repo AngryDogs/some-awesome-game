@@ -1,88 +1,147 @@
-// Stargate symbols. Each of the 38 constellations gets its own glyph, generated from its
-// index out of a few stroke primitives (lines between grid points, arcs, dots), so every
-// symbol is distinct and stable. Each gate also has a point-of-origin glyph: a pyramid
-// motif with a varying crown.
+// Stargate symbols, traced after the Milky Way glyph chart (glyphs 1-39). Each glyph is a
+// few polylines in a -1..1 box (y down); they're drawn as thick strokes, optionally with a
+// darker outline like the chart's embossed symbols.
+//
+// Glyph 1 (the pyramid with the sun above it) is Earth's point of origin; other gates get
+// variants of the same motif.
+//
+// The same shapes double as the constellations' star figures on the starmap: in the show
+// the glyphs are stylised constellations, so each polyline vertex becomes a star.
 
-const rng = (seed) => {
-    let a = (seed * 2654435761) >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+import { CONSTELLATIONS } from '../world/systems';
+
+// Shapes by constellation name, in chart order (glyph number in the comment).
+const SHAPES = {
+    'Crater':            [[[-0.6, -0.8], [-0.3, -0.45], [-0.3, 0.1], [0.3, 0.1], [0.3, -0.45], [0.6, -0.8]], [[0, 0.1], [0, 0.5]], [[-0.45, 0.82], [0, 0.5], [0.45, 0.82]]],        // 2
+    'Virgo':             [[[-0.45, -0.3], [-0.45, -0.8], [0.3, -0.8], [0.0, -0.2], [0.45, 0.1], [-0.1, 0.45], [0.15, 0.85]]],                                                   // 3
+    'Bootes':            [[[0.6, -0.8], [0.25, -0.8], [-0.15, -0.45], [0.3, -0.05], [-0.25, 0.35], [0.1, 0.85]]],                                                                // 4
+    'Centaurus':         [[[-0.65, -0.6], [-0.1, -0.1]], [[0.65, -0.65], [0.15, -0.15], [0.2, 0.25]], [[-0.55, 0.35], [-0.05, 0.25], [-0.25, 0.8]]],                            // 5
+    'Libra':             [[[-0.65, -0.65], [0.5, -0.65], [0.55, 0.15], [0.0, 0.45], [-0.25, 0.85]], [[-0.65, -0.65], [-0.5, -0.25]]],                                           // 6
+    'Serpens Caput':     [[[0.35, -0.85], [-0.2, -0.6], [-0.35, 0.35], [0.05, 0.65], [0.5, 0.45]], [[0.35, -0.85], [0.45, -0.55]]],                                             // 7
+    'Norma':             [[[-0.65, -0.5], [0.15, -0.55], [-0.3, 0.15], [-0.65, -0.5]], [[0.25, 0.15], [0.65, 0.55]]],                                                           // 8
+    'Scorpius':          [[[-0.75, 0.55], [0.35, 0.55], [0.7, 0.2], [0.55, -0.3]], [[-0.4, 0.55], [0.1, -0.15], [0.45, -0.6]]],                                                 // 9
+    'Corona Australis':  [[[0.55, -0.7], [-0.4, -0.7], [-0.65, 0.0], [-0.25, 0.65], [0.55, 0.6]], [[0.1, -0.25], [0.5, 0.15]]],                                                 // 10
+    'Scutum':            [[[-0.75, 0.6], [0.6, -0.6], [0.6, 0.55], [-0.2, 0.15]], [[0.6, -0.6], [0.8, -0.8]]],                                                                  // 11
+    'Sagittarius':       [[[-0.75, -0.35], [-0.25, -0.75], [0.15, -0.25], [0.7, -0.55]], [[0.15, -0.25], [-0.05, 0.4], [0.55, 0.75]], [[-0.5, 0.15], [-0.05, 0.4]], [[0.35, 0.1], [0.65, 0.2]]], // 12
+    'Aquila':            [[[-0.75, -0.5], [-0.15, 0.65], [0.2, -0.2], [0.75, -0.6]], [[0.2, -0.2], [0.55, 0.15]]],                                                              // 13
+    'Microscopium':      [[[-0.3, -0.75], [-0.6, 0.5], [0.75, 0.25]], [[-0.45, -0.1], [0.3, -0.45]]],                                                                           // 14
+    'Capricornus':       [[[-0.75, 0.6], [0.55, -0.6], [0.5, 0.6], [-0.75, 0.6]], [[0.55, -0.6], [0.8, -0.85]]],                                                                // 15
+    'Piscis Austrinus':  [[[0.3, -0.85], [-0.3, -0.5], [-0.35, 0.45], [0.25, 0.85]], [[-0.3, -0.5], [0.05, -0.35]]],                                                            // 16
+    'Equuleus':          [[[-0.75, -0.3], [0.3, -0.35], [0.55, 0.0], [0.3, 0.45]], [[-0.2, -0.32], [-0.45, 0.35]]],                                                             // 17
+    'Aquarius':          [[[-0.65, 0.55], [-0.5, -0.4], [0.45, -0.5], [0.65, 0.3]], [[-0.05, -0.45], [0.1, 0.15]]],                                                             // 18
+    'Pegasus':           [[[0.5, -0.85], [0.0, -0.2], [0.35, 0.1], [-0.4, 0.85]], [[0.0, -0.2], [-0.35, -0.45]]],                                                               // 19
+    'Sculptor':          [[[-0.5, -0.65], [0.05, -0.65], [-0.2, 0.0], [0.55, 0.65]], [[0.55, 0.65], [0.35, 0.2]]],                                                              // 20
+    'Pisces':            [[[-0.5, -0.75], [0.0, 0.1], [0.5, -0.45]], [[0.0, 0.1], [-0.2, 0.85]]],                                                                               // 21
+    'Andromeda':         [[[0.0, -0.85], [0.2, -0.35], [-0.12, 0.0], [0.12, 0.4], [0.0, 0.85]]],                                                                                // 22
+    'Triangulum':        [[[-0.75, -0.4], [0.75, -0.4], [-0.1, 0.4], [-0.75, -0.4]]],                                                                                           // 23
+    'Aries':             [[[0.5, -0.75], [0.1, -0.2], [-0.45, 0.75]]],                                                                                                          // 24
+    'Perseus':           [[[0.3, -0.85], [-0.2, -0.45], [-0.2, 0.2], [0.2, 0.6], [0.0, 0.85]]],                                                                                 // 25
+    'Cetus':             [[[-0.65, -0.4], [0.5, -0.4], [0.65, 0.1], [0.0, 0.45]], [[-0.65, -0.4], [-0.3, 0.35]]],                                                               // 26
+    'Taurus':            [[[-0.85, 0.05], [0.85, 0.0]], [[0.2, 0.02], [0.6, -0.4]], [[-0.45, 0.04], [-0.75, -0.3]]],                                                            // 27
+    'Auriga':            [[[-0.4, -0.75], [-0.5, 0.35], [0.0, 0.7], [0.5, 0.35], [0.4, -0.75]], [[-0.15, -0.35], [0.15, -0.35]]],                                               // 28
+    'Eridanus':          [[[0.45, -0.85], [0.1, -0.3], [0.45, 0.0], [-0.35, 0.85]]],                                                                                            // 29
+    'Orion':             [[[-0.5, -0.75], [0.5, -0.75], [-0.5, 0.75], [0.5, 0.75], [-0.5, -0.75]]],                                                                             // 30
+    'Canis Minor':       [[[-0.45, -0.75], [0.45, -0.05], [-0.45, 0.15], [0.45, 0.8]]],                                                                                         // 31
+    'Monoceros':         [[[-0.6, -0.2], [-0.6, -0.6], [0.2, -0.6], [0.2, 0.2], [0.65, 0.75]], [[0.2, -0.15], [-0.25, 0.25]]],                                                  // 32
+    'Gemini':            [[[-0.3, -0.85], [0.3, -0.85], [0.3, 0.85], [-0.3, 0.85], [-0.3, -0.85]], [[-0.3, 0.0], [0.3, 0.0]]],                                                  // 33
+    'Hydra':             [[[-0.2, -0.85], [0.2, -0.5], [-0.2, -0.1], [0.2, 0.3], [-0.1, 0.85]]],                                                                                // 34
+    'Lynx':              [[[-0.5, -0.75], [0.2, -0.2], [0.5, 0.75]]],                                                                                                           // 35
+    'Cancer':            [[[-0.65, -0.65], [0.05, 0.2]], [[0.45, 0.6]]],                                                                                                        // 36
+    'Sextans':           [[[-0.7, -0.55], [-0.3, -0.4]], [[-0.05, 0.0], [0.35, 0.2]], [[0.65, 0.6]]],                                                                           // 37
+    'Leo Minor':         [[[-0.6, -0.75], [0.1, 0.1], [0.5, 0.75]], [[0.1, 0.1], [0.45, -0.15]]],                                                                               // 38
+    'Leo':               [[[0.3, -0.85], [0.55, -0.5], [0.0, 0.2], [0.1, 0.85]], [[0.0, 0.2], [-0.45, -0.05]]]                                                                  // 39
 };
 
-// 3x3 grid of anchor points in a unit box (-1..1).
-const GRID = [];
-for(let y = -1; y <= 1; y++) for(let x = -1; x <= 1; x++) GRID.push([x * 0.8, y * 0.8]);
+// Chart order (glyphs 2-39), used to lay out the DHD keys.
+export const GLYPH_ORDER = Object.keys(SHAPES).map(name => CONSTELLATIONS.indexOf(name));
+
+// Glyph 1: the pyramid with the sun above it. Other gates' points of origin vary the crown.
+const origin = (index) => {
+    const shape = [
+        [[-0.75, 0.8], [-0.1, -0.35]],
+        [[0.75, 0.8], [0.1, -0.35]],
+        [[-0.3, 0.8], [0.0, 0.35], [0.3, 0.8]]
+    ];
+    const variant = index % 4;
+    if(variant === 1) shape.push([[-0.45, -0.75], [0.45, -0.75]]);
+    if(variant === 2) shape.push([[-0.4, -0.5], [0, -0.85], [0.4, -0.5]]);
+    if(variant === 3) shape.push([[-0.75, 0.8], [0.75, 0.8]]);
+    return { lines: shape, sun: variant === 0 || variant === 3 ? [0, -0.62, 0.2] : null };
+};
 
 const cache = {};
+const shapeOf = (id) => {
+    if(cache[id]) return cache[id];
+    let shape;
+    if(typeof id === 'string') shape = origin(parseInt(id.split(':')[1], 10) || 0);
+    else shape = { lines: SHAPES[CONSTELLATIONS[id]] || [[[0, -0.8], [0, 0.8]]], sun: null };
+    cache[id] = shape;
+    return shape;
+};
 
-const buildGlyph = (index) => {
-    const r = rng(index + 11);
-    const strokes = [];
-    const count = 2 + Math.floor(r() * 3);
-    for(let i = 0; i < count; i++) {
-        const kind = r();
-        if(kind < 0.55) {
-            // Polyline through 2-3 grid points.
-            const pts = [];
-            const n = 2 + Math.floor(r() * 2);
-            for(let k = 0; k < n; k++) pts.push(GRID[Math.floor(r() * GRID.length)]);
-            strokes.push({ type: 'line', pts: pts });
-        } else if(kind < 0.85) {
-            const c = GRID[Math.floor(r() * GRID.length)];
-            const start = Math.floor(r() * 4) * Math.PI / 2;
-            strokes.push({ type: 'arc', x: c[0] * 0.6, y: c[1] * 0.6, r: 0.35 + r() * 0.4, a1: start, a2: start + Math.PI * (0.5 + Math.floor(r() * 3) * 0.5) });
-        } else {
-            const c = GRID[Math.floor(r() * GRID.length)];
-            strokes.push({ type: 'dot', x: c[0], y: c[1] });
+const tracePath = (ctx, shape, s) => {
+    ctx.beginPath();
+    shape.lines.forEach(line => {
+        if(line.length === 1) {
+            // A lone dot.
+            ctx.moveTo(line[0][0] * s + 0.01, line[0][1] * s);
+            ctx.lineTo(line[0][0] * s, line[0][1] * s);
+            return;
         }
+        line.forEach((p, i) => {
+            if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
+            else ctx.lineTo(p[0] * s, p[1] * s);
+        });
+    });
+    if(shape.sun) {
+        ctx.moveTo(shape.sun[0] * s + shape.sun[2] * s, shape.sun[1] * s);
+        ctx.arc(shape.sun[0] * s, shape.sun[1] * s, shape.sun[2] * s, 0, Math.PI * 2);
     }
-    return strokes;
 };
 
-const buildOrigin = (index) => {
-    // Pyramid (triangle) with a varying crown: sun disc, bar, chevron, ring...
-    const strokes = [{ type: 'line', pts: [[-0.85, 0.75], [0, -0.55], [0.85, 0.75], [-0.85, 0.75]] }];
-    const crown = index % 4;
-    if(crown === 0) strokes.push({ type: 'arc', x: 0, y: -0.82, r: 0.18, a1: 0, a2: Math.PI * 2 });
-    if(crown === 1) strokes.push({ type: 'line', pts: [[-0.4, -0.85], [0.4, -0.85]] });
-    if(crown === 2) strokes.push({ type: 'line', pts: [[-0.35, -0.65], [0, -0.95], [0.35, -0.65]] });
-    if(crown === 3) strokes.push({ type: 'dot', x: 0, y: -0.85 });
-    if(index >= 4) strokes.push({ type: 'line', pts: [[0, 0.75], [0, 0.15]] });
-    return strokes;
+// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y). With an
+// `outline` colour the stroke gets a darker rim, like the glyph chart.
+export const drawGlyph = (ctx, id, x, y, size, color, lineWidth, outline) => {
+    const shape = shapeOf(id);
+    const s = size / 2;
+    const width = lineWidth || Math.max(1, size * 0.1);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    tracePath(ctx, shape, s * 0.92);
+    if(outline) {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = width * 1.9;
+        ctx.stroke();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.restore();
 };
 
-// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y).
-export const drawGlyph = (ctx, id, x, y, size, color, lineWidth) => {
-    if(!cache[id]) cache[id] = typeof id === 'string' ? buildOrigin(parseInt(id.split(':')[1], 10)) : buildGlyph(id);
-    const strokes = cache[id];
+// The constellation as a star figure: stars at the glyph's vertices joined by faint lines.
+export const drawConstellation = (ctx, id, x, y, size, color, starColor) => {
+    const shape = shapeOf(id);
     const s = size / 2;
     ctx.save();
     ctx.translate(x, y);
     ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = lineWidth || Math.max(1, size * 0.09);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    strokes.forEach(stroke => {
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    shape.lines.forEach(line => line.forEach((p, i) => {
+        if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
+        else ctx.lineTo(p[0] * s, p[1] * s);
+    }));
+    ctx.stroke();
+    ctx.fillStyle = starColor || color;
+    shape.lines.forEach(line => line.forEach((p, i) => {
+        // Line ends are the brighter stars.
+        const r = (i === 0 || i === line.length - 1) ? 1.9 : 1.4;
         ctx.beginPath();
-        if(stroke.type === 'line') {
-            stroke.pts.forEach((p, i) => {
-                if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
-                else ctx.lineTo(p[0] * s, p[1] * s);
-            });
-            ctx.stroke();
-        } else if(stroke.type === 'arc') {
-            ctx.arc(stroke.x * s, stroke.y * s, stroke.r * s, stroke.a1, stroke.a2);
-            ctx.stroke();
-        } else {
-            ctx.arc(stroke.x * s, stroke.y * s, Math.max(1, s * 0.12), 0, Math.PI * 2);
-            ctx.fill();
-        }
-    });
+        ctx.arc(p[0] * s, p[1] * s, r, 0, Math.PI * 2);
+        ctx.fill();
+    }));
     ctx.restore();
 };

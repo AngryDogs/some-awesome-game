@@ -2,7 +2,7 @@
 // origin, then press the dome to dial.
 
 import { CONSTELLATIONS, systemForAddress } from '../world/systems';
-import { drawGlyph } from '../render/glyphs';
+import { drawGlyph, GLYPH_ORDER } from '../render/glyphs';
 import sounds from '../audio/audio';
 
 const SIZE = 520;
@@ -17,10 +17,11 @@ const el = (tag, className, text) => {
     return node;
 };
 
-// Key layout: 19 outer constellations, 19 inner constellations + the point of origin.
+// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
+// origin on the inner ring.
 const KEYS = [];
-for(let i = 0; i < 19; i++) KEYS.push({ glyph: i, ring: OUTER, slot: i, count: 19 });
-for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? 19 + i : 'origin', ring: INNER, slot: i, count: 20 });
+for(let i = 0; i < 19; i++) KEYS.push({ glyph: GLYPH_ORDER[i], ring: OUTER, slot: i, count: 19 });
+for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? GLYPH_ORDER[19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
 
 class DHD {
 
@@ -210,15 +211,32 @@ class DHD {
         ctx.save();
         ctx.translate(c, c);
 
-        // Base.
-        ctx.fillStyle = 'rgb(58, 55, 52)';
+        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
+        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
+        base.addColorStop(0, 'rgb(96, 92, 86)');
+        base.addColorStop(0.7, 'rgb(62, 59, 55)');
+        base.addColorStop(1, 'rgb(34, 32, 30)');
+        ctx.fillStyle = base;
         ctx.beginPath();
-        for(let i = 0; i < 8; i++) {
-            const a = i * Math.PI / 4 + Math.PI / 8;
-            if(i === 0) ctx.moveTo(Math.cos(a) * 258, Math.sin(a) * 258);
-            else ctx.lineTo(Math.cos(a) * 258, Math.sin(a) * 258);
-        }
-        ctx.closePath();
+        ctx.arc(0, 0, 258, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
+            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Collar around the dome.
+        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
+        collar.addColorStop(0, 'rgb(30, 28, 26)');
+        collar.addColorStop(1, 'rgb(80, 76, 70)');
+        ctx.fillStyle = collar;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
         ctx.fill();
 
         KEYS.forEach((key, i) => {
@@ -226,33 +244,93 @@ class DHD {
             const glyph = this.glyphOf(key);
             const lit = this.entered.indexOf(glyph) !== -1;
             const hovered = this.hover === i;
+            const r = (g.r1 + g.r2) / 2;
+            const kx = Math.cos(g.mid) * r;
+            const ky = Math.sin(g.mid) * r;
             ctx.beginPath();
             ctx.arc(0, 0, g.r2, g.a1, g.a2);
             ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
             ctx.closePath();
-            ctx.fillStyle = lit ? 'rgb(240, 140, 50)' : hovered ? 'rgb(150, 140, 125)' : 'rgb(115, 108, 98)';
+            // Each key is a slightly domed tile lit from the top-left.
+            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
+            if(lit) {
+                tile.addColorStop(0, 'rgb(255, 214, 150)');
+                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
+                tile.addColorStop(1, 'rgb(150, 60, 15)');
+            } else {
+                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
+                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
+            }
+            ctx.fillStyle = tile;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
+                ctx.shadowBlur = 14;
+            }
             ctx.fill();
-            ctx.strokeStyle = 'rgb(35, 32, 30)';
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgb(28, 25, 22)';
             ctx.lineWidth = 2;
             ctx.stroke();
-            const r = (g.r1 + g.r2) / 2;
-            drawGlyph(ctx, glyph, Math.cos(g.mid) * r, Math.sin(g.mid) * r, key.ring === OUTER ? 26 : 30,
-                lit ? 'rgb(255, 245, 220)' : 'rgb(40, 36, 32)', 2.2);
+            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
+            const size = key.ring === OUTER ? 30 : 34;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+                ctx.shadowBlur = 8;
+                drawGlyph(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
+                ctx.shadowBlur = 0;
+            } else {
+                drawGlyph(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
+                drawGlyph(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
+            }
         });
 
-        // Dome.
+        // Dome: the big red crystal. It glows once a full address is entered.
         const ready = this.entered.length === 7;
-        const dome = ctx.createRadialGradient(-20, -25, 5, 0, 0, DOME);
-        dome.addColorStop(0, ready ? 'rgb(255, 170, 130)' : 'rgb(230, 110, 90)');
-        dome.addColorStop(0.6, ready ? 'rgb(230, 60, 30)' : 'rgb(170, 35, 25)');
-        dome.addColorStop(1, 'rgb(90, 15, 10)');
+        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
+        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
+        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
+        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
+        dome.addColorStop(1, 'rgb(60, 8, 6)');
+        if(ready) {
+            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
+            ctx.shadowBlur = 30;
+        }
         ctx.fillStyle = dome;
         ctx.beginPath();
         ctx.arc(0, 0, DOME, 0, Math.PI * 2);
         ctx.fill();
+        ctx.shadowBlur = 0;
+        // Facets inside the crystal.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 12; i++) {
+            const a = i * Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
+            ctx.stroke();
+        }
+        [18, 42].forEach(rr => {
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Specular highlight.
+        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(-60, -64, 70, 70);
+        ctx.restore();
         if(this.hover === 'dome' || ready) {
             ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
             ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
             ctx.stroke();
         }
         ctx.restore();
@@ -277,7 +355,7 @@ class DHD {
             bar.lineWidth = 1.5;
             bar.fillRect(x, 8, 56, 56);
             bar.strokeRect(x, 8, 56, 56);
-            if(i < this.entered.length) drawGlyph(bar, this.entered[i], x + 28, 36, 36, 'rgb(255, 225, 190)', 2.4);
+            if(i < this.entered.length) drawGlyph(bar, this.entered[i], x + 28, 36, 38, 'rgb(255, 214, 160)', 3, 'rgba(150, 60, 15, 0.9)');
             else {
                 bar.font = '10px Bungee, sans-serif';
                 bar.textAlign = 'center';

@@ -18,7 +18,7 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Thrust / reverse | W / S |
 | Rotate | A / D |
 | Strafe | Q / E |
-| Stabilize (cancel drift & spin) | X |
+| Stabilizer on / off (cancels drift & spin you aren't steering) | X |
 | Aim | Mouse |
 | Guns | Left click / Space |
 | Missiles | Right click / F |
@@ -38,7 +38,7 @@ on launch where the browser allows it):
 - **Left thumb**: a joystick appears where you touch. Push towards where you want to fly: the
   ship turns to face that way (cancelling spin) and thrusts once lined up. Push harder to thrust sooner.
 - **Right thumb**: touch and hold anywhere on the right side to aim there and fire the guns.
-- **Missile** and **Brake** (stabilize): hold. **Dock** / **DHD** appears when you are close enough.
+- **Missile**: hold. **Stabilize**: tap to switch the stabilizer on or off. **Dock** / **DHD** appears when you are close enough.
   **Auto** toggles auto-targeting when a targeting computer is fitted.
 - **+ / -** zoom (or pinch with two fingers on one side), **II** pauses.
 - Shields, cargo hold and starmap buttons sit on the left under the HUD. The starmap rotates by
@@ -60,8 +60,17 @@ fields and ore mix (Abydos is rich in naquadah, Dakara in gold, and so on).
   fit a hyperdrive module. Pick a destination on the starmap and engage: a hyperspace window opens,
   and the trip takes longer the further you go.
 
-The Stargate and hyperspace sounds are synthesized. To use your own recordings instead, see
-`assets/sounds/stargate/README.txt`.
+The DHD glyphs follow the Milky Way glyph chart (glyph 1, the pyramid, is Earth's point of
+origin), and on the starmap each constellation is drawn as its star figure.
+
+## Sound credits
+
+The Stargate, DHD, wormhole, hyperspace window, weapon, shield, door and button sounds come from
+the [Stargate Carter Addon Pack resources](https://github.com/RafaelDeJongh/cap_resources) by the
+CAP team, licensed [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). They are
+used unmodified, in `assets/sounds/cap/` (see `CREDITS.txt` there). Because of that licence, this
+game must stay non-commercial, and redistributions of those sounds must keep the same licence.
+Anything not covered by a sample is synthesized with the Web Audio API.
 
 ## Debug mode
 

@@ -8,7 +8,6 @@ const KEY_MAP = {
     KeyD: 'rotateRight',
     KeyQ: 'strafeLeft',
     KeyE: 'strafeRight',
-    KeyX: 'stabilize',
     KeyF: 'missileKey',
     Space: 'fire'
 };
@@ -23,7 +22,6 @@ export const input = {
     rotateRight: false,
     strafeLeft: false,
     strafeRight: false,
-    stabilize: false,
     fire: false,
     missileKey: false,
     mouseDown: false,
