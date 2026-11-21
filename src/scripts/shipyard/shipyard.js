@@ -99,6 +99,7 @@ class Shipyard {
         this.canvasWrap = el('div', 'hull-canvas-wrap');
         this.canvas = el('canvas', 'hull-canvas');
         this.canvasWrap.appendChild(this.canvas);
+        this.buildPopover();
         center.appendChild(this.canvasWrap);
         this.hint = el('div', 'shipyard-hint');
         center.appendChild(this.hint);
@@ -206,6 +207,7 @@ class Shipyard {
         this.renderStats();
         this.renderPalette();
         this.renderInspector();
+        this.renderPopover();
         this.renderHint();
     }
 
@@ -439,29 +441,104 @@ class Shipyard {
         box.appendChild(el('div', 'inspector-name', def.name + ' Mk ' + ['I', 'II', 'III'][module.level - 1]));
         box.appendChild(el('div', 'inspector-stats', def.describe(stats)));
 
-        const cost = upgradeCost(module.type, module.level);
-        const actions = el('div', 'inspector-actions');
-        if(cost !== null) {
-            const next = moduleStats(module.type, module.level + 1);
-            box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(next)));
-            const upgrade = el('button', 'sy-button small', 'Upgrade ' + formatPrice(cost));
-            upgrade.disabled = getProfile().credits < priceOf(cost);
-            upgrade.addEventListener('click', () => {
-                if(upgradeModule(hull.id, this.selectedSlot)) this.flash(def.short + ' upgraded!');
-                this.refresh();
-            });
-            actions.appendChild(upgrade);
+        if(upgradeCost(module.type, module.level) !== null) {
+            box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(moduleStats(module.type, module.level + 1))));
         } else {
             box.appendChild(el('div', 'inspector-next', 'Max level (Mk ' + ['I', 'II', 'III'][MAX_LEVEL - 1] + ')'));
         }
+        box.appendChild(el('p', 'muted', 'Upgrade or remove it with the buttons next to the module on the ship.'));
+    }
 
-        const sell = el('button', 'sy-button small danger', isDebug() ? 'Remove' : 'Sell +' + formatCredits(sellValue(module.type, module.level)));
-        sell.addEventListener('click', () => {
-            sellModule(hull.id, this.selectedSlot);
+    // ------------------------------------------------------------ module popover
+    //
+    // Clicking a fitted module on the ship opens a small popover right next to it with
+    // icon buttons to upgrade it and to sell / remove it.
+
+    buildPopover() {
+        const pop = el('div', 'module-popover');
+        this.popName = el('div', 'popover-name');
+        pop.appendChild(this.popName);
+        const row = el('div', 'popover-actions');
+        const iconButton = (className, svg) => {
+            const wrap = el('div', 'popover-action');
+            const button = el('button', 'icon-button ' + className);
+            button.innerHTML = svg;
+            const caption = el('span', 'popover-caption');
+            wrap.appendChild(button);
+            wrap.appendChild(caption);
+            row.appendChild(wrap);
+            return { button: button, caption: caption };
+        };
+        this.popUpgrade = iconButton('upgrade',
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 11h-5v9H9v-9H4z"/></svg>');
+        this.popSell = iconButton('danger',
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6l1 2h5v2H3V4h5zM5 8h14l-1.2 14H6.2zm4 3v8h2v-8zm4 0v8h2v-8z"/></svg>');
+        pop.appendChild(row);
+        this.popUpgrade.button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const module = this.selectedSlot && loadoutFor(this.hull.id)[this.selectedSlot];
+            if(!module) return;
+            if(upgradeModule(this.hull.id, this.selectedSlot)) this.flash(MODULES[module.type].short + ' upgraded!');
             this.refresh();
         });
-        actions.appendChild(sell);
-        box.appendChild(actions);
+        this.popSell.button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if(!this.selectedSlot || !loadoutFor(this.hull.id)[this.selectedSlot]) return;
+            sellModule(this.hull.id, this.selectedSlot);
+            this.refresh();
+        });
+        pop.addEventListener('pointerdown', (event) => event.stopPropagation());
+        this.canvasWrap.appendChild(pop);
+        this.popover = pop;
+        this.popover.style.display = 'none';
+    }
+
+    renderPopover() {
+        const module = this.selectedSlot && loadoutFor(this.hull.id)[this.selectedSlot];
+        if(!module) {
+            this.popover.style.display = 'none';
+            return;
+        }
+        const def = MODULES[module.type];
+        this.popover.style.display = '';
+        this.popName.textContent = def.short + ' Mk ' + ['I', 'II', 'III'][module.level - 1];
+
+        // Upgrade: always shown; disabled at max level or when unaffordable.
+        const cost = upgradeCost(module.type, module.level);
+        const up = this.popUpgrade;
+        if(cost === null) {
+            up.button.disabled = true;
+            up.button.title = 'Max level';
+            up.caption.textContent = 'MAX';
+        } else {
+            up.button.disabled = getProfile().credits < priceOf(cost);
+            up.button.title = 'Upgrade to Mk ' + ['I', 'II', 'III'][module.level] + ' (' + formatPrice(cost) + ')';
+            up.caption.textContent = formatPrice(cost);
+        }
+        const sellLabel = isDebug() ? 'Remove' : 'Sell +' + formatCredits(sellValue(module.type, module.level));
+        this.popSell.button.title = sellLabel;
+        this.popSell.caption.textContent = isDebug() ? 'Remove' : '+' + formatCredits(sellValue(module.type, module.level));
+        this.positionPopover();
+    }
+
+    // Keep the popover beside the selected mount (and inside the view).
+    positionPopover() {
+        if(!this.popover || this.popover.style.display === 'none' || !this.ctx) return;
+        const spot = this.layout().slots.filter(sl => sl.slot.id === this.selectedSlot)[0];
+        if(!spot) return;
+        const w = this.popover.offsetWidth;
+        const h = this.popover.offsetHeight;
+        let x = spot.x + 22;
+        let y = spot.y - h / 2;
+        if(x + w > this.canvasWidth - 4) x = spot.x - 22 - w;
+        x = Math.max(4, Math.min(this.canvasWidth - w - 4, x));
+        y = Math.max(4, Math.min(this.canvasHeight - h - 4, y));
+        const key = Math.round(x) + ',' + Math.round(y);
+        if(key !== this.popoverKey) {
+            this.popoverKey = key;
+            this.popover.style.left = Math.round(x) + 'px';
+            this.popover.style.top = Math.round(y) + 'px';
+        }
     }
 
     renderHint() {
@@ -608,6 +685,7 @@ class Shipyard {
         }
         const ctx = this.ctx;
         if(!ctx) return;
+        this.positionPopover();
         const hull = this.hull;
         const layout = this.layout();
         const fit = layout.fit;
