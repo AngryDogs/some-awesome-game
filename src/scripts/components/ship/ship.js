@@ -2,7 +2,7 @@ import Bullet from '../bullet/bullet';
 import Missile from '../missile/missile';
 import Particle from '../particle/particle';
 import { drawHullArt, shieldFor, hullBounds } from '../../shipyard/hulls';
-import { createSprite, glowSprite, flameSprite, muzzleSprite, stamp } from '../../render/sprites';
+import { createSprite, glowSprite, flameSprite, muzzleSprite, stamp, spriteResolution } from '../../render/sprites';
 import MODULES, { drawModule } from '../../shipyard/modules';
 import { delta } from '../../physics/physics';
 import sounds from '../../audio/audio';
@@ -29,6 +29,12 @@ const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
 const SHIELD_FACTOR = { kinetic: 0.5, energy: 1.5 };
 const HULL_FACTOR = { kinetic: 1.25, energy: 0.6 };
 export const DAMAGE_TYPE = { bullet: 'kinetic', missile: 'kinetic', plasma: 'energy', beam: 'energy', drone: 'energy' };
+// Weapon effectiveness against ships (asteroid damage is unchanged): rapid-fire guns and
+// beams are tuned for mining, heavy ordnance for fighting.
+export const SHIP_DAMAGE = { bullet: 0.5, plasma: 1, beam: 0.35, missile: 1.15, drone: 1.3 };
+// Auto-targeting modes (with a targeting computer), cycled with T.
+export const TARGET_MODES = ['both', 'ships', 'asteroids'];
+export const TARGET_MODE_LABEL = { both: 'Ships + asteroids', ships: 'Ships', asteroids: 'Asteroids' };
 
 const HIT_COOLDOWN = 0.25;
 const SHIELD_REGEN_DELAY = 2;
@@ -68,10 +74,14 @@ const hullSprite = (hull, color) => {
     if(!hull._sprites[key]) {
         const b = hullBounds(hull);
         const pad = 8;
-        const sprite = createSprite(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
+        const w = b.maxX - b.minX + pad * 2;
+        const h = b.maxY - b.minY + pad * 2;
+        // Keep very large hull sprites to a sensible size in memory.
+        const res = Math.min(spriteResolution(), 2048 / Math.max(w, h));
+        const sprite = createSprite(w, h, ctx => {
             ctx.translate(pad - b.minX, pad - b.minY);
             drawHullArt(ctx, hull, { color: color });
-        });
+        }, res);
         sprite.x = b.minX - pad;
         sprite.y = b.minY - pad;
         hull._sprites[key] = sprite;
@@ -85,6 +95,7 @@ const shieldSprite = (hull) => {
     const s = shieldFor(hull);
     const color = hull.shieldColor || '120,210,255';
     const pad = 6;
+    const shieldRes = Math.min(spriteResolution(), 2048 / (Math.max(s.rx, s.ry) * 2 + pad * 2));
     hull._shieldSprite = createSprite(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
         ctx.translate(s.rx + pad, s.ry + pad);
         ctx.scale(1, s.ry / s.rx);
@@ -129,7 +140,7 @@ const shieldSprite = (hull) => {
         ctx.beginPath();
         ctx.arc(0, 0, rx, 0, Math.PI * 2);
         ctx.stroke();
-    });
+    }, shieldRes);
     hull._shieldSprite.pad = pad;
     return hull._shieldSprite;
 };
@@ -147,6 +158,7 @@ class Ship {
         this.stabilizer = false;   // toggled with X / the Stabilizer button
         this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
         this.side = 'player';      // 'player' or 'enemy': who its shots can hurt
+        this.targetMode = 'both';  // what auto-targeting goes for (see TARGET_MODES)
         this.damageScale = 1;      // multiplier on the damage its weapons deal
         this.autoTarget = true;
         this.time = 0;
@@ -191,7 +203,8 @@ class Ship {
         this.scanner = stats.scanner;
         this.hyperdrive = stats.hyperdrive;
         this.cargoCapacity = stats.cargo;
-        this.magnetRange = stats.magnetRange;
+        // Big hulls reach further with the tractor (it starts from the hull's edge).
+        this.magnetRange = stats.magnetRange + Math.max(0, hull.radius - 30) * 0.8;
         this.collectRadius = hull.radius * 0.55 + 8;
 
         const u = hull.moduleScale;
@@ -521,17 +534,18 @@ class Ship {
         return best;
     }
 
-    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y).
+    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y). Ships count
+    // from their hull edge, so big ships are in reach as soon as any part of them is.
     nearestOf(x, y, list, range) {
         let best = null;
-        let bestDist = range * range;
+        let bestDist = Infinity;
         list.forEach(item => {
             if(item.dead) return;
             const dx = item.x - x;
             const dy = item.y - y;
-            const distSq = dx * dx + dy * dy;
-            if(distSq < bestDist) {
-                bestDist = distSq;
+            const dist = Math.sqrt(dx * dx + dy * dy) - (item.hullDef ? item.radius * 0.8 : 0);
+            if(dist < range && dist < bestDist) {
+                bestDist = dist;
                 best = item;
             }
         });
@@ -548,14 +562,21 @@ class Ship {
             return;
         }
 
-        const range = this.guidance.range;
+        const range = this.guidance.range + this.radius;
         const combat = world.combat;
-        const ships = combat ? combat.hostileShips(this.side) : [];
-        const incoming = combat ? combat.hostileMissiles(this.side, 'missile') : [];
+        const ships = combat && this.targetMode !== 'asteroids' ? combat.hostileShips(this.side) : [];
+        const rockList = this.targetMode === 'ships' ? [] : rocks;
+        // Point defence only bothers with missiles actually closing in.
+        const incoming = combat ? combat.hostileMissiles(this.side, 'missile').filter(m => {
+            const dx = this.x - m.x;
+            const dy = this.y - m.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            return d < 400 + this.radius && (m.vx * dx + m.vy * dy) / (d || 1) > 100;
+        }) : [];
         this.missileLock = this.nearestOf(input.aimX, input.aimY, ships, MISSILE_LOCK_RADIUS * 1.5)
-            || this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS)
+            || this.nearestRock(input.aimX, input.aimY, rockList, MISSILE_LOCK_RADIUS)
             || this.nearestOf(this.x, this.y, ships, range * 1.6)
-            || this.nearestRock(this.x, this.y, rocks, range);
+            || this.nearestRock(this.x, this.y, rockList, range);
 
         this.turrets.forEach(turret => {
             if(!this.autoTarget) {
@@ -563,10 +584,12 @@ class Ship {
                 return;
             }
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
+            // Turrets reach a little past the targeting computer's range for ships.
             const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
+            const shipReach = turret.kind === 'beam' ? turret.module.stats.range : Math.max(range, 700);
             turret.target = (turret.kind === 'minigun' && this.nearestOf(p.x, p.y, incoming, reach))
-                || this.nearestOf(p.x, p.y, ships, reach)
-                || this.nearestRock(p.x, p.y, rocks, reach);
+                || this.nearestOf(p.x, p.y, ships, shipReach)
+                || this.nearestRock(p.x, p.y, rockList, reach);
         });
     }
 
@@ -803,7 +826,8 @@ class Ship {
             blast: stats.blast,
             target: target,
             homing: this.guidance ? this.guidance.homing : (input.lockTarget ? 2.4 : 0),
-            side: this.side
+            side: this.side,
+            targetMode: this.targetMode
         }));
         launcher.cooldown = stats.cooldown;
         sounds.missileLaunch();
@@ -815,9 +839,15 @@ class Ship {
         // Drones go for hostile drones first (only drones can stop drones), then the lock.
         const combat = world.combat;
         const drones = combat ? combat.hostileMissiles(this.side, 'drone') : [];
-        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget || this.missileLock
-            || (combat && this.nearestOf(input.aimX, input.aimY, combat.hostileShips(this.side), 250))
-            || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        const ships = combat && this.targetMode !== 'asteroids' ? combat.hostileShips(this.side) : [];
+        const rockList = this.targetMode === 'ships' ? [] : world.rocks;
+        const lock = this.missileLock && (this.missileLock.hullDef ? ships.length : rockList.length) ? this.missileLock : null;
+        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget
+            || this.nearestOf(input.aimX, input.aimY, ships, 400)
+            || (lock && lock.hullDef ? lock : null)
+            || this.nearestOf(this.x, this.y, ships, 1300)
+            || lock
+            || this.nearestRock(input.aimX, input.aimY, rockList, 450);
         launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
         launcher.cooldown = stats.cooldown;
     }
@@ -850,7 +880,8 @@ class Ship {
             blast: stats.blast,
             target: target,
             homing: 7,
-            side: this.side
+            side: this.side,
+            targetMode: this.targetMode
         }));
         sounds.droneLaunch();
 
@@ -892,6 +923,12 @@ class Ship {
             const off = !!this.weaponsOff[kind];
             return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
         });
+    }
+
+    // Next auto-targeting mode (ships + asteroids -> ships -> asteroids).
+    cycleTargetMode() {
+        this.targetMode = TARGET_MODES[(TARGET_MODES.indexOf(this.targetMode) + 1) % TARGET_MODES.length];
+        return this.targetMode;
     }
 
     // Switch a weapon type on or off. Returns the new state (true = on).

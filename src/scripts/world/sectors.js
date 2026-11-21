@@ -106,11 +106,12 @@ export class SectorManager {
     }
 
     // Returns the new active rock list for the ship's position.
-    update(shipX, shipY, rocks) {
+    update(shipX, shipY, rocks, radius) {
         const center = sectorOf(shipX, shipY);
         const wanted = {};
-        for(let dx = -ACTIVE_RADIUS; dx <= ACTIVE_RADIUS; dx++) {
-            for(let dy = -ACTIVE_RADIUS; dy <= ACTIVE_RADIUS; dy++) {
+        const r = radius || ACTIVE_RADIUS;
+        for(let dx = -r; dx <= r; dx++) {
+            for(let dy = -r; dy <= r; dy++) {
                 wanted[(center.sx + dx) + ',' + (center.sy + dy)] = [center.sx + dx, center.sy + dy];
             }
         }

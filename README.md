@@ -27,7 +27,8 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 | Starmap (addresses, hyperspace) | M (J engages the hyperdrive) |
 | Shields on / off | H (or the button at the top of the screen) |
 | Cargo hold (view / eject ore) | C (or the cargo button, top right) |
-| Zoom | Mouse wheel or + / - (0 resets) |
+| Zoom | Mouse wheel or + / - (0 resets; zooms out to a wide tactical view) |
+| Targeting mode (ships / asteroids / both) | T (needs a targeting computer) |
 | Weapons on / off | 1-5 (the rows of the weapon panel), or click / tap a row |
 | Pause | Esc |
 
@@ -57,6 +58,15 @@ pays a bounty; they can destroy you too.
 - **Damage types**: miniguns and missiles are *kinetic*; staff cannons, Asgard beams and
   drones are *energy*. Shields are strong against kinetic hits (they lose half as much) but
   drain fast under energy fire (x1.5); bare hull is the opposite (energy x0.6, kinetic x1.25).
+- **Against ships** weapons hit differently than against asteroids: miniguns x0.5 and Asgard
+  beams x0.35 (they're mining tools first), staff cannons x1, missiles x1.15, drones x1.3. Break
+  shields with energy weapons, drones or missiles, then finish the hull with guns.
+- **Targeting modes** (with a targeting computer): press **T** to switch auto-targeting, missile
+  locks and drones between *ships + asteroids*, *ships only* and *asteroids only*. Ships always
+  take priority over asteroids in the combined mode.
+- **AI**: fighters make attack runs and jink away from incoming missiles; capital ships hold
+  a standoff distance and circle; badly damaged ships withdraw to recharge their shields;
+  Death Gliders fly in pairs.
 - **Missile defence**: incoming missiles can be shot down with minigun fire, or caught in the
   blast of your own missiles. With a targeting computer, miniguns shoot at incoming missiles
   automatically before anything else.

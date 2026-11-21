@@ -30,6 +30,7 @@ class Missile {
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
         this.side = options.side || 'player';  // whose weapon it is
+        this.targetMode = options.targetMode || 'both';
         this.launchDelay = options.launchDelay || 0;
         this.life = this.profile.lifetime;
         this.trailTimer = 0;
@@ -56,7 +57,11 @@ class Missile {
             if(this.target) {
                 const d = delta(this, this.target);
                 const desired = Math.atan2(d.y, d.x);
-                const turn = Math.max(-this.homing * dt, Math.min(this.homing * dt, angleDifference(this.angle, desired)));
+                // Turn harder on the final approach so it doesn't circle its target.
+                const distance = Math.sqrt(d.x * d.x + d.y * d.y);
+                const terminal = distance < 320 ? 1 + 2.5 * (1 - distance / 320) : 1;
+                const rate = this.homing * terminal * dt;
+                const turn = Math.max(-rate, Math.min(rate, angleDifference(this.angle, desired)));
                 this.angle += turn;
             }
         }
@@ -111,6 +116,7 @@ class Missile {
     }
 
     findTarget(rocks) {
+        if(this.targetMode === 'ships') return null;
         let best = null;
         let bestDist = this.profile.retarget * this.profile.retarget;
         rocks.forEach(rock => {

@@ -582,6 +582,35 @@ const HULLS = {
     }
 };
 
+// Relative sizes: the line art above is drawn at a convenient size per ship; these factors
+// rescale every hull so fighters are small and cruisers / motherships are properly big
+// (not to true scale, a Ha'tak would fill the screen, but in proportion).
+const SIZE = { x302: 0.75, glider: 0.75, jumper: 0.75, alkesh: 1.45, x303: 2, x304: 2.2, hatak: 2.6, asgard: 2.4, aurora: 2.4 };
+
+const scalePoint = (p, k) => [p[0] * k, p[1] * k];
+const scaleHull = (hull, k) => {
+    hull.art = hull.art.map(part => {
+        if(part.rect) return { rect: part.rect.map(v => v * k) };
+        if(part.circle) return { circle: part.circle.map(v => v * k) };
+        return { closed: part.closed, pts: part.pts.map(p => scalePoint(p, k)) };
+    });
+    hull.slots = hull.slots.map(slot => Object.assign({}, slot, { x: slot.x * k, y: slot.y * k }));
+    hull.engines = hull.engines.map(e => ({ x: e.x * k, y: e.y * k, size: e.size * k }));
+    hull.colliders = hull.colliders.map(c => [c[0] * k, c[1] * k, c[2] * k]);
+    const jets = hull.jets;
+    hull.jets = {
+        retro: jets.retro.map(p => scalePoint(p, k)),
+        side: jets.side.map(p => scalePoint(p, k)),
+        bow: scalePoint(jets.bow, k),
+        stern: scalePoint(jets.stern, k)
+    };
+    hull.radius *= k;
+    hull.moduleScale *= k;
+    hull.jetScale = (hull.jetScale || 1) * k;
+    hull.sizeScale = k;
+};
+Object.keys(SIZE).forEach(id => { if(HULLS[id]) scaleHull(HULLS[id], SIZE[id]); });
+
 export const HULL_ORDER = ['x302', 'glider', 'jumper', 'x303', 'alkesh', 'x304', 'hatak', 'asgard', 'aurora'];
 
 const partPoints = (part) => {

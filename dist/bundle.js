@@ -958,6 +958,35 @@ const HULLS = {
     }
 };
 
+// Relative sizes: the line art above is drawn at a convenient size per ship; these factors
+// rescale every hull so fighters are small and cruisers / motherships are properly big
+// (not to true scale, a Ha'tak would fill the screen, but in proportion).
+const SIZE = { x302: 0.75, glider: 0.75, jumper: 0.75, alkesh: 1.45, x303: 2, x304: 2.2, hatak: 2.6, asgard: 2.4, aurora: 2.4 };
+
+const scalePoint = (p, k) => [p[0] * k, p[1] * k];
+const scaleHull = (hull, k) => {
+    hull.art = hull.art.map(part => {
+        if(part.rect) return { rect: part.rect.map(v => v * k) };
+        if(part.circle) return { circle: part.circle.map(v => v * k) };
+        return { closed: part.closed, pts: part.pts.map(p => scalePoint(p, k)) };
+    });
+    hull.slots = hull.slots.map(slot => Object.assign({}, slot, { x: slot.x * k, y: slot.y * k }));
+    hull.engines = hull.engines.map(e => ({ x: e.x * k, y: e.y * k, size: e.size * k }));
+    hull.colliders = hull.colliders.map(c => [c[0] * k, c[1] * k, c[2] * k]);
+    const jets = hull.jets;
+    hull.jets = {
+        retro: jets.retro.map(p => scalePoint(p, k)),
+        side: jets.side.map(p => scalePoint(p, k)),
+        bow: scalePoint(jets.bow, k),
+        stern: scalePoint(jets.stern, k)
+    };
+    hull.radius *= k;
+    hull.moduleScale *= k;
+    hull.jetScale = (hull.jetScale || 1) * k;
+    hull.sizeScale = k;
+};
+Object.keys(SIZE).forEach(id => { if(HULLS[id]) scaleHull(HULLS[id], SIZE[id]); });
+
 const HULL_ORDER = ['x302', 'glider', 'jumper', 'x303', 'alkesh', 'x304', 'hatak', 'asgard', 'aurora'];
 /* harmony export (immutable) */ __webpack_exports__["a"] = HULL_ORDER;
 
@@ -3390,6 +3419,18 @@ const HULL_FACTOR = { kinetic: 1.25, energy: 0.6 };
 const DAMAGE_TYPE = { bullet: 'kinetic', missile: 'kinetic', plasma: 'energy', beam: 'energy', drone: 'energy' };
 /* harmony export (immutable) */ __webpack_exports__["a"] = DAMAGE_TYPE;
 
+// Weapon effectiveness against ships (asteroid damage is unchanged): rapid-fire guns and
+// beams are tuned for mining, heavy ordnance for fighting.
+const SHIP_DAMAGE = { bullet: 0.5, plasma: 1, beam: 0.35, missile: 1.15, drone: 1.3 };
+/* harmony export (immutable) */ __webpack_exports__["b"] = SHIP_DAMAGE;
+
+// Auto-targeting modes (with a targeting computer), cycled with T.
+const TARGET_MODES = ['both', 'ships', 'asteroids'];
+/* unused harmony export TARGET_MODES */
+
+const TARGET_MODE_LABEL = { both: 'Ships + asteroids', ships: 'Ships', asteroids: 'Asteroids' };
+/* harmony export (immutable) */ __webpack_exports__["c"] = TARGET_MODE_LABEL;
+
 
 const HIT_COOLDOWN = 0.25;
 const SHIELD_REGEN_DELAY = 2;
@@ -3429,10 +3470,14 @@ const hullSprite = (hull, color) => {
     if(!hull._sprites[key]) {
         const b = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["d" /* hullBounds */])(hull);
         const pad = 8;
-        const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
+        const w = b.maxX - b.minX + pad * 2;
+        const h = b.maxY - b.minY + pad * 2;
+        // Keep very large hull sprites to a sensible size in memory.
+        const res = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* spriteResolution */])(), 2048 / Math.max(w, h));
+        const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(w, h, ctx => {
             ctx.translate(pad - b.minX, pad - b.minY);
             Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color });
-        });
+        }, res);
         sprite.x = b.minX - pad;
         sprite.y = b.minY - pad;
         hull._sprites[key] = sprite;
@@ -3446,6 +3491,7 @@ const shieldSprite = (hull) => {
     const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(hull);
     const color = hull.shieldColor || '120,210,255';
     const pad = 6;
+    const shieldRes = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* spriteResolution */])(), 2048 / (Math.max(s.rx, s.ry) * 2 + pad * 2));
     hull._shieldSprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
         ctx.translate(s.rx + pad, s.ry + pad);
         ctx.scale(1, s.ry / s.rx);
@@ -3490,7 +3536,7 @@ const shieldSprite = (hull) => {
         ctx.beginPath();
         ctx.arc(0, 0, rx, 0, Math.PI * 2);
         ctx.stroke();
-    });
+    }, shieldRes);
     hull._shieldSprite.pad = pad;
     return hull._shieldSprite;
 };
@@ -3508,6 +3554,7 @@ class Ship {
         this.stabilizer = false;   // toggled with X / the Stabilizer button
         this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
         this.side = 'player';      // 'player' or 'enemy': who its shots can hurt
+        this.targetMode = 'both';  // what auto-targeting goes for (see TARGET_MODES)
         this.damageScale = 1;      // multiplier on the damage its weapons deal
         this.autoTarget = true;
         this.time = 0;
@@ -3552,7 +3599,8 @@ class Ship {
         this.scanner = stats.scanner;
         this.hyperdrive = stats.hyperdrive;
         this.cargoCapacity = stats.cargo;
-        this.magnetRange = stats.magnetRange;
+        // Big hulls reach further with the tractor (it starts from the hull's edge).
+        this.magnetRange = stats.magnetRange + Math.max(0, hull.radius - 30) * 0.8;
         this.collectRadius = hull.radius * 0.55 + 8;
 
         const u = hull.moduleScale;
@@ -3882,17 +3930,18 @@ class Ship {
         return best;
     }
 
-    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y).
+    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y). Ships count
+    // from their hull edge, so big ships are in reach as soon as any part of them is.
     nearestOf(x, y, list, range) {
         let best = null;
-        let bestDist = range * range;
+        let bestDist = Infinity;
         list.forEach(item => {
             if(item.dead) return;
             const dx = item.x - x;
             const dy = item.y - y;
-            const distSq = dx * dx + dy * dy;
-            if(distSq < bestDist) {
-                bestDist = distSq;
+            const dist = Math.sqrt(dx * dx + dy * dy) - (item.hullDef ? item.radius * 0.8 : 0);
+            if(dist < range && dist < bestDist) {
+                bestDist = dist;
                 best = item;
             }
         });
@@ -3909,14 +3958,21 @@ class Ship {
             return;
         }
 
-        const range = this.guidance.range;
+        const range = this.guidance.range + this.radius;
         const combat = world.combat;
-        const ships = combat ? combat.hostileShips(this.side) : [];
-        const incoming = combat ? combat.hostileMissiles(this.side, 'missile') : [];
+        const ships = combat && this.targetMode !== 'asteroids' ? combat.hostileShips(this.side) : [];
+        const rockList = this.targetMode === 'ships' ? [] : rocks;
+        // Point defence only bothers with missiles actually closing in.
+        const incoming = combat ? combat.hostileMissiles(this.side, 'missile').filter(m => {
+            const dx = this.x - m.x;
+            const dy = this.y - m.y;
+            const d = Math.sqrt(dx * dx + dy * dy);
+            return d < 400 + this.radius && (m.vx * dx + m.vy * dy) / (d || 1) > 100;
+        }) : [];
         this.missileLock = this.nearestOf(input.aimX, input.aimY, ships, MISSILE_LOCK_RADIUS * 1.5)
-            || this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS)
+            || this.nearestRock(input.aimX, input.aimY, rockList, MISSILE_LOCK_RADIUS)
             || this.nearestOf(this.x, this.y, ships, range * 1.6)
-            || this.nearestRock(this.x, this.y, rocks, range);
+            || this.nearestRock(this.x, this.y, rockList, range);
 
         this.turrets.forEach(turret => {
             if(!this.autoTarget) {
@@ -3924,10 +3980,12 @@ class Ship {
                 return;
             }
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
+            // Turrets reach a little past the targeting computer's range for ships.
             const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
+            const shipReach = turret.kind === 'beam' ? turret.module.stats.range : Math.max(range, 700);
             turret.target = (turret.kind === 'minigun' && this.nearestOf(p.x, p.y, incoming, reach))
-                || this.nearestOf(p.x, p.y, ships, reach)
-                || this.nearestRock(p.x, p.y, rocks, reach);
+                || this.nearestOf(p.x, p.y, ships, shipReach)
+                || this.nearestRock(p.x, p.y, rockList, reach);
         });
     }
 
@@ -4164,7 +4222,8 @@ class Ship {
             blast: stats.blast,
             target: target,
             homing: this.guidance ? this.guidance.homing : (input.lockTarget ? 2.4 : 0),
-            side: this.side
+            side: this.side,
+            targetMode: this.targetMode
         }));
         launcher.cooldown = stats.cooldown;
         __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].missileLaunch();
@@ -4176,9 +4235,15 @@ class Ship {
         // Drones go for hostile drones first (only drones can stop drones), then the lock.
         const combat = world.combat;
         const drones = combat ? combat.hostileMissiles(this.side, 'drone') : [];
-        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget || this.missileLock
-            || (combat && this.nearestOf(input.aimX, input.aimY, combat.hostileShips(this.side), 250))
-            || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        const ships = combat && this.targetMode !== 'asteroids' ? combat.hostileShips(this.side) : [];
+        const rockList = this.targetMode === 'ships' ? [] : world.rocks;
+        const lock = this.missileLock && (this.missileLock.hullDef ? ships.length : rockList.length) ? this.missileLock : null;
+        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget
+            || this.nearestOf(input.aimX, input.aimY, ships, 400)
+            || (lock && lock.hullDef ? lock : null)
+            || this.nearestOf(this.x, this.y, ships, 1300)
+            || lock
+            || this.nearestRock(input.aimX, input.aimY, rockList, 450);
         launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
         launcher.cooldown = stats.cooldown;
     }
@@ -4211,7 +4276,8 @@ class Ship {
             blast: stats.blast,
             target: target,
             homing: 7,
-            side: this.side
+            side: this.side,
+            targetMode: this.targetMode
         }));
         __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].droneLaunch();
 
@@ -4253,6 +4319,12 @@ class Ship {
             const off = !!this.weaponsOff[kind];
             return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
         });
+    }
+
+    // Next auto-targeting mode (ships + asteroids -> ships -> asteroids).
+    cycleTargetMode() {
+        this.targetMode = TARGET_MODES[(TARGET_MODES.indexOf(this.targetMode) + 1) % TARGET_MODES.length];
+        return this.targetMode;
     }
 
     // Switch a weapon type on or off. Returns the new state (true = on).
@@ -4547,7 +4619,7 @@ class Ship {
     }
 }
 
-/* harmony default export */ __webpack_exports__["b"] = (Ship);
+/* harmony default export */ __webpack_exports__["d"] = (Ship);
 
 
 /***/ }),
@@ -6266,6 +6338,8 @@ class TouchControls {
         this.autoButton = tap('Auto', 'auto', () => this.actions.toggleAuto());
         cluster.appendChild(this.interactButton);
         cluster.appendChild(this.autoButton);
+        this.modeButton = tap('Targets', 'auto', () => this.actions.cycleTargets());
+        cluster.appendChild(this.modeButton);
         this.stabButton = tap('Stabilize', 'brake', () => this.actions.toggleStabilizer());
         cluster.appendChild(this.stabButton);
         cluster.appendChild(hold('Missile', 'missile', 'missileKey'));
@@ -6380,6 +6454,9 @@ class TouchControls {
         this.interactButton.style.display = context.interactLabel ? '' : 'none';
         this.interactButton.textContent = context.interactLabel || '';
         this.autoButton.style.display = ship.guidance ? '' : 'none';
+        this.modeButton.style.display = ship.guidance ? '' : 'none';
+        const modeLabel = { both: 'Ships+ Rocks', ships: 'Ships', asteroids: 'Rocks' }[ship.targetMode];
+        if(this.modeButton.textContent !== modeLabel) this.modeButton.textContent = modeLabel;
         this.autoButton.classList.toggle('pressed', !!ship.autoTarget);
         this.stabButton.classList.toggle('pressed', !!ship.stabilizer);
 
@@ -6612,7 +6689,7 @@ const originIndex = (system) => __WEBPACK_IMPORTED_MODULE_13__world_systems__["b
 
 const createState = () => {
     const system = Object(__WEBPACK_IMPORTED_MODULE_13__world_systems__["g" /* systemById */])('lantea');
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["b" /* default */](__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["d" /* default */](__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
     ship.angle = 0;
     return {
         system: system,
@@ -6657,13 +6734,20 @@ let resolutionCap = 2;
 // Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
 // Mouse wheel or +/- keys change it between MIN_ZOOM (wide tactical view) and
 // MAX_ZOOM (close-up); 0 resets. The view eases smoothly towards the target.
-const MIN_ZOOM = 0.45;
+const MIN_ZOOM = 0.2;
 const MAX_ZOOM = 2.6;
 const DEFAULT_ZOOM = 1.3;
 let zoom = DEFAULT_ZOOM;
 let targetZoom = DEFAULT_ZOOM;
 const zoomKeys = { in: false, out: false };
 const clampZoom = (value) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
+// Default view for the current hull: big ships start zoomed out so they fit nicely.
+const shipZoom = () => {
+    const r = state ? state.ship.radius : 30;
+    return clampZoom(r <= 45 ? DEFAULT_ZOOM : DEFAULT_ZOOM * Math.pow(45 / r, 0.75));
+};
+// When zoomed far out, keep a wider ring of asteroid sectors loaded so the view is filled.
+const sectorRadius = () => (Math.min(zoom, targetZoom) < 0.4 ? 3 : 2);
 let slowTime = 0;
 
 const resize = () => {
@@ -6705,7 +6789,8 @@ const renderInfo = () => {
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
     setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
-        (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') : ''));
+        (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') +
+            ' · Targets: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["c" /* TARGET_MODE_LABEL */][ship.targetMode] + hint('T') : ''));
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -7337,6 +7422,15 @@ const impactSparks = (x, y, ship, kind, shield) => {
     }
 };
 
+// Blow a missile / drone up right away (it is removed at the end of this step).
+const detonate = (missile) => {
+    if(missile.handled) return;
+    missile.dead = true;
+    missile.exploded = true;
+    missile.handled = true;
+    explodeMissile(missile);
+};
+
 // Shots against ships, guns shooting down missiles, and missiles/drones meeting their targets.
 const combatCollisions = () => {
     const { bullets, missiles, particles } = state;
@@ -7366,7 +7460,7 @@ const combatCollisions = () => {
             const hit = shipHitAt(ship, bullet.x, bullet.y, bullet.kind === 'plasma' ? Math.max(8, bullet.splash * 0.4) : 2);
             if(!hit) continue;
             bullet.dead = true;
-            ship.takeDamage(bullet.damage, particles, hit.x, hit.y, __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* DAMAGE_TYPE */][bullet.kind]);
+            ship.takeDamage(bullet.damage * __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["b" /* SHIP_DAMAGE */][bullet.kind], particles, hit.x, hit.y, __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* DAMAGE_TYPE */][bullet.kind]);
             const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || 1;
             const kick = bullet.mass * 6 / ship.stats.mass;
             ship.vx += bullet.vx / speed * kick;
@@ -7384,20 +7478,19 @@ const combatCollisions = () => {
             const my = missile.y - bullet.y;
             if(mx * mx + my * my > 11 * 11) continue;
             bullet.dead = true;
-            missile.dead = true;
-            missile.exploded = true;
             missile.damage *= 0.3;     // shot down early: only a weak blast
+            detonate(missile);
             return;
         }
     });
 
     missiles.forEach(missile => {
         if(missile.dead || missile.launchDelay > 0) return;
+        // Contact, or the proximity fuse: detonate once inside part of the blast radius.
         const targets = combat.hostileShips(missile.side);
         for(let i = 0; i < targets.length; i++) {
-            if(shipHitAt(targets[i], missile.x, missile.y, 4)) {
-                missile.dead = true;
-                missile.exploded = true;
+            if(shipHitAt(targets[i], missile.x, missile.y, Math.max(4, missile.blast * 0.45))) {
+                detonate(missile);
                 return;
             }
         }
@@ -7410,8 +7503,8 @@ const combatCollisions = () => {
                 const dx = other.x - missile.x;
                 const dy = other.y - missile.y;
                 if(dx * dx + dy * dy < 14 * 14) {
-                    missile.dead = missile.exploded = true;
-                    other.dead = other.exploded = true;
+                    detonate(missile);
+                    detonate(other);
                     return;
                 }
             }
@@ -7430,7 +7523,7 @@ const blastCombat = (missile) => {
         const reach = missile.blast + ship.radius * 0.8;
         if(distance > reach) return;
         const falloff = 1 - distance / reach;
-        ship.takeDamage(missile.damage * (0.4 + 0.6 * falloff), state.particles,
+        ship.takeDamage(missile.damage * __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["b" /* SHIP_DAMAGE */][missile.kind] * (0.4 + 0.6 * falloff), state.particles,
             missile.x + dx / distance * Math.min(distance, 6), missile.y + dy / distance * Math.min(distance, 6), type);
         const push = Math.min(40, MISSILE_PUSH * 0.4 * falloff / ship.mass);
         ship.vx += dx / distance * push;
@@ -7477,8 +7570,11 @@ const retargetMissiles = (dt) => {
                 return;
             }
         }
-        if(!missile.target || missile.target.dead) {
-            missile.target = near(combat.hostileShips(missile.side), 900) || null;
+        // Hostile ships take priority over asteroids (unless set to asteroids only).
+        if(missile.targetMode !== 'asteroids' && (!missile.target || missile.target.dead || !missile.target.hullDef)) {
+            const ship = near(combat.hostileShips(missile.side), missile.kind === 'drone' ? 1300 : 900);
+            if(ship) missile.target = ship;
+            else if(missile.target && missile.target.dead) missile.target = null;
         }
     });
 };
@@ -7495,7 +7591,13 @@ const spawnEnemy = (hullId, level, near) => {
         const enemy = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["a" /* createEnemy */])(hullId || Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["c" /* pickEnemyHull */])(state.system.id), level || (Math.random() < 0.35 ? 3 : 2), x, y);
         enemy.angle = Math.atan2(ship.y - y, ship.x - x);
         state.enemies.push(enemy);
-        banner('Hostile ' + enemy.hullDef.name + ' detected (Mk ' + (enemy.level === 3 ? 'III' : 'II') + ')', 2.5);
+        // Death Gliders fly as a pair.
+        if(enemy.hullDef.id === 'glider' && !hullId) {
+            const wing = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["a" /* createEnemy */])('glider', enemy.level, x + 90, y + 60);
+            wing.angle = enemy.angle;
+            state.enemies.push(wing);
+        }
+        banner('Hostile ' + enemy.hullDef.name + (enemy.hullDef.id === 'glider' && !hullId ? ' pair' : '') + ' detected (Mk ' + (enemy.level === 3 ? 'III' : 'II') + ')', 2.5);
         __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].scanPing();
         return enemy;
     }
@@ -7518,7 +7620,7 @@ const updateEnemies = (dt) => {
         const dx = ship.x - enemy.x;
         const dy = ship.y - enemy.y;
         const inRange = target && dx * dx + dy * dy < 3600 * 3600;
-        Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["d" /* updateEnemyAI */])(enemy, dt, inRange ? target : null, state.rocks, combat.missiles.player, avoid);
+        Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["d" /* updateEnemyAI */])(enemy, dt, inRange ? target : null, state.rocks, combat.missiles.player, combat.enemies, avoid);
         enemy.update(dt, enemy.ai.input, state);
     });
 };
@@ -7649,7 +7751,7 @@ const step = (dt) => {
     retargetMissiles(dt);
     state.beamHits.forEach(hit => {
         if(hit.ship) {
-            hit.ship.takeDamage(hit.damage, state.particles, hit.x, hit.y, 'energy', true);
+            hit.ship.takeDamage(hit.damage * __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["b" /* SHIP_DAMAGE */].beam, state.particles, hit.x, hit.y, 'energy', true);
             if(Math.random() < 0.3) {
                 __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.ship.vx, hit.ship.vy, 1, {
                     minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
@@ -7746,7 +7848,7 @@ const step = (dt) => {
     state.sectorTimer -= dt;
     if(state.sectorTimer <= 0) {
         state.sectorTimer = SECTOR_UPDATE_INTERVAL;
-        state.rocks = state.sectors.update(ship.x, ship.y, state.rocks);
+        state.rocks = state.sectors.update(ship.x, ship.y, state.rocks, sectorRadius());
         state.ores = state.ores.filter(ore => Math.abs(ore.x - ship.x) < 5000 && Math.abs(ore.y - ship.y) < 5000);
     }
 
@@ -7797,7 +7899,7 @@ const enterSystem = (system, how) => {
     ship.angularVelocity = 0;
     state.camera.x = ship.x;
     state.camera.y = ship.y;
-    state.rocks = state.sectors.update(ship.x, ship.y, []);
+    state.rocks = state.sectors.update(ship.x, ship.y, [], sectorRadius());
     banner('Arrived at ' + system.name, 2.5);
 };
 
@@ -8975,6 +9077,7 @@ const dock = () => {
         onClose: () => {
             if(!state) return;
             ship.applyStats(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
+            targetZoom = shipZoom();
             ship.shield = ship.maxShield;
             ship.immunity = 1.5;
             state.paused = false;
@@ -9106,6 +9209,19 @@ const initialize = () => {
     });
     Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["d" /* setClickFilter */])(weaponPanelClick);
 
+    // T: what auto-targeting goes for (needs a targeting computer).
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyT', () => {
+        if(!state || state.paused || !state.ship.alive) return false;
+        if(!state.ship.guidance) {
+            banner('Fit a targeting computer to choose targets', 1.6);
+            return true;
+        }
+        const mode = state.ship.cycleTargetMode();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].toggle(true);
+        banner('Targeting: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["c" /* TARGET_MODE_LABEL */][mode], 1.4);
+        return true;
+    });
+
     // N (debug mode only): spawn an enemy ship nearby, for testing.
     Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyN', () => {
         if(!state || state.paused || state.transition || !Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["i" /* isDebug */])()) return false;
@@ -9125,7 +9241,7 @@ const initialize = () => {
     const zoomKey = (event, down) => {
         if(event.code === 'Equal' || event.code === 'NumpadAdd') zoomKeys.in = down;
         if(event.code === 'Minus' || event.code === 'NumpadSubtract') zoomKeys.out = down;
-        if(down && (event.code === 'Digit0' || event.code === 'Numpad0') && state && !state.paused) targetZoom = DEFAULT_ZOOM;
+        if(down && (event.code === 'Digit0' || event.code === 'Numpad0') && state && !state.paused) targetZoom = shipZoom();
     };
     window.addEventListener('keydown', (event) => zoomKey(event, true));
     window.addEventListener('keyup', (event) => zoomKey(event, false));
@@ -9191,6 +9307,7 @@ const initialize = () => {
         touchControls = new __WEBPACK_IMPORTED_MODULE_20__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */], canvas, {
             interact: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyB'),
             toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyG'),
+            cycleTargets: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyT'),
             toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyX'),
             uiTap: weaponPanelClick,
             pause: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('Escape'),
@@ -9230,7 +9347,9 @@ const constructGameBoard = () => {
     __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].unlock();
     resize();
     state = createState();
-    state.rocks = state.sectors.update(state.ship.x, state.ship.y, []);
+    targetZoom = shipZoom();
+    zoom = targetZoom;
+    state.rocks = state.sectors.update(state.ship.x, state.ship.y, [], sectorRadius());
     pauseMenu.style.visibility = 'hidden';
     freeze(false);
     frameId = requestAnimationFrame(frame);
@@ -9351,6 +9470,7 @@ class Missile {
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
         this.side = options.side || 'player';  // whose weapon it is
+        this.targetMode = options.targetMode || 'both';
         this.launchDelay = options.launchDelay || 0;
         this.life = this.profile.lifetime;
         this.trailTimer = 0;
@@ -9377,7 +9497,11 @@ class Missile {
             if(this.target) {
                 const d = Object(__WEBPACK_IMPORTED_MODULE_1__physics_physics__["b" /* delta */])(this, this.target);
                 const desired = Math.atan2(d.y, d.x);
-                const turn = Math.max(-this.homing * dt, Math.min(this.homing * dt, angleDifference(this.angle, desired)));
+                // Turn harder on the final approach so it doesn't circle its target.
+                const distance = Math.sqrt(d.x * d.x + d.y * d.y);
+                const terminal = distance < 320 ? 1 + 2.5 * (1 - distance / 320) : 1;
+                const rate = this.homing * terminal * dt;
+                const turn = Math.max(-rate, Math.min(rate, angleDifference(this.angle, desired)));
                 this.angle += turn;
             }
         }
@@ -9432,6 +9556,7 @@ class Missile {
     }
 
     findTarget(rocks) {
+        if(this.targetMode === 'ships') return null;
         let best = null;
         let bestDist = this.profile.retarget * this.profile.retarget;
         rocks.forEach(rock => {
@@ -9528,11 +9653,11 @@ const loadoutFor = (hull, level) => {
 
 const createEnemy = (hullId, level, x, y) => {
     const hull = __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["b" /* default */][hullId];
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship__["b" /* default */](x, y, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, loadoutFor(hull, level)));
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship__["d" /* default */](x, y, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, loadoutFor(hull, level)));
     ship.side = 'enemy';
     ship.damageScale = ENEMY_DAMAGE;
     ship.autoTarget = false;
-    ship.stabilizer = true;
+    ship.stabilizer = true;   // keeps the AI's flying under control in zero-g
     ship.immunity = 0.6;
     ship.level = level;
     ship.angle = Math.random() * Math.PI * 2;
@@ -9550,7 +9675,10 @@ const createEnemy = (hullId, level, x, y) => {
     // Preferred fighting distance from its weapons.
     const kinds = ship.turrets.map(t => t.kind).concat(ship.launchers.map(l => l.kind));
     ship.ai.range = kinds.indexOf('beam') !== -1 ? 380 : kinds.indexOf('staff') !== -1 || kinds.indexOf('minigun') !== -1 ? 430 : 650;
-    ship.ai.range += hull.radius * 1.5;
+    ship.ai.range += hull.radius * 1.2;
+    // How far its guns are worth firing (bolts and rounds lose accuracy beyond this).
+    ship.ai.gunReach = kinds.indexOf('beam') !== -1 ? 650 : kinds.indexOf('staff') !== -1 ? 700 : 750;
+    ship.ai.gunReach += hull.radius * 0.5;
     // Bounty paid when destroyed.
     ship.bounty = Math.round((150 + hull.cost * 0.12) * (level === 3 ? 1.5 : 1));
     return ship;
@@ -9574,9 +9702,18 @@ const steer = (ship, input, desired) => {
     return error;
 };
 
-// One AI tick: decide how to fly and when to shoot. `target` is the player ship (or null),
-// `avoid` an optional point to keep away from (the Atlantis city shield).
-const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
+// One AI tick: decide how to fly and when to shoot.
+//   target:   the player ship (or null)
+//   rocks:    asteroids to steer around
+//   incoming: the player's missiles and drones (to dodge or shoot down)
+//   friends:  the other enemy ships (to keep formation spacing)
+//   avoid:    optional { x, y, radius } to stay out of (the Atlantis city shield)
+//
+// Fighters make attack runs: charge in firing, break away past the target, swing round and
+// come again, jinking away from missiles. Capital ships hold a standoff distance, circle
+// slowly and let their turrets work. Anyone badly hurt withdraws to recharge shields and
+// comes back.
+const updateEnemyAI = (ship, dt, target, rocks, incoming, friends, avoid) => {
     const ai = ship.ai;
     const input = ai.input;
     input.forward = input.backward = input.strafeLeft = input.strafeRight = false;
@@ -9584,10 +9721,14 @@ const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
     input.lockTarget = null;
     if(!ship.alive) return;
 
+    const fighter = ship.radius < 45;
+    ai.mode = ai.mode || 'attack';
+    ai.modeTimer = (ai.modeTimer || 0) - dt;
+    ai.evadeTimer = (ai.evadeTimer || 0) - dt;
     ai.orbitTimer -= dt;
     if(ai.orbitTimer <= 0) {
         ai.orbit = -ai.orbit;
-        ai.orbitTimer = 2.5 + Math.random() * 3;
+        ai.orbitTimer = 3 + Math.random() * 4;
         ai.aimError = (Math.random() - 0.5) * 0.06;
     }
 
@@ -9596,7 +9737,7 @@ const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
         const ax = ship.x - avoid.x;
         const ay = ship.y - avoid.y;
         const ad = Math.sqrt(ax * ax + ay * ay) || 1;
-        if(ad < avoid.radius) {
+        if(ad < avoid.radius + ship.radius) {
             steer(ship, input, Math.atan2(ay, ax));
             input.forward = true;
             return;
@@ -9604,7 +9745,7 @@ const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
     }
 
     if(!target) {
-        // Patrol: drift slowly on the current heading.
+        ai.mode = 'attack';
         input.forward = Math.random() < 0.02;
         return;
     }
@@ -9612,32 +9753,99 @@ const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
     const dx = target.x - ship.x;
     const dy = target.y - ship.y;
     const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-
-    // Point defence: gun ships shoot at incoming missiles that get close.
-    const threat = incoming.filter(m => !m.dead && (m.x - ship.x) * (m.x - ship.x) + (m.y - ship.y) * (m.y - ship.y) < 320 * 320)[0];
-
-    // Aim with lead for the travel time of its shots, plus a little error.
-    const projectileSpeed = ship.turrets.some(t => t.kind === 'staff') ? 520 : 1100;
-    const aimAt = threat || target;
-    const ex = aimAt.x - ship.x;
-    const ey = aimAt.y - ship.y;
-    const t = Math.sqrt(ex * ex + ey * ey) / projectileSpeed;
-    // Shots don't inherit the shooter's sideways drift, so lead by the target's own motion.
-    const lx = aimAt.x + aimAt.vx * t;
-    const ly = aimAt.y + aimAt.vy * t;
-    const aimAngle = Math.atan2(ly - ship.y, lx - ship.x) + ai.aimError;
-    const aimDist = Math.sqrt((lx - ship.x) * (lx - ship.x) + (ly - ship.y) * (ly - ship.y));
-    input.aimX = ship.x + Math.cos(aimAngle) * aimDist;
-    input.aimY = ship.y + Math.sin(aimAngle) * aimDist;
-
-    // Face the target and hold the preferred range, circling it.
-    const facing = steer(ship, input, Math.atan2(dy, dx));
+    const toTarget = Math.atan2(dy, dx);
     const range = ai.range;
-    if(distance > range * 1.15 && Math.abs(facing) < 0.7) input.forward = true;
-    if(distance < range * 0.6) input.backward = true;
-    if(distance < range * 1.6) {
-        if(ai.orbit > 0) input.strafeRight = true;
-        else input.strafeLeft = true;
+
+    // Badly damaged: withdraw until the shields are back up (or a while has passed).
+    const health = ship.hp / ship.maxHull;
+    if(ai.mode !== 'retreat' && health < 0.3 && ship.maxShield > 0 && !ai.retreated) {
+        ai.mode = 'retreat';
+        ai.modeTimer = 8 + Math.random() * 4;
+        ai.retreated = true;
+    }
+    if(ai.mode === 'retreat') {
+        if(ai.modeTimer <= 0 || (ship.shield > ship.maxShield * 0.8 && distance > 1600)) {
+            ai.mode = 'attack';
+        } else {
+            steer(ship, input, toTarget + Math.PI + ai.orbit * 0.4);
+            input.forward = true;
+            input.firing = distance < range * 1.5;
+            aimAt(ship, ai, input, target);
+            return;
+        }
+    }
+
+    // Dodge: a hostile missile or drone closing in fast makes fighters jink sideways.
+    let threat = null;
+    let threatDistance = Infinity;
+    for(let i = 0; i < incoming.length; i++) {
+        const m = incoming[i];
+        if(m.dead) continue;
+        const mx = ship.x - m.x;
+        const my = ship.y - m.y;
+        const d = Math.sqrt(mx * mx + my * my);
+        if(d > 420 + ship.radius) continue;
+        const closing = (m.vx * mx + m.vy * my) / (d || 1);
+        if(closing > 120 && d < threatDistance) {
+            threat = m;
+            threatDistance = d;
+        }
+    }
+    if(threat && fighter && ai.evadeTimer <= 0) {
+        ai.evadeTimer = 0.7;
+        ai.evadeSide = (threat.vx * (ship.y - threat.y) - threat.vy * (ship.x - threat.x)) > 0 ? 1 : -1;
+    }
+
+    // Aim: gun ships shoot close missiles down, otherwise lead the target.
+    const shootDown = threat && threat.kind === 'missile' && threatDistance < 320 && ship.turrets.some(t => t.kind === 'minigun');
+    aimAt(ship, ai, input, shootDown ? threat : target);
+
+    if(fighter) {
+        // Attack run: charge, break off past the target, swing back round.
+        if(ai.mode === 'attack') {
+            const facing = steer(ship, input, toTarget);
+            input.forward = Math.abs(facing) < 0.8;
+            if(distance < Math.max(160, range * 0.45)) {
+                ai.mode = 'break';
+                ai.modeTimer = 1.1 + Math.random() * 0.8;
+                ai.breakAngle = toTarget + ai.orbit * (0.9 + Math.random() * 0.5);
+            }
+        } else if(ai.mode === 'break') {
+            steer(ship, input, ai.breakAngle);
+            input.forward = true;
+            if(ai.modeTimer <= 0 && distance > range * 0.9) ai.mode = 'attack';
+            if(ai.modeTimer < -3) ai.mode = 'attack';
+        }
+    } else {
+        // Capital ship: hold the standoff distance and circle slowly.
+        ai.mode = 'attack';
+        const far = distance > range * 1.25;
+        const facing = steer(ship, input, toTarget + (far ? 0 : ai.orbit * 0.35));
+        if(distance > range * 1.05 && Math.abs(facing) < 1.2) input.forward = true;
+        if(distance < range * 0.7) input.backward = true;
+        if(distance < range * 1.2) {
+            if(ai.orbit > 0) input.strafeRight = true;
+            else input.strafeLeft = true;
+        }
+    }
+
+    if(ai.evadeTimer > 0) {
+        input.strafeLeft = ai.evadeSide < 0;
+        input.strafeRight = ai.evadeSide > 0;
+    }
+
+    // Spacing: don't pile into other enemy ships.
+    for(let i = 0; i < friends.length; i++) {
+        const other = friends[i];
+        if(other === ship || !other.alive) continue;
+        const ox = other.x - ship.x;
+        const oy = other.y - ship.y;
+        const reach = other.radius + ship.radius + 70;
+        if(ox * ox + oy * oy > reach * reach) continue;
+        const side = Math.cos(ship.angle) * oy - Math.sin(ship.angle) * ox;
+        input.strafeLeft = side > 0;
+        input.strafeRight = side <= 0;
+        break;
     }
 
     // Dodge asteroids in the way.
@@ -9651,25 +9859,42 @@ const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
         const side = Math.cos(ship.angle) * ry - Math.sin(ship.angle) * rx;
         input.strafeLeft = side > 0;
         input.strafeRight = side <= 0;
-        input.forward = false;
+        if(fighter) input.forward = false;
         break;
     }
 
-    // Shoot when in range (turrets swing to the aim point by themselves).
-    input.firing = !!threat || distance < range * 1.7;
+    // Guns only within their real reach (turrets swing to the aim point by themselves).
+    input.firing = !!shootDown || distance - target.radius * 0.8 < ai.gunReach;
 
-    // Missiles and drones in volleys, locked onto the target.
+    // Missiles and drones in volleys, locked onto the target. Drones are held back for
+    // the player's drones when those are in the air.
     ai.missileTimer -= dt;
-    if(ship.launchers.length && ai.missileTimer <= 0 && distance < 1300 && distance > 160) {
+    const playerDrones = incoming.some(m => m.kind === 'drone' && !m.dead);
+    if(ship.launchers.length && (ai.missileTimer <= 0 || playerDrones) && distance < 1400 && distance > 140) {
         input.firingMissiles = true;
         input.lockTarget = target;
         if(ship.launchers.every(l => l.cooldown > 0) || Math.random() < 0.02) {
-            ai.missileTimer = 2.5 + Math.random() * 3;
+            ai.missileTimer = 2 + Math.random() * 3;
         }
     }
 };
 /* harmony export (immutable) */ __webpack_exports__["d"] = updateEnemyAI;
 
+
+// Aim with lead for the travel time of its shots, plus a little error.
+const aimAt = (ship, ai, input, target) => {
+    const projectileSpeed = ship.turrets.some(t => t.kind === 'staff') ? 520 : 1100;
+    const ex = target.x - ship.x;
+    const ey = target.y - ship.y;
+    const t = Math.sqrt(ex * ex + ey * ey) / projectileSpeed;
+    // Shots don't inherit the shooter's sideways drift, so lead by the target's own motion.
+    const lx = target.x + (target.vx || 0) * t;
+    const ly = target.y + (target.vy || 0) * t;
+    const aimAngle = Math.atan2(ly - ship.y, lx - ship.x) + ai.aimError;
+    const aimDist = Math.sqrt((lx - ship.x) * (lx - ship.x) + (ly - ship.y) * (ly - ship.y));
+    input.aimX = ship.x + Math.cos(aimAngle) * aimDist;
+    input.aimY = ship.y + Math.sin(aimAngle) * aimDist;
+};
 
 // Which hulls turn up in each star system (weights), and how many at most at once.
 const SYSTEM_ENEMIES = {
@@ -10066,11 +10291,12 @@ class SectorManager {
     }
 
     // Returns the new active rock list for the ship's position.
-    update(shipX, shipY, rocks) {
+    update(shipX, shipY, rocks, radius) {
         const center = sectorOf(shipX, shipY);
         const wanted = {};
-        for(let dx = -ACTIVE_RADIUS; dx <= ACTIVE_RADIUS; dx++) {
-            for(let dy = -ACTIVE_RADIUS; dy <= ACTIVE_RADIUS; dy++) {
+        const r = radius || ACTIVE_RADIUS;
+        for(let dx = -r; dx <= r; dx++) {
+            for(let dy = -r; dy <= r; dy++) {
                 wanted[(center.sx + dx) + ',' + (center.sy + dy)] = [center.sx + dx, center.sy + dy];
             }
         }

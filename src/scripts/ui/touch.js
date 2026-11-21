@@ -77,6 +77,8 @@ class TouchControls {
         this.autoButton = tap('Auto', 'auto', () => this.actions.toggleAuto());
         cluster.appendChild(this.interactButton);
         cluster.appendChild(this.autoButton);
+        this.modeButton = tap('Targets', 'auto', () => this.actions.cycleTargets());
+        cluster.appendChild(this.modeButton);
         this.stabButton = tap('Stabilize', 'brake', () => this.actions.toggleStabilizer());
         cluster.appendChild(this.stabButton);
         cluster.appendChild(hold('Missile', 'missile', 'missileKey'));
@@ -191,6 +193,9 @@ class TouchControls {
         this.interactButton.style.display = context.interactLabel ? '' : 'none';
         this.interactButton.textContent = context.interactLabel || '';
         this.autoButton.style.display = ship.guidance ? '' : 'none';
+        this.modeButton.style.display = ship.guidance ? '' : 'none';
+        const modeLabel = { both: 'Ships+ Rocks', ships: 'Ships', asteroids: 'Rocks' }[ship.targetMode];
+        if(this.modeButton.textContent !== modeLabel) this.modeButton.textContent = modeLabel;
         this.autoButton.classList.toggle('pressed', !!ship.autoTarget);
         this.stabButton.classList.toggle('pressed', !!ship.stabilizer);
 
