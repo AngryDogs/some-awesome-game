@@ -7038,6 +7038,10 @@ const openDHD = () => {
             gate.dial(target.id, symbols);
             banner('Dialling ' + target.name + '...', 2.5);
         },
+        onCancel: () => {
+            gate.close();
+            banner('Stargate shut down', 1.5);
+        },
         onClose: () => {
             if(!state) return;
             state.paused = false;
@@ -7402,6 +7406,7 @@ const PLASMA_SPEED = 520;
 const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
 const TURRET_TURN_RATE = 14;      // rad/s
 const SALVO_GAP = 0.12;           // s between launchers firing
+const SHIELD_FLASH_TIME = 0.35;   // s the whole shield bubble glows after a hit
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
 const HEAT_COOLING = 0.35;        // minigun heat lost per second
 const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
@@ -7668,7 +7673,8 @@ class Ship {
         const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
         this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
         if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
-        this.shieldFlash = Math.max(this.shieldFlash, 0.1 * strength);
+        // The whole bubble lights up, brighter for harder hits.
+        this.shieldFlash = Math.max(this.shieldFlash, SHIELD_FLASH_TIME * (0.6 + 0.4 * Math.min(1, strength)));
     }
 
     // Ore that hits raised shields burns up and costs a sliver of shield energy.
@@ -8220,7 +8226,7 @@ class Ship {
         this.shield -= absorbed;
         const remaining = amount - absorbed;
         if(absorbed > 0) {
-            this.shieldFlash = 0.25;
+            this.shieldFlash = SHIELD_FLASH_TIME;
             if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
             __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit();
         }
@@ -8334,7 +8340,7 @@ class Ship {
         const strength = Math.max(0.15, this.shield / this.maxShield);
         // Bubble expands outwards when powering up and collapses when lowered.
         const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
-        const flash = Math.max(0, this.shieldFlash) * 3;
+        const flash = Math.max(0, this.shieldFlash) / SHIELD_FLASH_TIME;
         const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
 
         ctx.save();
@@ -8343,6 +8349,27 @@ class Ship {
         const w = sprite.width * grow;
         const h = sprite.height * grow;
         ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+
+        // Hit: the entire shield frame lights up (hex pattern and rim) and fades out.
+        if(flash > 0) {
+            const f = Math.min(1, flash);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = f * 0.9;
+            ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+            ctx.globalAlpha = f * 0.35;
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color), 0, 0, w * 1.15, h * 1.15);
+            ctx.globalAlpha = f;
+            ctx.strokeStyle = 'rgb(' + color + ')';
+            ctx.lineWidth = 2 + 2.5 * f;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, s.rx * grow, s.ry * grow, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = f * 0.8;
+            ctx.strokeStyle = 'rgb(235, 248, 255)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+        }
 
         // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
         if(this.shieldImpacts.length) {
@@ -9522,7 +9549,10 @@ class Stargate {
 
     // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
     dial(targetId, symbols) {
-        if(this.busy) return false;
+        // A gate that is still shutting down can be dialled again straight away.
+        if(this.busy && this.state !== 'closing') return false;
+        if(this.state === 'closing') __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
+        this.wasOpen = false;
         this.state = 'dialing';
         this.outgoing = true;
         this.target = targetId;
@@ -9570,6 +9600,9 @@ class Stargate {
     // `silent`: shut down without the closing sound (the ship has just gone through).
     close(silent) {
         if(this.state === 'idle' || this.state === 'closing') return;
+        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
+        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
+        this.ringOn = false;
         this.state = 'closing';
         this.timer = CLOSE_TIME;
         __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
@@ -9654,7 +9687,7 @@ class Stargate {
         if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
 
         // Event horizon behind the ring.
-        if(this.state === 'open' || this.state === 'closing' || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
+        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
             const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
             this.drawHorizon(ctx, time, fade);
         }
@@ -9966,7 +9999,7 @@ class DHD {
         this.isOpen = true;
         this.root.classList.add('open');
         this.title.textContent = 'Dial-home device · ' + options.systemName;
-        this.say(options.busy ? 'The gate is already active.' : 'Ready.');
+        this.say(options.busy ? 'The gate is active. Press the dome to shut it down.' : 'Ready.');
         this.render();
     }
 
@@ -10022,7 +10055,7 @@ class DHD {
             return;
         }
         if(this.options.busy) {
-            this.say('The gate is already active.', true);
+            this.say('The gate is active. Press the dome to shut it down first.', true);
             return;
         }
         const glyph = this.glyphOf(KEYS[k]);
@@ -10038,8 +10071,15 @@ class DHD {
     }
 
     pressDome() {
+        // With the gate dialling or open, the dome shuts it down so a new address can be
+        // entered.
         if(this.options.busy) {
-            this.say('The gate is already active.', true);
+            __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();
+            if(this.options.onCancel) this.options.onCancel();
+            this.options.busy = false;
+            this.entered = [];
+            this.say('Gate shut down. Enter a new address.');
+            this.render();
             return;
         }
         __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();

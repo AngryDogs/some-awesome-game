@@ -19,6 +19,7 @@ const PLASMA_SPEED = 520;
 const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
 const TURRET_TURN_RATE = 14;      // rad/s
 const SALVO_GAP = 0.12;           // s between launchers firing
+const SHIELD_FLASH_TIME = 0.35;   // s the whole shield bubble glows after a hit
 const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
 const HEAT_COOLING = 0.35;        // minigun heat lost per second
 const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
@@ -285,7 +286,8 @@ class Ship {
         const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
         this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
         if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
-        this.shieldFlash = Math.max(this.shieldFlash, 0.1 * strength);
+        // The whole bubble lights up, brighter for harder hits.
+        this.shieldFlash = Math.max(this.shieldFlash, SHIELD_FLASH_TIME * (0.6 + 0.4 * Math.min(1, strength)));
     }
 
     // Ore that hits raised shields burns up and costs a sliver of shield energy.
@@ -837,7 +839,7 @@ class Ship {
         this.shield -= absorbed;
         const remaining = amount - absorbed;
         if(absorbed > 0) {
-            this.shieldFlash = 0.25;
+            this.shieldFlash = SHIELD_FLASH_TIME;
             if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
             sounds.shieldHit();
         }
@@ -951,7 +953,7 @@ class Ship {
         const strength = Math.max(0.15, this.shield / this.maxShield);
         // Bubble expands outwards when powering up and collapses when lowered.
         const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
-        const flash = Math.max(0, this.shieldFlash) * 3;
+        const flash = Math.max(0, this.shieldFlash) / SHIELD_FLASH_TIME;
         const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
 
         ctx.save();
@@ -960,6 +962,27 @@ class Ship {
         const w = sprite.width * grow;
         const h = sprite.height * grow;
         ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+
+        // Hit: the entire shield frame lights up (hex pattern and rim) and fades out.
+        if(flash > 0) {
+            const f = Math.min(1, flash);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = f * 0.9;
+            ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+            ctx.globalAlpha = f * 0.35;
+            stamp(ctx, glowSprite(color), 0, 0, w * 1.15, h * 1.15);
+            ctx.globalAlpha = f;
+            ctx.strokeStyle = 'rgb(' + color + ')';
+            ctx.lineWidth = 2 + 2.5 * f;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, s.rx * grow, s.ry * grow, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = f * 0.8;
+            ctx.strokeStyle = 'rgb(235, 248, 255)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+        }
 
         // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
         if(this.shieldImpacts.length) {

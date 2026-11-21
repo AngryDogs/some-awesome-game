@@ -55,6 +55,8 @@ fields and ore mix (Abydos is rich in naquadah, Dakara in gold, and so on).
   the six symbols of the destination address and then this gate's point of origin, and press the
   dome. The gate dials (chevrons lock one by one), opens with the kawoosh, and you fly through the
   event horizon. Only ships small enough to fit can use a gate.
+  While the gate is dialling or open, pressing the DHD dome shuts it down so you can dial a
+  new address.
 - **Starmap (M)**: a 3D map of the constellations and worlds. Click a world to see its address: the
   six symbols are three pairs, and the line through each pair passes through the destination.
 - **Hyperdrive**: the X-304, Ha'tak, Asgard and Aurora have one built in, and cruiser-sized ships can

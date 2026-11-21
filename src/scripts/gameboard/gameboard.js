@@ -1956,6 +1956,10 @@ const openDHD = () => {
             gate.dial(target.id, symbols);
             banner('Dialling ' + target.name + '...', 2.5);
         },
+        onCancel: () => {
+            gate.close();
+            banner('Stargate shut down', 1.5);
+        },
         onClose: () => {
             if(!state) return;
             state.paused = false;

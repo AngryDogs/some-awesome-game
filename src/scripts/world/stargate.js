@@ -125,7 +125,10 @@ class Stargate {
 
     // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
     dial(targetId, symbols) {
-        if(this.busy) return false;
+        // A gate that is still shutting down can be dialled again straight away.
+        if(this.busy && this.state !== 'closing') return false;
+        if(this.state === 'closing') sounds.horizon(false);
+        this.wasOpen = false;
         this.state = 'dialing';
         this.outgoing = true;
         this.target = targetId;
@@ -173,6 +176,9 @@ class Stargate {
     // `silent`: shut down without the closing sound (the ship has just gone through).
     close(silent) {
         if(this.state === 'idle' || this.state === 'closing') return;
+        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
+        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
+        this.ringOn = false;
         this.state = 'closing';
         this.timer = CLOSE_TIME;
         sounds.gateSpin(false);
@@ -257,7 +263,7 @@ class Stargate {
         if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
 
         // Event horizon behind the ring.
-        if(this.state === 'open' || this.state === 'closing' || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
+        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
             const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
             this.drawHorizon(ctx, time, fade);
         }

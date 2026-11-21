@@ -110,7 +110,7 @@ class DHD {
         this.isOpen = true;
         this.root.classList.add('open');
         this.title.textContent = 'Dial-home device · ' + options.systemName;
-        this.say(options.busy ? 'The gate is already active.' : 'Ready.');
+        this.say(options.busy ? 'The gate is active. Press the dome to shut it down.' : 'Ready.');
         this.render();
     }
 
@@ -166,7 +166,7 @@ class DHD {
             return;
         }
         if(this.options.busy) {
-            this.say('The gate is already active.', true);
+            this.say('The gate is active. Press the dome to shut it down first.', true);
             return;
         }
         const glyph = this.glyphOf(KEYS[k]);
@@ -182,8 +182,15 @@ class DHD {
     }
 
     pressDome() {
+        // With the gate dialling or open, the dome shuts it down so a new address can be
+        // entered.
         if(this.options.busy) {
-            this.say('The gate is already active.', true);
+            sounds.dhdDome();
+            if(this.options.onCancel) this.options.onCancel();
+            this.options.busy = false;
+            this.entered = [];
+            this.say('Gate shut down. Enter a new address.');
+            this.render();
             return;
         }
         sounds.dhdDome();
