@@ -24,6 +24,12 @@ const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
 const HEAT_COOLING = 0.35;        // minigun heat lost per second
 const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
 
+// Damage types: shields shrug off kinetic rounds and missiles but are drained fast by
+// energy weapons; bare hull is the opposite (armour soaks energy, kinetic punches through).
+const SHIELD_FACTOR = { kinetic: 0.5, energy: 1.5 };
+const HULL_FACTOR = { kinetic: 1.25, energy: 0.6 };
+export const DAMAGE_TYPE = { bullet: 'kinetic', missile: 'kinetic', plasma: 'energy', beam: 'energy', drone: 'energy' };
+
 const HIT_COOLDOWN = 0.25;
 const SHIELD_REGEN_DELAY = 2;
 const SPAWN_IMMUNITY = 2;
@@ -140,6 +146,8 @@ class Ship {
         this.alive = true;
         this.stabilizer = false;   // toggled with X / the Stabilizer button
         this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
+        this.side = 'player';      // 'player' or 'enemy': who its shots can hurt
+        this.damageScale = 1;      // multiplier on the damage its weapons deal
         this.autoTarget = true;
         this.time = 0;
         this.exhaustTimer = 0;
@@ -225,6 +233,11 @@ class Ship {
             spinCW: [[j.bow[0], -j.bow[1], 0, -1], [j.stern[0], j.stern[1], 0, 1]],
             spinCCW: [[j.bow[0], j.bow[1], 0, 1], [j.stern[0], -j.stern[1], 0, -1]]
         };
+    }
+
+    // Lets homing missiles and drones track ships the same way as asteroids.
+    get dead() {
+        return !this.alive;
     }
 
     get shieldUp() {
@@ -348,7 +361,7 @@ class Ship {
         this.shieldImpacts = this.shieldImpacts.filter(impact => impact.life > 0);
 
         this.fly(dt, input, world.particles);
-        this.updateTargeting(input, world.rocks);
+        this.updateTargeting(input, world);
         this.updateTurrets(dt, input, world);
         this.updateLaunchers(dt, input, world);
     }
@@ -508,8 +521,27 @@ class Ship {
         return best;
     }
 
-    // Guidance: pick turret targets and the missile lock.
-    updateTargeting(input, rocks) {
+    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y).
+    nearestOf(x, y, list, range) {
+        let best = null;
+        let bestDist = range * range;
+        list.forEach(item => {
+            if(item.dead) return;
+            const dx = item.x - x;
+            const dy = item.y - y;
+            const distSq = dx * dx + dy * dy;
+            if(distSq < bestDist) {
+                bestDist = distSq;
+                best = item;
+            }
+        });
+        return best;
+    }
+
+    // Guidance: pick turret targets and the missile lock. Kinetic turrets shoot down
+    // incoming missiles first, then hostile ships, then asteroids.
+    updateTargeting(input, world) {
+        const rocks = world.rocks;
         if(!this.guidance) {
             this.missileLock = null;
             this.turrets.forEach(turret => { turret.target = null; });
@@ -517,8 +549,13 @@ class Ship {
         }
 
         const range = this.guidance.range;
-        const nearCursor = this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS);
-        this.missileLock = nearCursor || this.nearestRock(this.x, this.y, rocks, range);
+        const combat = world.combat;
+        const ships = combat ? combat.hostileShips(this.side) : [];
+        const incoming = combat ? combat.hostileMissiles(this.side, 'missile') : [];
+        this.missileLock = this.nearestOf(input.aimX, input.aimY, ships, MISSILE_LOCK_RADIUS * 1.5)
+            || this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS)
+            || this.nearestOf(this.x, this.y, ships, range * 1.6)
+            || this.nearestRock(this.x, this.y, rocks, range);
 
         this.turrets.forEach(turret => {
             if(!this.autoTarget) {
@@ -527,7 +564,9 @@ class Ship {
             }
             const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
             const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
-            turret.target = this.nearestRock(p.x, p.y, rocks, reach);
+            turret.target = (turret.kind === 'minigun' && this.nearestOf(p.x, p.y, incoming, reach))
+                || this.nearestOf(p.x, p.y, ships, reach)
+                || this.nearestRock(p.x, p.y, rocks, reach);
         });
     }
 
@@ -597,13 +636,15 @@ class Ship {
         // sideways drift, so they travel where the turret points.
         const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
         const speed = BULLET_SPEED + inherited;
-        world.bullets.push(new Bullet(
+        const round = new Bullet(
             p.x + Math.cos(turret.aim) * barrel,
             p.y + Math.sin(turret.aim) * barrel,
             dirX * speed,
             dirY * speed,
-            stats.damage
-        ));
+            stats.damage * this.damageScale
+        );
+        round.side = this.side;
+        world.bullets.push(round);
 
         // Equal and opposite reaction.
         const recoil = RECOIL / this.stats.mass;
@@ -637,11 +678,13 @@ class Ship {
         const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
         const speed = PLASMA_SPEED + inherited;
 
-        world.bullets.push(new Bullet(
+        const bolt = new Bullet(
             p.x + dirX * barrel, p.y + dirY * barrel,
             dirX * speed, dirY * speed,
-            stats.damage, 'plasma', stats.splash
-        ));
+            stats.damage * this.damageScale, 'plasma', stats.splash
+        );
+        bolt.side = this.side;
+        world.bullets.push(bolt);
         this.vx -= dirX * RECOIL * 6 / this.stats.mass;
         this.vy -= dirY * RECOIL * 6 / this.stats.mass;
         turret.flash = 0.14;
@@ -681,15 +724,37 @@ class Ship {
         const startX = p.x + dirX * 6 * this.hullDef.moduleScale;
         const startY = p.y + dirY * 6 * this.hullDef.moduleScale;
         const hit = raycastRocks(startX, startY, dirX, dirY, stats.range, world.rocks);
+        // Hostile ships in the way (approximated by a circle) stop the beam first.
+        let shipHit = null;
+        if(world.combat) {
+            world.combat.hostileShips(this.side).forEach(ship => {
+                const r = ship.shieldUp ? Math.max(shieldFor(ship.hullDef).rx, shieldFor(ship.hullDef).ry) * 0.9 : ship.radius * 0.7;
+                const ox = ship.x - startX;
+                const oy = ship.y - startY;
+                const along = ox * dirX + oy * dirY;
+                if(along < 0 || along > hit.distance) return;
+                const side = ox * dirY - oy * dirX;
+                if(Math.abs(side) > r) return;
+                const distance = Math.max(0, along - Math.sqrt(r * r - side * side));
+                if(distance < hit.distance) {
+                    hit.distance = distance;
+                    hit.rock = null;
+                    shipHit = ship;
+                }
+            });
+        }
         const endX = startX + dirX * hit.distance;
         const endY = startY + dirY * hit.distance;
 
-        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!hit.rock };
+        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!(hit.rock || shipHit) };
         this.firing = true;
         this.beaming = true;
 
         if(hit.rock) {
             world.beamHits.push({ rock: hit.rock, damage: stats.dps * dt, x: endX, y: endY, dirX: dirX, dirY: dirY });
+        }
+        if(shipHit) {
+            world.beamHits.push({ ship: shipHit, damage: stats.dps * dt * this.damageScale, x: endX, y: endY, dirX: dirX, dirY: dirY });
         }
     }
 
@@ -723,7 +788,8 @@ class Ship {
     fireMissile(launcher, input, world) {
         const stats = launcher.module.stats;
         const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-        const target = this.guidance ? this.missileLock : null;
+        // Enemy pilots always lock their missiles onto their target.
+        const target = this.guidance ? this.missileLock : (input.lockTarget || null);
         const aimAt = target ? delta(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
         const angle = Math.atan2(aimAt.y, aimAt.x);
 
@@ -733,10 +799,11 @@ class Ship {
             vx: this.vx + Math.cos(angle) * 120,
             vy: this.vy + Math.sin(angle) * 120,
             angle: angle,
-            damage: stats.damage,
+            damage: stats.damage * this.damageScale,
             blast: stats.blast,
             target: target,
-            homing: this.guidance ? this.guidance.homing : 0
+            homing: this.guidance ? this.guidance.homing : (input.lockTarget ? 2.4 : 0),
+            side: this.side
         }));
         launcher.cooldown = stats.cooldown;
         sounds.missileLaunch();
@@ -745,7 +812,12 @@ class Ship {
     // Ancient drones: a salvo of drones launched one after another in a stream.
     fireDrones(launcher, input, world) {
         const stats = launcher.module.stats;
-        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        // Drones go for hostile drones first (only drones can stop drones), then the lock.
+        const combat = world.combat;
+        const drones = combat ? combat.hostileMissiles(this.side, 'drone') : [];
+        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget || this.missileLock
+            || (combat && this.nearestOf(input.aimX, input.aimY, combat.hostileShips(this.side), 250))
+            || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
         launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
         launcher.cooldown = stats.cooldown;
     }
@@ -774,10 +846,11 @@ class Ship {
             vx: this.vx + Math.cos(angle) * 220,
             vy: this.vy + Math.sin(angle) * 220,
             angle: angle,
-            damage: stats.damage,
+            damage: stats.damage * this.damageScale,
             blast: stats.blast,
             target: target,
-            homing: 7
+            homing: 7,
+            side: this.side
         }));
         sounds.droneLaunch();
 
@@ -828,27 +901,39 @@ class Ship {
     }
 
     // Returns true if damage was applied.
-    takeDamage(amount, particles, hitX, hitY) {
-        if(!this.alive || this.hitCooldown > 0 || this.immunity > 0) return false;
-
-        this.hitCooldown = HIT_COOLDOWN;
+    // Returns true if damage was applied. `type` ('kinetic' / 'energy') marks a weapon hit:
+    // weapons ignore the short knock cooldown used for collisions, and shields / hull resist
+    // them differently. `quiet` skips the per-hit debris and sounds (continuous beams).
+    takeDamage(amount, particles, hitX, hitY, type, quiet) {
+        if(!this.alive || this.immunity > 0) return false;
+        if(!type && this.hitCooldown > 0) return false;
+        if(!type) this.hitCooldown = HIT_COOLDOWN;
         this.sinceHit = 0;
 
-        // Lowered shields don't absorb anything.
-        const absorbed = this.shieldUp ? Math.min(this.shield, amount) : 0;
-        this.shield -= absorbed;
-        const remaining = amount - absorbed;
-        if(absorbed > 0) {
-            this.shieldFlash = SHIELD_FLASH_TIME;
-            if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
-            sounds.shieldHit();
+        const shieldFactor = type ? SHIELD_FACTOR[type] : 1;
+        const hullFactor = type ? HULL_FACTOR[type] : 1;
+        // Lowered shields don't absorb anything. The shield pays `shieldFactor` per point.
+        let remaining = amount;
+        if(this.shieldUp) {
+            const absorbed = Math.min(amount, this.shield / shieldFactor);
+            this.shield = Math.max(0, this.shield - absorbed * shieldFactor);
+            remaining = amount - absorbed;
+            if(absorbed > 0) {
+                this.shieldFlash = SHIELD_FLASH_TIME;
+                if(!quiet || Math.random() < 0.08) {
+                    if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
+                    sounds.shieldHit(type ? 1 + absorbed / 25 : 0.4 + absorbed / 25);
+                }
+            }
         }
 
         if(remaining > 0) {
-            this.hp -= remaining;
+            this.hp -= remaining * hullFactor;
             this.hullFlash = 0.15;
-            this.explode(particles, 10 + Math.round(remaining / 2));
-            sounds.hullHit();
+            if(!quiet || Math.random() < 0.08) {
+                this.explode(particles, Math.min(30, 6 + Math.round(remaining / 2)));
+                sounds.hullHit();
+            }
         }
 
         if(this.hp <= 0) {

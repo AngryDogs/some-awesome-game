@@ -45,6 +45,25 @@ on launch where the browser allows it):
 - Shields, cargo hold and starmap buttons sit on the left under the HUD. The starmap rotates by
   dragging and zooms by pinching; the DHD is tapped glyph by glyph.
 
+## Enemy ships
+
+Hostile ships turn up from time to time (never near Atlantis): Death Gliders, Al'kesh and
+Ha'tak in Goa'uld space, rogue F-302s, X-303s and Jumpers elsewhere, and the odd X-304,
+Aurora or Asgard ship around Othala. They use the same hulls as you, fitted at Mk II or fully
+upgraded (Mk III), and carry their faction's weapons. They show red brackets with hull and
+shield bars, red arrows at the screen edge and red contacts on the sensor map. Destroying one
+pays a bounty; they can destroy you too.
+
+- **Damage types**: miniguns and missiles are *kinetic*; staff cannons, Asgard beams and
+  drones are *energy*. Shields are strong against kinetic hits (they lose half as much) but
+  drain fast under energy fire (x1.5); bare hull is the opposite (energy x0.6, kinetic x1.25).
+- **Missile defence**: incoming missiles can be shot down with minigun fire, or caught in the
+  blast of your own missiles. With a targeting computer, miniguns shoot at incoming missiles
+  automatically before anything else.
+- **Drones** can only be stopped by drones: your drones hunt incoming drones first and
+  destroy them on contact or with their blast.
+- Debug mode: press **N** to spawn an enemy nearby.
+
 ## Travel
 
 The galaxy has several star systems: **Lantea** (Atlantis, the shipyard and ore market), **Earth**,

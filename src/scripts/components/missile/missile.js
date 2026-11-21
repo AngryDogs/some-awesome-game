@@ -29,6 +29,7 @@ class Missile {
         this.blast = options.blast;
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
+        this.side = options.side || 'player';  // whose weapon it is
         this.launchDelay = options.launchDelay || 0;
         this.life = this.profile.lifetime;
         this.trailTimer = 0;

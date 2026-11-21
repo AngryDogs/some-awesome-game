@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 13);
+/******/ 	return __webpack_require__(__webpack_require__.s = 14);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -371,1418 +371,6 @@ const gravityAt = (body, attractors) => {
 
 /***/ }),
 /* 3 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// All game sounds. The engine and thruster loops use the recorded samples; weapons,
-// impacts and effects are synthesized with the Web Audio API.
-//
-// Every sound is layered (a sub-bass "body", a mid punch and a noisy transient) and
-// runs through a compressor; heavy weapons also send into a generated reverb so shots
-// and explosions have a big, rolling tail instead of a thin "toy" blip.
-
-const createLoop = (src, volume) => {
-    const audio = new Audio(src);
-    audio.loop = true;
-    audio.volume = volume;
-    return audio;
-};
-
-const thrusterSound = createLoop('./assets/sounds/thrust.mp3', 0.5);
-const engineSound = createLoop('./assets/sounds/engine.mp3', 0.18);
-const explosionSound = new Audio('./assets/sounds/explosion2.mp3');
-
-// play() returns a promise that rejects when autoplay is blocked; ignore it.
-const safePlay = (audio) => {
-    const result = audio.play();
-    if(result && result.catch) result.catch(() => {});
-};
-
-const setLooping = (audio, on) => {
-    if(on && audio.paused) safePlay(audio);
-    if(!on && !audio.paused) {
-        audio.pause();
-        audio.currentTime = 0;
-    }
-};
-
-const playOneShot = (audio, volume) => {
-    audio.volume = Math.max(0, Math.min(1, volume));
-    audio.currentTime = 0;
-    safePlay(audio);
-};
-
-// ------------------------------------------------------------ Web Audio graph
-
-let ac = null;
-let master = null;      // dry bus -> compressor -> speakers
-let reverb = null;      // wet bus -> convolver -> compressor
-let drive = null;       // weapon bus -> saturation -> bass boost -> master (aggressive, heavy)
-let noiseBuffer = null;
-const lastPlayed = {};
-
-// Decaying stereo noise: a cheap but convincing "big hangar / space" reverb.
-const createImpulse = (c, seconds, decay) => {
-    const length = Math.floor(c.sampleRate * seconds);
-    const impulse = c.createBuffer(2, length, c.sampleRate);
-    for(let channel = 0; channel < 2; channel++) {
-        const data = impulse.getChannelData(channel);
-        for(let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
-    }
-    return impulse;
-};
-
-const context = () => {
-    if(ac) return ac;
-    try {
-        ac = new (window.AudioContext || window.webkitAudioContext)();
-
-        const compressor = ac.createDynamicsCompressor();
-        compressor.threshold.value = -20;
-        compressor.knee.value = 12;
-        compressor.ratio.value = 5;
-        compressor.attack.value = 0.003;
-        compressor.release.value = 0.25;
-        const output = ac.createGain();
-        output.gain.value = 0.9;
-        compressor.connect(output);
-        output.connect(ac.destination);
-
-        master = ac.createGain();
-        master.gain.value = 0.7;
-        master.connect(compressor);
-
-        // Weapon bus: soft-clipping saturation thickens and roughens everything, and a
-        // low-shelf boost adds chest-thumping weight.
-        const shaper = ac.createWaveShaper();
-        const curve = new Float32Array(2048);
-        for(let i = 0; i < curve.length; i++) {
-            const x = i / (curve.length - 1) * 2 - 1;
-            curve[i] = Math.tanh(x * 3.2) / Math.tanh(3.2);
-        }
-        shaper.curve = curve;
-        shaper.oversample = '2x';
-        const lowShelf = ac.createBiquadFilter();
-        lowShelf.type = 'lowshelf';
-        lowShelf.frequency.value = 140;
-        lowShelf.gain.value = 7;
-        const tame = ac.createBiquadFilter();
-        tame.type = 'lowpass';
-        tame.frequency.value = 7000;
-        drive = ac.createGain();
-        drive.gain.value = 0.9;
-        drive.connect(shaper);
-        shaper.connect(lowShelf);
-        lowShelf.connect(tame);
-        tame.connect(master);
-
-        const convolver = ac.createConvolver();
-        convolver.buffer = createImpulse(ac, 2.4, 3);
-        reverb = ac.createGain();
-        reverb.gain.value = 0.55;
-        reverb.connect(convolver);
-        convolver.connect(compressor);
-
-        noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
-        const data = noiseBuffer.getChannelData(0);
-        for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-        loadSamples(ac);
-    } catch(e) {
-        ac = null;
-    }
-    return ac;
-};
-
-// Limits how often one effect can retrigger, so rapid events don't turn into noise.
-const throttle = (name, seconds) => {
-    const c = context();
-    if(!c) return null;
-    if(lastPlayed[name] && c.currentTime - lastPlayed[name] < seconds) return null;
-    lastPlayed[name] = c.currentTime;
-    return c;
-};
-
-// Gain envelope feeding the dry bus, plus an optional reverb send (`wet` 0..1).
-// Gain envelope feeding the dry bus (or the weapon `drive` bus when `driven`), plus an
-// optional reverb send (`wet` 0..1).
-const envelope = (c, peak, attack, decay, wet, driven) => {
-    const gain = c.createGain();
-    const now = c.currentTime;
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + attack);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay);
-    gain.connect(driven ? drive : master);
-    if(wet) {
-        const send = c.createGain();
-        send.gain.value = wet;
-        gain.connect(send);
-        send.connect(reverb);
-    }
-    return gain;
-};
-
-// Shorthand for weapon layers: always through the saturating drive bus.
-const heavy = (c, peak, attack, decay, wet) => envelope(c, peak, attack, decay, wet, true);
-
-const tone = (c, type, from, to, duration, output) => {
-    const osc = c.createOscillator();
-    const now = c.currentTime;
-    osc.type = type;
-    osc.frequency.setValueAtTime(from, now);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
-    osc.connect(output);
-    osc.start(now);
-    osc.stop(now + duration + 0.05);
-    return osc;
-};
-
-const noise = (c, duration, filterType, from, to, output, q) => {
-    const source = c.createBufferSource();
-    source.buffer = noiseBuffer;
-    const filter = c.createBiquadFilter();
-    const now = c.currentTime;
-    filter.type = filterType;
-    filter.Q.value = q || 1;
-    filter.frequency.setValueAtTime(from, now);
-    filter.frequency.exponentialRampToValueAtTime(Math.max(20, to), now + duration);
-    source.connect(filter);
-    filter.connect(output);
-    source.start(now, Math.random() * 0.5);
-    source.stop(now + duration + 0.05);
-};
-
-// Deep layered detonation used by missiles, drones and big impacts.
-const boom = (c, size, wet) => {
-    tone(c, 'sine', 80 + 20 / size, 24, 1.3 * size, heavy(c, 0.7, 0.003, 1.3 * size, wet));
-    tone(c, 'sawtooth', 120, 32, 0.5 * size, heavy(c, 0.25, 0.002, 0.5 * size, wet * 0.5));
-    noise(c, 1.5 * size, 'lowpass', 1800, 50, heavy(c, 0.6, 0.002, 1.5 * size, wet));
-    noise(c, 0.35, 'bandpass', 2500, 500, envelope(c, 0.12, 0.002, 0.3, wet), 1.2);
-};
-
-// Random pitch variation so rapid fire never sounds like the same sample repeating.
-const vary = (amount) => 1 + (Math.random() - 0.5) * 2 * amount;
-
-// Ring-modulated tone: a carrier multiplied by a modulator gives the buzzing,
-// electric timbre of energy weapons (instead of a clean "beep").
-const ringTone = (c, type, from, to, modFrequency, duration, output) => {
-    const carrier = c.createOscillator();
-    const modulator = c.createOscillator();
-    const ring = c.createGain();
-    const now = c.currentTime;
-    carrier.type = type;
-    carrier.frequency.setValueAtTime(from, now);
-    carrier.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
-    modulator.type = 'square';
-    modulator.frequency.value = modFrequency;
-    ring.gain.value = 0;
-    modulator.connect(ring.gain);
-    carrier.connect(ring);
-    ring.connect(output);
-    carrier.start(now);
-    modulator.start(now);
-    carrier.stop(now + duration + 0.05);
-    modulator.stop(now + duration + 0.05);
-};
-
-// Band-passed noise whose centre frequency sweeps: whooshes and "tsew" sounds.
-const sweep = (c, duration, from, to, q, output) => noise(c, duration, 'bandpass', from, to, output, q);
-
-// Short metallic "tang": two inharmonic partials through a resonant band-pass.
-const metal = (c, base, duration, output) => {
-    const filter = c.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = base * 1.3;
-    filter.Q.value = 9;
-    filter.connect(output);
-    tone(c, 'square', base, base * 0.97, duration, filter);
-    tone(c, 'square', base * 1.37, base * 1.33, duration, filter);
-};
-
-// ------------------------------------------------------------ sustained voices
-
-const createVoice = (build) => {
-    let voice = null;
-    return {
-        start(level) {
-            const c = context();
-            if(!c) return;
-            if(!voice) voice = build(c);
-            const target = Math.max(0.0001, level === undefined ? 1 : level) * voice.peak;
-            voice.gain.gain.cancelScheduledValues(c.currentTime);
-            voice.gain.gain.setTargetAtTime(target, c.currentTime, 0.08);
-        },
-        stop() {
-            if(!voice || !ac) return;
-            const v = voice;
-            voice = null;
-            const now = ac.currentTime;
-            v.gain.gain.cancelScheduledValues(now);
-            v.gain.gain.setTargetAtTime(0.0001, now, 0.06);
-            v.nodes.forEach(n => n.stop(now + 0.4));
-        }
-    };
-};
-
-// Asgard beam: detuned saws through a wobbling band-pass, a sub-bass drone and crackle.
-const beamVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(drive);
-    const send = c.createGain();
-    send.gain.value = 0.3;
-    gain.connect(send);
-    send.connect(reverb);
-
-    const filter = c.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 800;
-    filter.Q.value = 2.5;
-    filter.connect(gain);
-    const lfo = c.createOscillator();
-    const lfoGain = c.createGain();
-    lfo.frequency.value = 7.5;
-    lfoGain.gain.value = 520;
-    lfo.connect(lfoGain);
-    lfoGain.connect(filter.frequency);
-
-    const a = c.createOscillator();
-    const b = c.createOscillator();
-    a.type = b.type = 'sawtooth';
-    a.frequency.value = 146;
-    b.frequency.value = 148.6;
-    a.connect(filter);
-    b.connect(filter);
-
-    const sub = c.createOscillator();
-    const subGain = c.createGain();
-    sub.type = 'sine';
-    sub.frequency.value = 55;
-    subGain.gain.value = 0.9;
-    sub.connect(subGain);
-    subGain.connect(gain);
-
-    const crackle = c.createBufferSource();
-    crackle.buffer = noiseBuffer;
-    crackle.loop = true;
-    const crackleFilter = c.createBiquadFilter();
-    crackleFilter.type = 'highpass';
-    crackleFilter.frequency.value = 3500;
-    const crackleGain = c.createGain();
-    crackleGain.gain.value = 0.25;
-    crackle.connect(crackleFilter);
-    crackleFilter.connect(crackleGain);
-    crackleGain.connect(gain);
-
-    const nodes = [a, b, lfo, sub, crackle];
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.2 };
-});
-
-// Minigun "BRRRT": a low, distorted growl chopped at the rate of fire, layered under
-// the individual rounds while the guns are firing.
-const minigunVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(drive);
-
-    const chop = c.createGain();
-    chop.gain.value = 0.5;
-    chop.connect(gain);
-    const rate = c.createOscillator();
-    const depth = c.createGain();
-    rate.type = 'square';
-    rate.frequency.value = 17;
-    depth.gain.value = 0.5;
-    rate.connect(depth);
-    depth.connect(chop.gain);
-
-    const filter = c.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 520;
-    filter.Q.value = 2;
-    filter.connect(chop);
-    const a = c.createOscillator();
-    const b = c.createOscillator();
-    a.type = 'sawtooth';
-    b.type = 'square';
-    a.frequency.value = 48;
-    b.frequency.value = 97;
-    a.connect(filter);
-    b.connect(filter);
-
-    const rumble = c.createBufferSource();
-    rumble.buffer = noiseBuffer;
-    rumble.loop = true;
-    const rumbleFilter = c.createBiquadFilter();
-    rumbleFilter.type = 'lowpass';
-    rumbleFilter.frequency.value = 300;
-    rumble.connect(rumbleFilter);
-    rumbleFilter.connect(chop);
-
-    const nodes = [a, b, rate, rumble];
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.28 };
-});
-
-// Tractor beam: a soft shimmering chord over a breathy, slowly sweeping "air" layer.
-const tractorVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(master);
-    const send = c.createGain();
-    send.gain.value = 0.4;
-    gain.connect(send);
-    send.connect(reverb);
-
-    const tremolo = c.createGain();
-    tremolo.gain.value = 0.7;
-    tremolo.connect(gain);
-    const lfo = c.createOscillator();
-    const lfoGain = c.createGain();
-    lfo.frequency.value = 6;
-    lfoGain.gain.value = 0.3;
-    lfo.connect(lfoGain);
-    lfoGain.connect(tremolo.gain);
-
-    const nodes = [lfo];
-    [[220, 0.5], [330, 0.35], [440.8, 0.25], [659, 0.12]].forEach(pair => {
-        const osc = c.createOscillator();
-        const g = c.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = pair[0];
-        g.gain.value = pair[1];
-        osc.connect(g);
-        g.connect(tremolo);
-        nodes.push(osc);
-    });
-
-    const air = c.createBufferSource();
-    air.buffer = noiseBuffer;
-    air.loop = true;
-    const airFilter = c.createBiquadFilter();
-    airFilter.type = 'bandpass';
-    airFilter.Q.value = 6;
-    airFilter.frequency.value = 900;
-    const sweep = c.createOscillator();
-    const sweepGain = c.createGain();
-    sweep.frequency.value = 0.7;
-    sweepGain.gain.value = 500;
-    sweep.connect(sweepGain);
-    sweepGain.connect(airFilter.frequency);
-    const airGain = c.createGain();
-    airGain.gain.value = 0.35;
-    air.connect(airFilter);
-    airFilter.connect(airGain);
-    airGain.connect(gain);
-    nodes.push(air, sweep);
-
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.09 };
-});
-
-// ------------------------------------------------------------ public API
-
-// ------------------------------------------------------------ recorded samples
-//
-// Stargate, weapon and ship sounds from the Stargate Carter Addon Pack (CAP) resources
-// (https://github.com/RafaelDeJongh/cap_resources, CC BY-NC-SA 4.0, see
-// assets/sounds/cap/CREDITS.txt). Until a sample has been decoded (or if it fails to),
-// the synthesized version plays.
-
-const SAMPLE_FILES = {
-    dhd_press: ['stargate/dhd/sg1/press.mp3', 'stargate/dhd/sg1/press_2.mp3', 'stargate/dhd/sg1/press_3.mp3',
-        'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
-    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.mp3'],
-    dial_fail: ['stargate/dial_fail_sg1.mp3'],
-    // Same files CAP's Milky Way gate uses for a DHD dial (stargate_sg1, event_horizon).
-    gate_spin: ['alexalx/stargate/gate_roll_long.mp3'],
-    chevron: ['stargate/chevron_dhd.mp3'],
-    chevron_lock: ['stargate/chevron_lock.mp3'],
-    kawoosh: ['stargate/sg1/open.mp3'],
-    horizon: ['stargate/wormhole_loop.wav'],
-    gate_enter: ['stargate/teleport.mp3', 'stargate/teleport_2.mp3', 'stargate/teleport_3.mp3', 'stargate/teleport_4.mp3'],
-    wormhole: ['stargate/gate_travel.mp3'],
-    gate_close: ['stargate/gate_close.mp3'],
-    hyper_window: ['tech/hyperwindow.mp3'],
-    railgun: ['weapons/railgun_shoot.wav'],
-    staff: ['pulse_weapon/staff_weapon.mp3'],
-    missile: ['f302/missilefire.mp3'],
-    drone: ['weapons/drone_shot.mp3'],
-    asgard_beam: ['weapons/asgard_beam.mp3'],
-    shield_hit: ['shields/shield_hit.mp3'],
-    shield_up: ['shields/shield_engage.mp3'],
-    shield_down: ['shields/shield_disengage.mp3'],
-    door: ['door/atlantis_door_open.mp3'],
-    button: ['button/ancient_button1.wav', 'button/ancient_button2.wav'],
-    scan: ['glebqip/tracking.wav'],
-    ship_explosion: ['jumper/jumperexplosion.mp3']
-};
-const LOOPING_SAMPLES = { gate_spin: true, horizon: true };
-const buffers = {};
-const loops = {};
-const lastShots = {};
-let samplesRequested = false;
-
-// The sound files are packed into assets/sounds/cap-sounds.js (tools/pack-sounds.js), a
-// local script that sets window.CAP_SOUNDS, so nothing is fetched and it also works when
-// index.html is opened from disk. Each sound is decoded once into a Web Audio buffer, which
-// is cheap to play any number of times.
-const toArrayBuffer = (base64) => {
-    const binary = window.atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes.buffer;
-};
-
-function loadSamples(c) {
-    if(samplesRequested) return;
-    const packed = window.CAP_SOUNDS;
-    if(!packed) {
-        // The sound script is still loading: try again shortly.
-        setTimeout(() => loadSamples(c), 300);
-        return;
-    }
-    samplesRequested = true;
-    // Decode one file at a time so starting the game doesn't stall.
-    const queue = [];
-    Object.keys(SAMPLE_FILES).forEach(name => {
-        buffers[name] = [];
-        SAMPLE_FILES[name].forEach((file, i) => { if(packed[file]) queue.push([name, i, file]); });
-    });
-    const next = () => {
-        const item = queue.shift();
-        if(!item) {
-            window.CAP_SOUNDS = null;   // free the encoded copies
-            return;
-        }
-        const done = (buffer) => {
-            if(buffer) buffers[item[0]][item[1]] = buffer;
-            setTimeout(next, 0);
-        };
-        try {
-            // Callback form: older Safari has no promise-returning decodeAudioData.
-            c.decodeAudioData(toArrayBuffer(packed[item[2]]), done, () => done(null));
-        } catch(e) {
-            done(null);
-        }
-    };
-    next();
-}
-
-// Play sample `name` (a random variant, or options.variant). Returns false if it isn't
-// loaded yet so the caller can fall back to the synthesized sound.
-//   options: { variant, rate, wet (reverb send 0..1) }
-const playSample = (name, volume, options) => {
-    const list = buffers[name];
-    if(!ac || !list) return false;
-    const opts = options || {};
-    const count = SAMPLE_FILES[name].length;
-    const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
-    const buffer = list[index] || list.filter(Boolean)[0];
-    const level = volume === undefined ? 0.9 : volume;
-    if(!buffer) return false;
-
-    if(LOOPING_SAMPLES[name]) {
-        const playing = loops[name];
-        if(playing) {
-            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
-            return true;
-        }
-    }
-    const source = ac.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = opts.rate || 1;
-    const gain = ac.createGain();
-    gain.gain.value = level;
-    source.connect(gain);
-    gain.connect(master);
-    if(opts.wet) {
-        const send = ac.createGain();
-        send.gain.value = opts.wet;
-        gain.connect(send);
-        send.connect(reverb);
-    }
-    if(LOOPING_SAMPLES[name]) {
-        source.loop = true;
-        loops[name] = { source: source, gain: gain };
-    } else {
-        lastShots[name] = { source: source, gain: gain };
-    }
-    source.start();
-    return true;
-};
-
-// Fade out the most recent one-shot of `name` (e.g. the wormhole ride on arrival).
-const cutSample = (name, fade) => {
-    const shot = lastShots[name];
-    if(!shot || !ac) return;
-    delete lastShots[name];
-    shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
-    try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
-};
-
-const stopSample = (name) => {
-    const playing = loops[name];
-    if(!playing || !ac) return;
-    delete loops[name];
-    playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
-    try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
-};
-
-// Grinding rumble of the inner ring turning.
-const gateSpinVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(drive);
-    const grind = c.createBufferSource();
-    grind.buffer = noiseBuffer;
-    grind.loop = true;
-    const band = c.createBiquadFilter();
-    band.type = 'bandpass';
-    band.frequency.value = 220;
-    band.Q.value = 1.5;
-    grind.connect(band);
-    band.connect(gain);
-    const motor = c.createOscillator();
-    const motorGain = c.createGain();
-    motor.type = 'sawtooth';
-    motor.frequency.value = 46;
-    motorGain.gain.value = 0.35;
-    motor.connect(motorGain);
-    motorGain.connect(gain);
-    const wobble = c.createOscillator();
-    const wobbleGain = c.createGain();
-    wobble.frequency.value = 7;
-    wobbleGain.gain.value = 60;
-    wobble.connect(wobbleGain);
-    wobbleGain.connect(band.frequency);
-    const nodes = [grind, motor, wobble];
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.35 };
-});
-
-// Deep, watery hum of an open event horizon.
-const horizonVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(master);
-    const send = c.createGain();
-    send.gain.value = 0.5;
-    gain.connect(send);
-    send.connect(reverb);
-    const a = c.createOscillator();
-    const b = c.createOscillator();
-    a.type = 'sine';
-    b.type = 'triangle';
-    a.frequency.value = 62;
-    b.frequency.value = 93.5;
-    const lfo = c.createOscillator();
-    const lfoGain = c.createGain();
-    lfo.frequency.value = 0.8;
-    lfoGain.gain.value = 0.35;
-    const mod = c.createGain();
-    mod.gain.value = 0.65;
-    lfo.connect(lfoGain);
-    lfoGain.connect(mod.gain);
-    a.connect(mod);
-    b.connect(mod);
-    mod.connect(gain);
-    const water = c.createBufferSource();
-    water.buffer = noiseBuffer;
-    water.loop = true;
-    const waterFilter = c.createBiquadFilter();
-    waterFilter.type = 'bandpass';
-    waterFilter.frequency.value = 500;
-    waterFilter.Q.value = 4;
-    const sweep2 = c.createOscillator();
-    const sweepGain = c.createGain();
-    sweep2.frequency.value = 0.35;
-    sweepGain.gain.value = 250;
-    sweep2.connect(sweepGain);
-    sweepGain.connect(waterFilter.frequency);
-    const waterGain = c.createGain();
-    waterGain.gain.value = 0.25;
-    water.connect(waterFilter);
-    waterFilter.connect(waterGain);
-    waterGain.connect(gain);
-    const nodes = [a, b, lfo, water, sweep2];
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.3 };
-});
-
-// Roaring rumble while travelling in hyperspace.
-const hyperVoice = createVoice(c => {
-    const gain = c.createGain();
-    gain.gain.value = 0.0001;
-    gain.connect(drive);
-    const roar = c.createBufferSource();
-    roar.buffer = noiseBuffer;
-    roar.loop = true;
-    const low = c.createBiquadFilter();
-    low.type = 'lowpass';
-    low.frequency.value = 380;
-    roar.connect(low);
-    low.connect(gain);
-    const tone1 = c.createOscillator();
-    const toneGain = c.createGain();
-    tone1.type = 'sine';
-    tone1.frequency.value = 55;
-    toneGain.gain.value = 0.5;
-    tone1.connect(toneGain);
-    toneGain.connect(gain);
-    const nodes = [roar, tone1];
-    nodes.forEach(n => n.start());
-    return { gain: gain, nodes: nodes, peak: 0.3 };
-});
-
-const gateSounds = {
-    // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
-    dhdPress(index) {
-        if(playSample('dhd_press', 0.9, { rate: 0.97 + Math.random() * 0.06 })) return;
-        const c = context();
-        if(!c) return;
-        const f = 520 + (index % 13) * 22;
-        tone(c, 'sine', f * 1.25, f, 0.18, envelope(c, 0.16, 0.004, 0.18, 0.3));
-        tone(c, 'triangle', f * 0.5, f * 0.48, 0.12, envelope(c, 0.08, 0.002, 0.12, 0.2));
-        noise(c, 0.02, 'highpass', 5000, 4000, envelope(c, 0.05, 0.001, 0.02));
-    },
-
-    // Pressing the big dome: a heavy, rising activation tone.
-    dhdDome() {
-        if(playSample('dhd_dome', 0.9)) return;
-        const c = context();
-        if(!c) return;
-        tone(c, 'sine', 140, 320, 0.5, heavy(c, 0.4, 0.01, 0.5, 0.5));
-        tone(c, 'triangle', 560, 880, 0.4, envelope(c, 0.08, 0.01, 0.4, 0.5));
-        noise(c, 0.08, 'lowpass', 1200, 300, heavy(c, 0.25, 0.001, 0.08));
-    },
-
-    dialFail() {
-        if(playSample('dial_fail', 0.9)) return;
-        const c = context();
-        if(!c) return;
-        tone(c, 'square', 160, 150, 0.45, heavy(c, 0.18, 0.005, 0.45, 0.3));
-        tone(c, 'square', 113, 110, 0.45, heavy(c, 0.14, 0.005, 0.45, 0.3));
-    },
-
-    gateSpin(on) {
-        if(!on) {
-            stopSample('gate_spin');
-            gateSpinVoice.stop();
-            return;
-        }
-        if(!playSample('gate_spin', 0.9, { rate: 0.97 })) gateSpinVoice.start();
-    },
-
-    // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
-    chevronLock(final) {
-        // CAP plays each with a random pitch of 97-104%.
-        if(playSample(final ? 'chevron_lock' : 'chevron', 1, { rate: 0.97 + Math.random() * 0.07 })) return;
-        const c = context();
-        if(!c) return;
-        noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
-        tone(c, 'sine', 120, 45, 0.35, heavy(c, 0.7, 0.002, 0.35, 0.4));
-        [310, 467, 692, 1010].forEach((f, i) => {
-            tone(c, 'sine', f, f * 0.995, 0.9 - i * 0.15, envelope(c, 0.06 / (i + 1), 0.003, 0.9 - i * 0.15, 0.6));
-        });
-        setTimeout(() => {
-            if(!ac) return;
-            noise(ac, 0.06, 'lowpass', 1800, 300, heavy(ac, 0.35, 0.001, 0.06, 0.3));
-            tone(ac, 'sine', 95, 40, 0.25, heavy(ac, 0.5, 0.002, 0.25, 0.3));
-        }, 140);
-        if(final) tone(c, 'sine', 70, 35, 0.9, heavy(c, 0.6, 0.01, 0.9, 0.6));
-    },
-
-    // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
-    kawoosh() {
-        if(playSample('kawoosh', 1, { rate: 0.98 + Math.random() * 0.04 })) return;
-        const c = context();
-        if(!c) return;
-        sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
-        noise(c, 1.6, 'lowpass', 900, 120, heavy(c, 0.5, 0.25, 1.4, 0.7));
-        tone(c, 'sine', 55, 30, 1.5, heavy(c, 0.7, 0.2, 1.4, 0.6));
-        for(let i = 0; i < 14; i++) {
-            setTimeout(() => {
-                if(!ac) return;
-                const f = 200 + Math.random() * 700;
-                tone(ac, 'sine', f, f * (0.4 + Math.random() * 0.4), 0.12, envelope(ac, 0.05, 0.005, 0.12, 0.6));
-            }, 300 + i * 55);
-        }
-    },
-
-    horizon(on) {
-        if(!on) {
-            stopSample('horizon');
-            horizonVoice.stop();
-            return;
-        }
-        if(!playSample('horizon', 0.7)) horizonVoice.start();
-    },
-
-    // Riding the wormhole: a long, roaring, flanging rush.
-    wormhole() {
-        if(playSample('wormhole', 1)) return;
-        const c = context();
-        if(!c) return;
-        sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
-        sweep(c, 3.4, 2400, 400, 2, envelope(c, 0.18, 0.4, 3, 0.6));
-        noise(c, 3.4, 'lowpass', 600, 150, heavy(c, 0.45, 0.2, 3.2, 0.5));
-        tone(c, 'sine', 48, 70, 3.2, heavy(c, 0.5, 0.3, 3, 0.4));
-    },
-
-    // Something passing through the event horizon (CAP's teleport splash).
-    gateEnter() {
-        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
-    },
-
-    // Arriving: cut the wormhole ride short and splash out of the horizon.
-    gateArrive() {
-        cutSample('wormhole', 0.12);
-        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
-    },
-
-    gateClose(silent) {
-        if(silent) return;
-        if(playSample('gate_close', 1, { rate: 0.97 + Math.random() * 0.06 })) return;
-        const c = context();
-        if(!c) return;
-        sweep(c, 0.8, 1800, 200, 2, envelope(c, 0.25, 0.01, 0.8, 0.6));
-        tone(c, 'sine', 180, 40, 0.7, heavy(c, 0.35, 0.005, 0.7, 0.5));
-    },
-
-    // Hyperspace window opening: a deep "whoomph" and a swirling rising rush.
-    hyperOpen() {
-        if(playSample('hyper_window', 1, { wet: 0.2 })) return;
-        const c = context();
-        if(!c) return;
-        tone(c, 'sine', 70, 28, 1.2, heavy(c, 0.8, 0.01, 1.2, 0.6));
-        sweep(c, 1.5, 200, 3000, 1.3, heavy(c, 0.45, 0.2, 1.3, 0.7));
-        ringTone(c, 'sawtooth', 120, 600, 40, 1.2, heavy(c, 0.18, 0.2, 1, 0.6));
-    },
-
-    hyperTravel(on) {
-        if(!on) {
-            hyperVoice.stop();
-            return;
-        }
-        hyperVoice.start();
-    },
-
-    hyperExit() {
-        if(playSample('hyper_window', 1, { rate: 1.08, wet: 0.2 })) return;
-        const c = context();
-        if(!c) return;
-        noise(c, 0.1, 'lowpass', 3000, 800, heavy(c, 0.4, 0.001, 0.1));
-        tone(c, 'sine', 90, 30, 1, heavy(c, 0.7, 0.005, 1, 0.6));
-        sweep(c, 1, 2500, 250, 1.5, heavy(c, 0.3, 0.01, 1, 0.6));
-    }
-};
-
-let beamOn = false;
-
-const sounds = {
-    // Must be called from a user gesture (e.g. the launch click) so audio can start.
-    unlock() {
-        const c = context();
-        if(c && c.state === 'suspended') c.resume();
-    },
-
-    startEngine() { setLooping(engineSound, true); },
-    setThrust(on) { setLooping(thrusterSound, on); },
-    // Minigun growl underneath the per-round shots.
-    setFiring(on) { if(on) minigunVoice.start(); else minigunVoice.stop(); },
-    setBeam(on) {
-        if(on && !beamOn) sounds.beamCharge();
-        beamOn = on;
-        if(on) beamVoice.start(); else beamVoice.stop();
-    },
-
-    // Asgard ion cannon spinning up as the beam fires: a fast, distorted rising roar.
-    beamCharge() {
-        const c = throttle('beamCharge', 0.2);
-        if(!c) return;
-        if(playSample('asgard_beam', 0.85, { wet: 0.2 })) return;
-        ringTone(c, 'sawtooth', 90, 600, 60, 0.22, heavy(c, 0.35, 0.01, 0.22, 0.4));
-        tone(c, 'sine', 70, 38, 0.5, heavy(c, 0.7, 0.002, 0.5, 0.4));
-        noise(c, 0.15, 'lowpass', 3000, 600, heavy(c, 0.25, 0.001, 0.15, 0.3));
-    },
-    // `level` 0..1 grows with the number of ore pieces held.
-    setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
-
-    explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
-    // The player's ship blowing up.
-    shipExplosion() {
-        if(!playSample('ship_explosion', 1, { wet: 0.3 })) sounds.explosion(1);
-    },
-    // Console button (stabilizer and other toggles).
-    toggle(on) {
-        if(playSample('button', 0.6, { variant: on ? 0 : 1 })) return;
-        const c = context();
-        if(c) tone(c, 'sine', on ? 700 : 500, on ? 900 : 380, 0.12, envelope(c, 0.08, 0.003, 0.12));
-    },
-
-    // Heavy minigun round: a deep chest-punch thump, a gritty saturated body and a
-    // low-mid crack (no thin high tones), randomised so the stream sounds like a growl.
-    minigunShot() {
-        const c = throttle('minigun', 0.035);
-        if(!c) return;
-        const v = vary(0.08);
-        // Recorded railgun round with a sub-bass thump underneath for weight.
-        if(playSample('railgun', 0.5, { rate: vary(0.06) })) {
-            tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.45, 0.001, 0.13, 0.12));
-            return;
-        }
-        tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.75, 0.001, 0.13, 0.12));
-        tone(c, 'sawtooth', 170 * v, 55, 0.07, heavy(c, 0.32, 0.001, 0.07, 0.1));
-        noise(c, 0.06, 'lowpass', 3200 * v, 500, heavy(c, 0.45, 0.0008, 0.06, 0.15));
-        noise(c, 0.03, 'bandpass', 1400 * v, 700, heavy(c, 0.2, 0.0005, 0.03), 1.4);
-    },
-
-    // Round striking an asteroid: dull dusty thud on the outside, harder crunch on the core.
-    rockHit(hard) {
-        const c = throttle('rockHit', 0.03);
-        if(!c) return;
-        const v = vary(0.1);
-        tone(c, 'sine', 110 * v, 40, 0.1, heavy(c, 0.3, 0.001, 0.1));
-        if(hard) noise(c, 0.08, 'bandpass', 2200 * v, 900, heavy(c, 0.18, 0.001, 0.08, 0.15), 1.2);
-        else noise(c, 0.14, 'lowpass', 1000 * v, 200, heavy(c, 0.25, 0.002, 0.14, 0.1));
-    },
-
-    // Goa'uld staff weapon: a snarling, distorted "tsew" sweeping down into a deep
-    // concussion, with crackling plasma and a long rolling tail.
-    staffShot() {
-        const c = throttle('staff', 0.08);
-        if(!c) return;
-        const v = vary(0.05);
-        if(playSample('staff', 0.85, { rate: vary(0.04), wet: 0.25 })) {
-            tone(c, 'sine', 120 * v, 28, 0.6, heavy(c, 0.5, 0.002, 0.6, 0.3));
-            return;
-        }
-        ringTone(c, 'sawtooth', 1100 * v, 120, 58, 0.36, heavy(c, 0.38, 0.002, 0.36, 0.5));
-        sweep(c, 0.32, 3200 * v, 300, 3, heavy(c, 0.35, 0.001, 0.32, 0.45));
-        tone(c, 'sine', 120 * v, 28, 0.7, heavy(c, 0.8, 0.002, 0.7, 0.4));
-        tone(c, 'square', 70 * v, 30, 0.3, heavy(c, 0.2, 0.002, 0.3, 0.3));
-        noise(c, 0.2, 'highpass', 4000, 2000, envelope(c, 0.06, 0.001, 0.2, 0.3));
-    },
-
-    // Staff blast hitting: a crackling, distorted plasma burst over a deep boom.
-    plasmaImpact() {
-        const c = throttle('plasmaImpact', 0.06);
-        if(!c) return;
-        boom(c, 0.75, 0.45);
-        ringTone(c, 'sawtooth', 600, 70, 45, 0.4, heavy(c, 0.22, 0.002, 0.4, 0.5));
-    },
-
-    // Tau'ri missile: a hard ignition punch, then a roaring, distorted rocket that climbs away.
-    missileLaunch() {
-        const c = throttle('missile', 0.05);
-        if(!c) return;
-        if(playSample('missile', 0.9, { rate: vary(0.04), wet: 0.2 })) return;
-        tone(c, 'sine', 100, 30, 0.4, heavy(c, 0.7, 0.002, 0.4, 0.3));
-        noise(c, 0.06, 'lowpass', 3000, 800, heavy(c, 0.3, 0.001, 0.06));
-        sweep(c, 1.2, 250, 1600, 0.8, heavy(c, 0.4, 0.04, 1.15, 0.45));
-        noise(c, 1, 'lowpass', 700, 120, heavy(c, 0.35, 0.02, 0.95, 0.4));
-    },
-
-    missileExplosion() {
-        const c = throttle('boom', 0.05);
-        if(!c) return;
-        noise(c, 0.08, 'lowpass', 3000, 900, heavy(c, 0.35, 0.001, 0.08));
-        boom(c, 1.2, 0.6);
-    },
-
-    // Ancient drone: a deep, menacing rush of air with a low hum and a growling whistle,
-    // rather than a thin high whine.
-    droneLaunch() {
-        const c = throttle('drones', 0.07);
-        if(!c) return;
-        const v = vary(0.06);
-        if(playSample('drone', 0.75, { rate: v, wet: 0.25 })) return;
-        sweep(c, 0.75, 250 * v, 1400, 2.2, heavy(c, 0.45, 0.02, 0.72, 0.5));
-        tone(c, 'sawtooth', 110 * v, 220, 0.6, heavy(c, 0.22, 0.03, 0.58, 0.5));
-        tone(c, 'sine', 380 * v, 720, 0.55, heavy(c, 0.12, 0.03, 0.52, 0.6));
-        tone(c, 'sine', 70 * v, 45, 0.5, heavy(c, 0.5, 0.01, 0.5, 0.3));
-    },
-
-    // Drone detonation: a hard energy crack into a deep, rolling, distorted blast.
-    droneImpact() {
-        const c = throttle('droneImpact', 0.05);
-        if(!c) return;
-        ringTone(c, 'sawtooth', 900, 90, 70, 0.3, heavy(c, 0.3, 0.001, 0.3, 0.6));
-        boom(c, 1.05, 0.6);
-    },
-
-    beamImpact() {
-        const c = throttle('beamImpact', 0.09);
-        if(!c) return;
-        noise(c, 0.1, 'bandpass', 3000, 1500, envelope(c, 0.08, 0.002, 0.1), 2);
-    },
-
-    overheat() {
-        const c = throttle('overheat', 0.5);
-        if(!c) return;
-        tone(c, 'square', 880, 880, 0.08, envelope(c, 0.08, 0.002, 0.08));
-        setTimeout(() => { if(ac) tone(ac, 'square', 660, 660, 0.12, envelope(ac, 0.08, 0.002, 0.12)); }, 120);
-        noise(c, 0.7, 'highpass', 3000, 1200, envelope(c, 0.07, 0.05, 0.7, 0.3));
-    },
-
-    // Something striking raised shields: an electric zap with a resonant hum.
-    shieldHit(strength) {
-        const c = throttle('shield', 0.07);
-        if(!c) return;
-        const s = Math.max(0.3, Math.min(1.5, strength || 1));
-        tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
-        tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
-        noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
-    },
-
-    shieldUp() {
-        const c = throttle('shieldToggle', 0.2);
-        if(!c) return;
-        if(playSample('shield_up', 0.8)) return;
-        tone(c, 'sine', 160, 900, 0.55, envelope(c, 0.2, 0.02, 0.55, 0.5));
-        tone(c, 'triangle', 320, 1800, 0.5, envelope(c, 0.07, 0.02, 0.5, 0.5));
-    },
-
-    shieldDown() {
-        const c = throttle('shieldToggle', 0.2);
-        if(!c) return;
-        if(playSample('shield_down', 0.8)) return;
-        tone(c, 'sine', 900, 110, 0.5, envelope(c, 0.18, 0.01, 0.5, 0.5));
-        noise(c, 0.45, 'bandpass', 2000, 300, envelope(c, 0.06, 0.01, 0.45, 0.3), 2);
-    },
-
-    hullHit() {
-        const c = throttle('hull', 0.1);
-        if(!c) return;
-        boom(c, 0.5, 0.25);
-        tone(c, 'square', 90, 40, 0.25, envelope(c, 0.15, 0.002, 0.25));
-    },
-
-    rockCrack() {
-        const c = throttle('crack', 0.06);
-        if(!c) return;
-        noise(c, 0.35, 'bandpass', 1500, 250, envelope(c, 0.4, 0.001, 0.35, 0.35), 0.8);
-        tone(c, 'triangle', 200, 55, 0.3, envelope(c, 0.22, 0.001, 0.3, 0.3));
-    },
-
-    // Deep rumble as asteroids grind together and merge.
-    merge(size) {
-        const c = throttle('merge', 0.15);
-        if(!c) return;
-        const volume = Math.min(0.5, 0.15 + size / 200);
-        noise(c, 1.4, 'lowpass', 400, 60, envelope(c, volume, 0.15, 1.3, 0.4));
-        tone(c, 'sine', 70, 40, 1.2, envelope(c, volume * 0.6, 0.1, 1.2, 0.3));
-    },
-
-    // Asteroid glancing off the Atlantis city shield.
-    cityShield(volume) {
-        const c = throttle('cityShield', 0.12);
-        if(!c) return;
-        const v = Math.max(0.02, Math.min(0.3, volume));
-        tone(c, 'sine', 700, 160, 0.7, envelope(c, v, 0.004, 0.7, 0.6));
-        tone(c, 'triangle', 1400, 480, 0.45, envelope(c, v * 0.4, 0.004, 0.45, 0.6));
-        noise(c, 0.3, 'highpass', 4000, 1800, envelope(c, v * 0.3, 0.002, 0.3, 0.4));
-    },
-
-    // Tractor beam latching onto a new piece of ore.
-    tractorLock() {
-        const c = throttle('tractorLock', 0.06);
-        if(!c) return;
-        tone(c, 'sine', 700, 1150, 0.14, envelope(c, 0.07, 0.005, 0.14, 0.4));
-    },
-
-    // Ore stowed in the hold: a little two-note chime, higher for valuable ore.
-    pickup(value) {
-        const c = throttle('pickup', 0.05);
-        if(!c) return;
-        const f = 620 + Math.min(600, value * 6);
-        tone(c, 'triangle', f, f, 0.09, envelope(c, 0.09, 0.002, 0.09, 0.3));
-        setTimeout(() => { if(ac) tone(ac, 'sine', f * 1.5, f * 1.5, 0.16, envelope(ac, 0.07, 0.002, 0.16, 0.3)); }, 60);
-    },
-
-    // Scanner sweep ping.
-    scanPing() {
-        const c = throttle('scan', 0.5);
-        if(!c) return;
-        if(playSample('scan', 0.35)) return;
-        tone(c, 'sine', 1320, 1240, 0.5, envelope(c, 0.08, 0.004, 0.5, 0.7));
-        tone(c, 'sine', 660, 640, 0.6, envelope(c, 0.05, 0.004, 0.6, 0.7));
-    },
-
-    dock() {
-        const c = context();
-        if(!c) return;
-        if(playSample('door', 0.8)) return;
-        tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25, 0.4));
-        setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4, 0.4)); }, 160);
-    },
-
-    stopAll() {
-        setLooping(engineSound, false);
-        setLooping(thrusterSound, false);
-        beamVoice.stop();
-        tractorVoice.stop();
-        minigunVoice.stop();
-        gateSpinVoice.stop();
-        horizonVoice.stop();
-        hyperVoice.stop();
-        Object.keys(loops).forEach(stopSample);
-    }
-};
-
-Object.assign(sounds, gateSounds);
-
-/* harmony default export */ __webpack_exports__["a"] = (sounds);
-
-
-/***/ }),
-/* 4 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// Star systems you can travel between, the constellations used as Stargate symbols, and
-// the gate addresses.
-//
-// Gate addresses work like coordinates: six constellation symbols form three pairs, and
-// the line between each pair passes through the destination; where the three lines meet
-// is the destination world. The seventh symbol is the point of origin of the gate you
-// dial from. Addresses here are generated from that geometry (constellations sit on a
-// large sphere around the map), so the starmap can draw the three lines meeting exactly
-// at the world.
-
-const CONSTELLATIONS = [
-    'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
-    'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
-    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
-    'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
-    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
-];
-/* harmony export (immutable) */ __webpack_exports__["a"] = CONSTELLATIONS;
-
-
-// Map units: 1 unit = 1 light year. Constellations sit on a sphere around everything.
-const SPHERE_RADIUS = 3600;
-
-const SYSTEMS = [
-    {
-        id: 'lantea', name: 'Lantea', galaxy: 'Pegasus', origin: 'Lantean',
-        description: 'Ocean world of Atlantis. Shipyard and ore market.',
-        map: [1700, -380, 900],
-        station: true, gate: { x: 760, y: -620 },
-        planet: { x: -2600, y: -1900, radius: 900, type: 'ocean' },
-        tint: '60,120,200', materials: {}
-    },
-    {
-        id: 'earth', name: 'Earth', galaxy: 'Milky Way', origin: "Tau'ri",
-        description: 'Home of the SGC. Iron and copper rich belts.',
-        map: [-420, 120, -260],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2400, y: -2100, radius: 950, type: 'earth', moon: true },
-        tint: '70,110,170', materials: { iron: 1.6, copper: 1.8, gold: 0.6 }
-    },
-    {
-        id: 'abydos', name: 'Abydos', galaxy: 'Milky Way', origin: 'Abydonian',
-        description: 'Desert world with naquadah mines. Rich in naquadah.',
-        map: [-180, -340, 110],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2200, y: 2000, radius: 1000, type: 'desert', moon: true },
-        tint: '170,130,70', materials: { naquadah: 4, gold: 1.4, iron: 0.7 }
-    },
-    {
-        id: 'chulak', name: 'Chulak', galaxy: 'Milky Way', origin: 'Chulakian',
-        description: "Jaffa homeworld under Apophis. Titanium-heavy asteroids.",
-        map: [260, 300, -520],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2600, y: 1800, radius: 850, type: 'jungle' },
-        tint: '80,140,90', materials: { titanium: 2.5, copper: 1.2 }
-    },
-    {
-        id: 'dakara', name: 'Dakara', galaxy: 'Milky Way', origin: 'Dakaran',
-        description: 'Ancient temple world. Gold-veined asteroids.',
-        map: [520, -120, 340],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2500, y: -2000, radius: 900, type: 'rocky' },
-        tint: '170,90,70', materials: { gold: 2.6, titanium: 1.2 }
-    },
-    {
-        id: 'langara', name: 'Langara', galaxy: 'Milky Way', origin: 'Langaran',
-        description: 'Industrial world of Kelowna. Dense, metal-rich fields.',
-        map: [-640, -60, 480],
-        gate: { x: 0, y: 0 },
-        planet: { x: 2300, y: 2200, radius: 880, type: 'industrial' },
-        tint: '130,110,150', materials: { naquadah: 2, iron: 1.3, titanium: 1.4 }
-    },
-    {
-        id: 'othala', name: 'Othala', galaxy: 'Ida', origin: 'Asgard',
-        description: 'Asgard homeworld, far from the Milky Way. Pristine titanium and gold.',
-        map: [-1900, 520, -1100],
-        gate: { x: 0, y: 0 },
-        planet: { x: -2300, y: 2100, radius: 920, type: 'ice' },
-        tint: '120,200,220', materials: { titanium: 2.4, gold: 1.8, naquadah: 1.5 }
-    }
-];
-/* harmony export (immutable) */ __webpack_exports__["b"] = SYSTEMS;
-
-
-const systemById = (id) => SYSTEMS.filter(s => s.id === id)[0] || SYSTEMS[0];
-/* harmony export (immutable) */ __webpack_exports__["g"] = systemById;
-
-
-// ------------------------------------------------------------ address geometry
-
-const random = (seed) => {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-};
-
-const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
-const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
-
-// Constellation positions and addresses, built once from a fixed seed so every player
-// has the same addresses.
-const build = () => {
-    const rnd = random(1994);
-    const positions = new Array(CONSTELLATIONS.length);
-    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
-
-    // Anchors: evenly spread over the sphere.
-    for(let i = 0; i < anchorCount; i++) {
-        const y = 1 - (i + 0.5) / anchorCount * 2;
-        const r = Math.sqrt(1 - y * y);
-        const phi = i * 2.399963 + rnd() * 0.2;
-        positions[i] = [Math.cos(phi) * r * SPHERE_RADIUS, y * SPHERE_RADIUS, Math.sin(phi) * r * SPHERE_RADIUS];
-    }
-
-    // For each world, draw three lines from anchors through the world to the far side of
-    // the sphere; the far ends become the remaining constellations.
-    let next = anchorCount;
-    const addresses = {};
-    SYSTEMS.forEach((system, index) => {
-        const d = system.map;
-        const used = {};
-        const glyphs = [];
-        for(let line = 0; line < 3; line++) {
-            let a;
-            do { a = Math.floor(rnd() * anchorCount); } while(used[a]);
-            used[a] = true;
-            const u = normalize(sub(d, positions[a]));
-            // Solve |d + u t| = R for t > 0.
-            const b = dot(d, u);
-            const c = dot(d, d) - SPHERE_RADIUS * SPHERE_RADIUS;
-            const t = -b + Math.sqrt(b * b - c);
-            positions[next] = add(d, scale(u, t));
-            glyphs.push(a, next);
-            next++;
-        }
-        // Mix the order a little so pairs aren't always anchor-first.
-        if(index % 2) glyphs.reverse();
-        addresses[system.id] = glyphs;
-    });
-
-    return { positions: positions, addresses: addresses };
-};
-
-const geometry = build();
-
-const constellationPosition = (index) => geometry.positions[index];
-/* harmony export (immutable) */ __webpack_exports__["e"] = constellationPosition;
-
-
-// Six constellation indices for a destination.
-const addressOf = (systemId) => geometry.addresses[systemId].slice();
-/* harmony export (immutable) */ __webpack_exports__["d"] = addressOf;
-
-
-// Which system (if any) a 6-symbol address leads to.
-const systemForAddress = (glyphs) => {
-    const key = glyphs.join(',');
-    const match = SYSTEMS.filter(s => geometry.addresses[s.id].join(',') === key)[0];
-    return match || null;
-};
-/* harmony export (immutable) */ __webpack_exports__["h"] = systemForAddress;
-
-
-// The three lines of an address, as pairs of 3D points (for the starmap).
-const addressLines = (systemId) => {
-    const g = geometry.addresses[systemId];
-    return [[g[0], g[1]], [g[2], g[3]], [g[4], g[5]]].map(pair => [geometry.positions[pair[0]], geometry.positions[pair[1]]]);
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = addressLines;
-
-
-const distanceBetween = (a, b) => {
-    const d = sub(systemById(a).map, systemById(b).map);
-    return Math.sqrt(dot(d, d));
-};
-/* harmony export (immutable) */ __webpack_exports__["f"] = distanceBetween;
-
-
-
-/***/ }),
-/* 5 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-
-
-// Small glowing sparks, plus soft dust that can be drawn into an asteroid
-// (used when asteroids merge: the dust cloud spirals in and settles on the surface).
-
-// Colour strings are cached per colour and fade step, so drawing hundreds of particles
-// doesn't build (and garbage-collect) a new 'rgba(...)' string for each one every frame.
-const STEPS = 12;
-const styleCache = {};
-const style = (color, alpha) => {
-    let row = styleCache[color];
-    if(!row) {
-        row = styleCache[color] = [];
-        for(let i = 0; i <= STEPS; i++) row.push('rgba(' + color + ',' + (i / STEPS).toFixed(3) + ')');
-    }
-    return row[Math.max(0, Math.min(STEPS, Math.round(alpha * STEPS)))];
-};
-
-class Particle {
-
-    constructor(options) {
-        this.x = options.x;
-        this.y = options.y;
-        this.vx = options.vx || 0;
-        this.vy = options.vy || 0;
-        this.life = options.life;
-        this.maxLife = options.life;
-        this.size = options.size || 2;
-        this.color = options.color || '255,255,255';
-        this.shrink = options.shrink !== false;
-        this.dust = !!options.dust;
-        this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
-        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
-        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
-        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
-        this.alpha = options.alpha === undefined ? 1 : options.alpha;
-        this.attractor = options.attractor || null;
-        this.swirl = options.swirl || 0;
-        this.dead = false;
-    }
-
-    static burst(target, x, y, baseVx, baseVy, count, options) {
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
-            target.push(new Particle({
-                x: x,
-                y: y,
-                vx: baseVx + Math.cos(angle) * speed,
-                vy: baseVy + Math.sin(angle) * speed,
-                life: options.minLife + Math.random() * (options.maxLife - options.minLife),
-                size: options.size * (0.6 + Math.random() * 0.8),
-                color: options.color,
-                dust: options.dust,
-                solid: options.solid,
-                pixel: options.pixel,
-                glow: options.glow,
-                drag: options.drag,
-                alpha: options.alpha
-            }));
-        }
-    }
-
-    // A ring of dust around (x, y) that swirls inwards onto `attractor`.
-    static mergeCloud(target, x, y, attractor, count, spread, color) {
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = spread * (0.3 + Math.random() * 0.9);
-            const px = x + Math.cos(angle) * distance;
-            const py = y + Math.sin(angle) * distance;
-            const out = 15 + Math.random() * 35;
-            target.push(new Particle({
-                x: px,
-                y: py,
-                vx: attractor.vx + Math.cos(angle) * out,
-                vy: attractor.vy + Math.sin(angle) * out,
-                life: 1.6 + Math.random() * 1.4,
-                size: 5 + Math.random() * 9,
-                color: color,
-                dust: true,
-                alpha: 0.18 + Math.random() * 0.14,
-                attractor: attractor,
-                swirl: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
-            }));
-        }
-    }
-
-    update(dt) {
-        const a = this.attractor;
-        if(a && !a.dead) {
-            const dx = a.x - this.x;
-            const dy = a.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
-            // Fall inwards with a tangential swirl, matching the asteroid's drift.
-            const pull = 160 + 3000 / (distance + 20);
-            this.vx += (dx / distance * pull - dy / distance * pull * this.swirl) * dt;
-            this.vy += (dy / distance * pull + dx / distance * pull * this.swirl) * dt;
-            this.vx += (a.vx - this.vx) * Math.min(1, dt * 1.5);
-            this.vy += (a.vy - this.vy) * Math.min(1, dt * 1.5);
-            if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
-        }
-
-        if(this.drag) {
-            const keep = Math.max(0, 1 - this.drag * dt);
-            this.vx *= keep;
-            this.vy *= keep;
-        }
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
-        this.life -= dt;
-        if(this.life <= 0) this.dead = true;
-    }
-
-    draw(ctx) {
-        const t = Math.max(this.life / this.maxLife, 0);
-        if(this.dust) {
-            // Soft puff: fades in quickly, swells, then thins out.
-            const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
-            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
-            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
-            ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
-            ctx.globalAlpha = 1;
-            return;
-        }
-        if(this.pixel) {
-            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
-            if(t < 0.35 && Math.random() < 0.35) return;
-            const stepped = Math.ceil(t * 4) / 4;
-            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
-            ctx.fillStyle = style(this.color, stepped * this.alpha);
-            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
-            return;
-        }
-        if(this.solid) {
-            ctx.fillStyle = style(this.color, Math.min(1, t * 2));
-            ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
-            return;
-        }
-        const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
-        ctx.fillStyle = style(this.color, t * this.alpha);
-        ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
-    }
-}
-
-/* harmony default export */ __webpack_exports__["a"] = (Particle);
-
-
-/***/ }),
-/* 6 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2464,7 +1052,1726 @@ const shieldFor = (hull) => {
 
 
 /***/ }),
+/* 4 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// All game sounds. The engine and thruster loops use the recorded samples; weapons,
+// impacts and effects are synthesized with the Web Audio API.
+//
+// Every sound is layered (a sub-bass "body", a mid punch and a noisy transient) and
+// runs through a compressor; heavy weapons also send into a generated reverb so shots
+// and explosions have a big, rolling tail instead of a thin "toy" blip.
+
+const createLoop = (src, volume) => {
+    const audio = new Audio(src);
+    audio.loop = true;
+    audio.volume = volume;
+    return audio;
+};
+
+const thrusterSound = createLoop('./assets/sounds/thrust.mp3', 0.5);
+const engineSound = createLoop('./assets/sounds/engine.mp3', 0.18);
+const explosionSound = new Audio('./assets/sounds/explosion2.mp3');
+
+// play() returns a promise that rejects when autoplay is blocked; ignore it.
+const safePlay = (audio) => {
+    const result = audio.play();
+    if(result && result.catch) result.catch(() => {});
+};
+
+const setLooping = (audio, on) => {
+    if(on && audio.paused) safePlay(audio);
+    if(!on && !audio.paused) {
+        audio.pause();
+        audio.currentTime = 0;
+    }
+};
+
+const playOneShot = (audio, volume) => {
+    audio.volume = Math.max(0, Math.min(1, volume));
+    audio.currentTime = 0;
+    safePlay(audio);
+};
+
+// ------------------------------------------------------------ Web Audio graph
+
+let ac = null;
+let master = null;      // dry bus -> compressor -> speakers
+let reverb = null;      // wet bus -> convolver -> compressor
+let drive = null;       // weapon bus -> saturation -> bass boost -> master (aggressive, heavy)
+let noiseBuffer = null;
+const lastPlayed = {};
+
+// Decaying stereo noise: a cheap but convincing "big hangar / space" reverb.
+const createImpulse = (c, seconds, decay) => {
+    const length = Math.floor(c.sampleRate * seconds);
+    const impulse = c.createBuffer(2, length, c.sampleRate);
+    for(let channel = 0; channel < 2; channel++) {
+        const data = impulse.getChannelData(channel);
+        for(let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+    return impulse;
+};
+
+const context = () => {
+    if(ac) return ac;
+    try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+
+        const compressor = ac.createDynamicsCompressor();
+        compressor.threshold.value = -20;
+        compressor.knee.value = 12;
+        compressor.ratio.value = 5;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        const output = ac.createGain();
+        output.gain.value = 0.9;
+        compressor.connect(output);
+        output.connect(ac.destination);
+
+        master = ac.createGain();
+        master.gain.value = 0.7;
+        master.connect(compressor);
+
+        // Weapon bus: soft-clipping saturation thickens and roughens everything, and a
+        // low-shelf boost adds chest-thumping weight.
+        const shaper = ac.createWaveShaper();
+        const curve = new Float32Array(2048);
+        for(let i = 0; i < curve.length; i++) {
+            const x = i / (curve.length - 1) * 2 - 1;
+            curve[i] = Math.tanh(x * 3.2) / Math.tanh(3.2);
+        }
+        shaper.curve = curve;
+        shaper.oversample = '2x';
+        const lowShelf = ac.createBiquadFilter();
+        lowShelf.type = 'lowshelf';
+        lowShelf.frequency.value = 140;
+        lowShelf.gain.value = 7;
+        const tame = ac.createBiquadFilter();
+        tame.type = 'lowpass';
+        tame.frequency.value = 7000;
+        drive = ac.createGain();
+        drive.gain.value = 0.9;
+        drive.connect(shaper);
+        shaper.connect(lowShelf);
+        lowShelf.connect(tame);
+        tame.connect(master);
+
+        const convolver = ac.createConvolver();
+        convolver.buffer = createImpulse(ac, 2.4, 3);
+        reverb = ac.createGain();
+        reverb.gain.value = 0.55;
+        reverb.connect(convolver);
+        convolver.connect(compressor);
+
+        noiseBuffer = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for(let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        loadSamples(ac);
+    } catch(e) {
+        ac = null;
+    }
+    return ac;
+};
+
+// Limits how often one effect can retrigger, so rapid events don't turn into noise.
+const throttle = (name, seconds) => {
+    const c = context();
+    if(!c) return null;
+    if(lastPlayed[name] && c.currentTime - lastPlayed[name] < seconds) return null;
+    lastPlayed[name] = c.currentTime;
+    return c;
+};
+
+// Gain envelope feeding the dry bus, plus an optional reverb send (`wet` 0..1).
+// Gain envelope feeding the dry bus (or the weapon `drive` bus when `driven`), plus an
+// optional reverb send (`wet` 0..1).
+const envelope = (c, peak, attack, decay, wet, driven) => {
+    const gain = c.createGain();
+    const now = c.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(peak, now + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + attack + decay);
+    gain.connect(driven ? drive : master);
+    if(wet) {
+        const send = c.createGain();
+        send.gain.value = wet;
+        gain.connect(send);
+        send.connect(reverb);
+    }
+    return gain;
+};
+
+// Shorthand for weapon layers: always through the saturating drive bus.
+const heavy = (c, peak, attack, decay, wet) => envelope(c, peak, attack, decay, wet, true);
+
+const tone = (c, type, from, to, duration, output) => {
+    const osc = c.createOscillator();
+    const now = c.currentTime;
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    osc.connect(output);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+    return osc;
+};
+
+const noise = (c, duration, filterType, from, to, output, q) => {
+    const source = c.createBufferSource();
+    source.buffer = noiseBuffer;
+    const filter = c.createBiquadFilter();
+    const now = c.currentTime;
+    filter.type = filterType;
+    filter.Q.value = q || 1;
+    filter.frequency.setValueAtTime(from, now);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(20, to), now + duration);
+    source.connect(filter);
+    filter.connect(output);
+    source.start(now, Math.random() * 0.5);
+    source.stop(now + duration + 0.05);
+};
+
+// Deep layered detonation used by missiles, drones and big impacts.
+const boom = (c, size, wet) => {
+    tone(c, 'sine', 80 + 20 / size, 24, 1.3 * size, heavy(c, 0.7, 0.003, 1.3 * size, wet));
+    tone(c, 'sawtooth', 120, 32, 0.5 * size, heavy(c, 0.25, 0.002, 0.5 * size, wet * 0.5));
+    noise(c, 1.5 * size, 'lowpass', 1800, 50, heavy(c, 0.6, 0.002, 1.5 * size, wet));
+    noise(c, 0.35, 'bandpass', 2500, 500, envelope(c, 0.12, 0.002, 0.3, wet), 1.2);
+};
+
+// Random pitch variation so rapid fire never sounds like the same sample repeating.
+const vary = (amount) => 1 + (Math.random() - 0.5) * 2 * amount;
+
+// Ring-modulated tone: a carrier multiplied by a modulator gives the buzzing,
+// electric timbre of energy weapons (instead of a clean "beep").
+const ringTone = (c, type, from, to, modFrequency, duration, output) => {
+    const carrier = c.createOscillator();
+    const modulator = c.createOscillator();
+    const ring = c.createGain();
+    const now = c.currentTime;
+    carrier.type = type;
+    carrier.frequency.setValueAtTime(from, now);
+    carrier.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    modulator.type = 'square';
+    modulator.frequency.value = modFrequency;
+    ring.gain.value = 0;
+    modulator.connect(ring.gain);
+    carrier.connect(ring);
+    ring.connect(output);
+    carrier.start(now);
+    modulator.start(now);
+    carrier.stop(now + duration + 0.05);
+    modulator.stop(now + duration + 0.05);
+};
+
+// Band-passed noise whose centre frequency sweeps: whooshes and "tsew" sounds.
+const sweep = (c, duration, from, to, q, output) => noise(c, duration, 'bandpass', from, to, output, q);
+
+// Short metallic "tang": two inharmonic partials through a resonant band-pass.
+const metal = (c, base, duration, output) => {
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = base * 1.3;
+    filter.Q.value = 9;
+    filter.connect(output);
+    tone(c, 'square', base, base * 0.97, duration, filter);
+    tone(c, 'square', base * 1.37, base * 1.33, duration, filter);
+};
+
+// ------------------------------------------------------------ sustained voices
+
+const createVoice = (build) => {
+    let voice = null;
+    return {
+        start(level) {
+            const c = context();
+            if(!c) return;
+            if(!voice) voice = build(c);
+            const target = Math.max(0.0001, level === undefined ? 1 : level) * voice.peak;
+            voice.gain.gain.cancelScheduledValues(c.currentTime);
+            voice.gain.gain.setTargetAtTime(target, c.currentTime, 0.08);
+        },
+        stop() {
+            if(!voice || !ac) return;
+            const v = voice;
+            voice = null;
+            const now = ac.currentTime;
+            v.gain.gain.cancelScheduledValues(now);
+            v.gain.gain.setTargetAtTime(0.0001, now, 0.06);
+            v.nodes.forEach(n => n.stop(now + 0.4));
+        }
+    };
+};
+
+// Asgard beam: detuned saws through a wobbling band-pass, a sub-bass drone and crackle.
+const beamVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+    const send = c.createGain();
+    send.gain.value = 0.3;
+    gain.connect(send);
+    send.connect(reverb);
+
+    const filter = c.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 800;
+    filter.Q.value = 2.5;
+    filter.connect(gain);
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = 7.5;
+    lfoGain.gain.value = 520;
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = b.type = 'sawtooth';
+    a.frequency.value = 146;
+    b.frequency.value = 148.6;
+    a.connect(filter);
+    b.connect(filter);
+
+    const sub = c.createOscillator();
+    const subGain = c.createGain();
+    sub.type = 'sine';
+    sub.frequency.value = 55;
+    subGain.gain.value = 0.9;
+    sub.connect(subGain);
+    subGain.connect(gain);
+
+    const crackle = c.createBufferSource();
+    crackle.buffer = noiseBuffer;
+    crackle.loop = true;
+    const crackleFilter = c.createBiquadFilter();
+    crackleFilter.type = 'highpass';
+    crackleFilter.frequency.value = 3500;
+    const crackleGain = c.createGain();
+    crackleGain.gain.value = 0.25;
+    crackle.connect(crackleFilter);
+    crackleFilter.connect(crackleGain);
+    crackleGain.connect(gain);
+
+    const nodes = [a, b, lfo, sub, crackle];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.2 };
+});
+
+// Minigun "BRRRT": a low, distorted growl chopped at the rate of fire, layered under
+// the individual rounds while the guns are firing.
+const minigunVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+
+    const chop = c.createGain();
+    chop.gain.value = 0.5;
+    chop.connect(gain);
+    const rate = c.createOscillator();
+    const depth = c.createGain();
+    rate.type = 'square';
+    rate.frequency.value = 17;
+    depth.gain.value = 0.5;
+    rate.connect(depth);
+    depth.connect(chop.gain);
+
+    const filter = c.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 520;
+    filter.Q.value = 2;
+    filter.connect(chop);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = 'sawtooth';
+    b.type = 'square';
+    a.frequency.value = 48;
+    b.frequency.value = 97;
+    a.connect(filter);
+    b.connect(filter);
+
+    const rumble = c.createBufferSource();
+    rumble.buffer = noiseBuffer;
+    rumble.loop = true;
+    const rumbleFilter = c.createBiquadFilter();
+    rumbleFilter.type = 'lowpass';
+    rumbleFilter.frequency.value = 300;
+    rumble.connect(rumbleFilter);
+    rumbleFilter.connect(chop);
+
+    const nodes = [a, b, rate, rumble];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.28 };
+});
+
+// Tractor beam: a soft shimmering chord over a breathy, slowly sweeping "air" layer.
+const tractorVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(master);
+    const send = c.createGain();
+    send.gain.value = 0.4;
+    gain.connect(send);
+    send.connect(reverb);
+
+    const tremolo = c.createGain();
+    tremolo.gain.value = 0.7;
+    tremolo.connect(gain);
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = 6;
+    lfoGain.gain.value = 0.3;
+    lfo.connect(lfoGain);
+    lfoGain.connect(tremolo.gain);
+
+    const nodes = [lfo];
+    [[220, 0.5], [330, 0.35], [440.8, 0.25], [659, 0.12]].forEach(pair => {
+        const osc = c.createOscillator();
+        const g = c.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = pair[0];
+        g.gain.value = pair[1];
+        osc.connect(g);
+        g.connect(tremolo);
+        nodes.push(osc);
+    });
+
+    const air = c.createBufferSource();
+    air.buffer = noiseBuffer;
+    air.loop = true;
+    const airFilter = c.createBiquadFilter();
+    airFilter.type = 'bandpass';
+    airFilter.Q.value = 6;
+    airFilter.frequency.value = 900;
+    const sweep = c.createOscillator();
+    const sweepGain = c.createGain();
+    sweep.frequency.value = 0.7;
+    sweepGain.gain.value = 500;
+    sweep.connect(sweepGain);
+    sweepGain.connect(airFilter.frequency);
+    const airGain = c.createGain();
+    airGain.gain.value = 0.35;
+    air.connect(airFilter);
+    airFilter.connect(airGain);
+    airGain.connect(gain);
+    nodes.push(air, sweep);
+
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.09 };
+});
+
+// ------------------------------------------------------------ public API
+
+// ------------------------------------------------------------ recorded samples
+//
+// Stargate, weapon and ship sounds from the Stargate Carter Addon Pack (CAP) resources
+// (https://github.com/RafaelDeJongh/cap_resources, CC BY-NC-SA 4.0, see
+// assets/sounds/cap/CREDITS.txt). Until a sample has been decoded (or if it fails to),
+// the synthesized version plays.
+
+const SAMPLE_FILES = {
+    dhd_press: ['stargate/dhd/sg1/press.mp3', 'stargate/dhd/sg1/press_2.mp3', 'stargate/dhd/sg1/press_3.mp3',
+        'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
+    dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.mp3'],
+    dial_fail: ['stargate/dial_fail_sg1.mp3'],
+    // Same files CAP's Milky Way gate uses for a DHD dial (stargate_sg1, event_horizon).
+    gate_spin: ['alexalx/stargate/gate_roll_long.mp3'],
+    chevron: ['stargate/chevron_dhd.mp3'],
+    chevron_lock: ['stargate/chevron_lock.mp3'],
+    kawoosh: ['stargate/sg1/open.mp3'],
+    horizon: ['stargate/wormhole_loop.wav'],
+    gate_enter: ['stargate/teleport.mp3', 'stargate/teleport_2.mp3', 'stargate/teleport_3.mp3', 'stargate/teleport_4.mp3'],
+    wormhole: ['stargate/gate_travel.mp3'],
+    gate_close: ['stargate/gate_close.mp3'],
+    hyper_window: ['tech/hyperwindow.mp3'],
+    railgun: ['weapons/railgun_shoot.wav'],
+    staff: ['pulse_weapon/staff_weapon.mp3'],
+    missile: ['f302/missilefire.mp3'],
+    drone: ['weapons/drone_shot.mp3'],
+    asgard_beam: ['weapons/asgard_beam.mp3'],
+    // Ship shield impacts: CAP's ship-shield crackle for light knocks, the deep gate-shield
+    // impacts for weapon hits and heavy blows.
+    shield_hit: ['shields/shield_hit.mp3'],
+    shield_hit_heavy: ['stargate/shield/hit.mp3', 'stargate/shield/hit_2.mp3'],
+    shield_up: ['shields/shield_engage.mp3'],
+    shield_down: ['shields/shield_disengage.mp3'],
+    door: ['door/atlantis_door_open.mp3'],
+    button: ['button/ancient_button1.wav', 'button/ancient_button2.wav'],
+    scan: ['glebqip/tracking.wav'],
+    ship_explosion: ['jumper/jumperexplosion.mp3']
+};
+const LOOPING_SAMPLES = { gate_spin: true, horizon: true };
+const buffers = {};
+const loops = {};
+const lastShots = {};
+let samplesRequested = false;
+
+// The sound files are packed into assets/sounds/cap-sounds.js (tools/pack-sounds.js), a
+// local script that sets window.CAP_SOUNDS, so nothing is fetched and it also works when
+// index.html is opened from disk. Each sound is decoded once into a Web Audio buffer, which
+// is cheap to play any number of times.
+const toArrayBuffer = (base64) => {
+    const binary = window.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+};
+
+function loadSamples(c) {
+    if(samplesRequested) return;
+    const packed = window.CAP_SOUNDS;
+    if(!packed) {
+        // The sound script is still loading: try again shortly.
+        setTimeout(() => loadSamples(c), 300);
+        return;
+    }
+    samplesRequested = true;
+    // Decode one file at a time so starting the game doesn't stall.
+    const queue = [];
+    Object.keys(SAMPLE_FILES).forEach(name => {
+        buffers[name] = [];
+        SAMPLE_FILES[name].forEach((file, i) => { if(packed[file]) queue.push([name, i, file]); });
+    });
+    const next = () => {
+        const item = queue.shift();
+        if(!item) {
+            window.CAP_SOUNDS = null;   // free the encoded copies
+            return;
+        }
+        const done = (buffer) => {
+            if(buffer) buffers[item[0]][item[1]] = buffer;
+            setTimeout(next, 0);
+        };
+        try {
+            // Callback form: older Safari has no promise-returning decodeAudioData.
+            c.decodeAudioData(toArrayBuffer(packed[item[2]]), done, () => done(null));
+        } catch(e) {
+            done(null);
+        }
+    };
+    next();
+}
+
+// Play sample `name` (a random variant, or options.variant). Returns false if it isn't
+// loaded yet so the caller can fall back to the synthesized sound.
+//   options: { variant, rate, wet (reverb send 0..1) }
+const playSample = (name, volume, options) => {
+    const list = buffers[name];
+    if(!ac || !list) return false;
+    const opts = options || {};
+    const count = SAMPLE_FILES[name].length;
+    const index = opts.variant !== undefined ? Math.abs(opts.variant) % count : Math.floor(Math.random() * count);
+    const buffer = list[index] || list.filter(Boolean)[0];
+    const level = volume === undefined ? 0.9 : volume;
+    if(!buffer) return false;
+
+    if(LOOPING_SAMPLES[name]) {
+        const playing = loops[name];
+        if(playing) {
+            playing.gain.gain.setTargetAtTime(level, ac.currentTime, 0.05);
+            return true;
+        }
+    }
+    const source = ac.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = opts.rate || 1;
+    const gain = ac.createGain();
+    gain.gain.value = level;
+    source.connect(gain);
+    gain.connect(master);
+    if(opts.wet) {
+        const send = ac.createGain();
+        send.gain.value = opts.wet;
+        gain.connect(send);
+        send.connect(reverb);
+    }
+    if(LOOPING_SAMPLES[name]) {
+        source.loop = true;
+        loops[name] = { source: source, gain: gain };
+    } else {
+        lastShots[name] = { source: source, gain: gain };
+    }
+    source.start();
+    return true;
+};
+
+// Fade out the most recent one-shot of `name` (e.g. the wormhole ride on arrival).
+const cutSample = (name, fade) => {
+    const shot = lastShots[name];
+    if(!shot || !ac) return;
+    delete lastShots[name];
+    shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
+    try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
+};
+
+const stopSample = (name) => {
+    const playing = loops[name];
+    if(!playing || !ac) return;
+    delete loops[name];
+    playing.gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.08);
+    try { playing.source.stop(ac.currentTime + 0.5); } catch(e) { /* already stopped */ }
+};
+
+// Grinding rumble of the inner ring turning.
+const gateSpinVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+    const grind = c.createBufferSource();
+    grind.buffer = noiseBuffer;
+    grind.loop = true;
+    const band = c.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 220;
+    band.Q.value = 1.5;
+    grind.connect(band);
+    band.connect(gain);
+    const motor = c.createOscillator();
+    const motorGain = c.createGain();
+    motor.type = 'sawtooth';
+    motor.frequency.value = 46;
+    motorGain.gain.value = 0.35;
+    motor.connect(motorGain);
+    motorGain.connect(gain);
+    const wobble = c.createOscillator();
+    const wobbleGain = c.createGain();
+    wobble.frequency.value = 7;
+    wobbleGain.gain.value = 60;
+    wobble.connect(wobbleGain);
+    wobbleGain.connect(band.frequency);
+    const nodes = [grind, motor, wobble];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.35 };
+});
+
+// Deep, watery hum of an open event horizon.
+const horizonVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(master);
+    const send = c.createGain();
+    send.gain.value = 0.5;
+    gain.connect(send);
+    send.connect(reverb);
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = 'sine';
+    b.type = 'triangle';
+    a.frequency.value = 62;
+    b.frequency.value = 93.5;
+    const lfo = c.createOscillator();
+    const lfoGain = c.createGain();
+    lfo.frequency.value = 0.8;
+    lfoGain.gain.value = 0.35;
+    const mod = c.createGain();
+    mod.gain.value = 0.65;
+    lfo.connect(lfoGain);
+    lfoGain.connect(mod.gain);
+    a.connect(mod);
+    b.connect(mod);
+    mod.connect(gain);
+    const water = c.createBufferSource();
+    water.buffer = noiseBuffer;
+    water.loop = true;
+    const waterFilter = c.createBiquadFilter();
+    waterFilter.type = 'bandpass';
+    waterFilter.frequency.value = 500;
+    waterFilter.Q.value = 4;
+    const sweep2 = c.createOscillator();
+    const sweepGain = c.createGain();
+    sweep2.frequency.value = 0.35;
+    sweepGain.gain.value = 250;
+    sweep2.connect(sweepGain);
+    sweepGain.connect(waterFilter.frequency);
+    const waterGain = c.createGain();
+    waterGain.gain.value = 0.25;
+    water.connect(waterFilter);
+    waterFilter.connect(waterGain);
+    waterGain.connect(gain);
+    const nodes = [a, b, lfo, water, sweep2];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.3 };
+});
+
+// Roaring rumble while travelling in hyperspace.
+const hyperVoice = createVoice(c => {
+    const gain = c.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(drive);
+    const roar = c.createBufferSource();
+    roar.buffer = noiseBuffer;
+    roar.loop = true;
+    const low = c.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = 380;
+    roar.connect(low);
+    low.connect(gain);
+    const tone1 = c.createOscillator();
+    const toneGain = c.createGain();
+    tone1.type = 'sine';
+    tone1.frequency.value = 55;
+    toneGain.gain.value = 0.5;
+    tone1.connect(toneGain);
+    toneGain.connect(gain);
+    const nodes = [roar, tone1];
+    nodes.forEach(n => n.start());
+    return { gain: gain, nodes: nodes, peak: 0.3 };
+});
+
+const gateSounds = {
+    // DHD key: a soft electronic "bwoop", pitched by the key's position on the ring.
+    dhdPress(index) {
+        if(playSample('dhd_press', 0.9, { rate: 0.97 + Math.random() * 0.06 })) return;
+        const c = context();
+        if(!c) return;
+        const f = 520 + (index % 13) * 22;
+        tone(c, 'sine', f * 1.25, f, 0.18, envelope(c, 0.16, 0.004, 0.18, 0.3));
+        tone(c, 'triangle', f * 0.5, f * 0.48, 0.12, envelope(c, 0.08, 0.002, 0.12, 0.2));
+        noise(c, 0.02, 'highpass', 5000, 4000, envelope(c, 0.05, 0.001, 0.02));
+    },
+
+    // Pressing the big dome: a heavy, rising activation tone.
+    dhdDome() {
+        if(playSample('dhd_dome', 0.9)) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'sine', 140, 320, 0.5, heavy(c, 0.4, 0.01, 0.5, 0.5));
+        tone(c, 'triangle', 560, 880, 0.4, envelope(c, 0.08, 0.01, 0.4, 0.5));
+        noise(c, 0.08, 'lowpass', 1200, 300, heavy(c, 0.25, 0.001, 0.08));
+    },
+
+    dialFail() {
+        if(playSample('dial_fail', 0.9)) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'square', 160, 150, 0.45, heavy(c, 0.18, 0.005, 0.45, 0.3));
+        tone(c, 'square', 113, 110, 0.45, heavy(c, 0.14, 0.005, 0.45, 0.3));
+    },
+
+    gateSpin(on) {
+        if(!on) {
+            stopSample('gate_spin');
+            gateSpinVoice.stop();
+            return;
+        }
+        if(!playSample('gate_spin', 0.9, { rate: 0.97 })) gateSpinVoice.start();
+    },
+
+    // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
+    chevronLock(final) {
+        // CAP plays each with a random pitch of 97-104%.
+        if(playSample(final ? 'chevron_lock' : 'chevron', 1, { rate: 0.97 + Math.random() * 0.07 })) return;
+        const c = context();
+        if(!c) return;
+        noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
+        tone(c, 'sine', 120, 45, 0.35, heavy(c, 0.7, 0.002, 0.35, 0.4));
+        [310, 467, 692, 1010].forEach((f, i) => {
+            tone(c, 'sine', f, f * 0.995, 0.9 - i * 0.15, envelope(c, 0.06 / (i + 1), 0.003, 0.9 - i * 0.15, 0.6));
+        });
+        setTimeout(() => {
+            if(!ac) return;
+            noise(ac, 0.06, 'lowpass', 1800, 300, heavy(ac, 0.35, 0.001, 0.06, 0.3));
+            tone(ac, 'sine', 95, 40, 0.25, heavy(ac, 0.5, 0.002, 0.25, 0.3));
+        }, 140);
+        if(final) tone(c, 'sine', 70, 35, 0.9, heavy(c, 0.6, 0.01, 0.9, 0.6));
+    },
+
+    // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
+    kawoosh() {
+        if(playSample('kawoosh', 1, { rate: 0.98 + Math.random() * 0.04 })) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
+        noise(c, 1.6, 'lowpass', 900, 120, heavy(c, 0.5, 0.25, 1.4, 0.7));
+        tone(c, 'sine', 55, 30, 1.5, heavy(c, 0.7, 0.2, 1.4, 0.6));
+        for(let i = 0; i < 14; i++) {
+            setTimeout(() => {
+                if(!ac) return;
+                const f = 200 + Math.random() * 700;
+                tone(ac, 'sine', f, f * (0.4 + Math.random() * 0.4), 0.12, envelope(ac, 0.05, 0.005, 0.12, 0.6));
+            }, 300 + i * 55);
+        }
+    },
+
+    horizon(on) {
+        if(!on) {
+            stopSample('horizon');
+            horizonVoice.stop();
+            return;
+        }
+        if(!playSample('horizon', 0.7)) horizonVoice.start();
+    },
+
+    // Riding the wormhole: a long, roaring, flanging rush.
+    wormhole() {
+        if(playSample('wormhole', 1)) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
+        sweep(c, 3.4, 2400, 400, 2, envelope(c, 0.18, 0.4, 3, 0.6));
+        noise(c, 3.4, 'lowpass', 600, 150, heavy(c, 0.45, 0.2, 3.2, 0.5));
+        tone(c, 'sine', 48, 70, 3.2, heavy(c, 0.5, 0.3, 3, 0.4));
+    },
+
+    // Something passing through the event horizon (CAP's teleport splash).
+    gateEnter() {
+        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
+    },
+
+    // Arriving: cut the wormhole ride short and splash out of the horizon.
+    gateArrive() {
+        cutSample('wormhole', 0.12);
+        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
+    },
+
+    gateClose(silent) {
+        if(silent) return;
+        if(playSample('gate_close', 1, { rate: 0.97 + Math.random() * 0.06 })) return;
+        const c = context();
+        if(!c) return;
+        sweep(c, 0.8, 1800, 200, 2, envelope(c, 0.25, 0.01, 0.8, 0.6));
+        tone(c, 'sine', 180, 40, 0.7, heavy(c, 0.35, 0.005, 0.7, 0.5));
+    },
+
+    // Hyperspace window opening: a deep "whoomph" and a swirling rising rush.
+    hyperOpen() {
+        if(playSample('hyper_window', 1, { wet: 0.2 })) return;
+        const c = context();
+        if(!c) return;
+        tone(c, 'sine', 70, 28, 1.2, heavy(c, 0.8, 0.01, 1.2, 0.6));
+        sweep(c, 1.5, 200, 3000, 1.3, heavy(c, 0.45, 0.2, 1.3, 0.7));
+        ringTone(c, 'sawtooth', 120, 600, 40, 1.2, heavy(c, 0.18, 0.2, 1, 0.6));
+    },
+
+    hyperTravel(on) {
+        if(!on) {
+            hyperVoice.stop();
+            return;
+        }
+        hyperVoice.start();
+    },
+
+    hyperExit() {
+        if(playSample('hyper_window', 1, { rate: 1.08, wet: 0.2 })) return;
+        const c = context();
+        if(!c) return;
+        noise(c, 0.1, 'lowpass', 3000, 800, heavy(c, 0.4, 0.001, 0.1));
+        tone(c, 'sine', 90, 30, 1, heavy(c, 0.7, 0.005, 1, 0.6));
+        sweep(c, 1, 2500, 250, 1.5, heavy(c, 0.3, 0.01, 1, 0.6));
+    }
+};
+
+let beamOn = false;
+
+const sounds = {
+    // Must be called from a user gesture (e.g. the launch click) so audio can start.
+    unlock() {
+        const c = context();
+        if(c && c.state === 'suspended') c.resume();
+    },
+
+    startEngine() { setLooping(engineSound, true); },
+    setThrust(on) { setLooping(thrusterSound, on); },
+    // Minigun growl underneath the per-round shots.
+    setFiring(on) { if(on) minigunVoice.start(); else minigunVoice.stop(); },
+    setBeam(on) {
+        if(on && !beamOn) sounds.beamCharge();
+        beamOn = on;
+        if(on) beamVoice.start(); else beamVoice.stop();
+    },
+
+    // Asgard ion cannon spinning up as the beam fires: a fast, distorted rising roar.
+    beamCharge() {
+        const c = throttle('beamCharge', 0.2);
+        if(!c) return;
+        if(playSample('asgard_beam', 0.85, { wet: 0.2 })) return;
+        ringTone(c, 'sawtooth', 90, 600, 60, 0.22, heavy(c, 0.35, 0.01, 0.22, 0.4));
+        tone(c, 'sine', 70, 38, 0.5, heavy(c, 0.7, 0.002, 0.5, 0.4));
+        noise(c, 0.15, 'lowpass', 3000, 600, heavy(c, 0.25, 0.001, 0.15, 0.3));
+    },
+    // `level` 0..1 grows with the number of ore pieces held.
+    setTractor(on, level) { if(on) tractorVoice.start(0.5 + 0.5 * (level || 0)); else tractorVoice.stop(); },
+
+    explosion(volume) { playOneShot(explosionSound, volume === undefined ? 1 : volume); },
+    // The player's ship blowing up.
+    shipExplosion() {
+        if(!playSample('ship_explosion', 1, { wet: 0.3 })) sounds.explosion(1);
+    },
+    // Console button (stabilizer and other toggles).
+    toggle(on) {
+        if(playSample('button', 0.6, { variant: on ? 0 : 1 })) return;
+        const c = context();
+        if(c) tone(c, 'sine', on ? 700 : 500, on ? 900 : 380, 0.12, envelope(c, 0.08, 0.003, 0.12));
+    },
+
+    // Heavy minigun round: a deep chest-punch thump, a gritty saturated body and a
+    // low-mid crack (no thin high tones), randomised so the stream sounds like a growl.
+    minigunShot() {
+        const c = throttle('minigun', 0.035);
+        if(!c) return;
+        const v = vary(0.08);
+        // Recorded railgun round with a sub-bass thump underneath for weight.
+        if(playSample('railgun', 0.5, { rate: vary(0.06) })) {
+            tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.45, 0.001, 0.13, 0.12));
+            return;
+        }
+        tone(c, 'sine', 95 * v, 34, 0.13, heavy(c, 0.75, 0.001, 0.13, 0.12));
+        tone(c, 'sawtooth', 170 * v, 55, 0.07, heavy(c, 0.32, 0.001, 0.07, 0.1));
+        noise(c, 0.06, 'lowpass', 3200 * v, 500, heavy(c, 0.45, 0.0008, 0.06, 0.15));
+        noise(c, 0.03, 'bandpass', 1400 * v, 700, heavy(c, 0.2, 0.0005, 0.03), 1.4);
+    },
+
+    // Round striking an asteroid: dull dusty thud on the outside, harder crunch on the core.
+    rockHit(hard) {
+        const c = throttle('rockHit', 0.03);
+        if(!c) return;
+        const v = vary(0.1);
+        tone(c, 'sine', 110 * v, 40, 0.1, heavy(c, 0.3, 0.001, 0.1));
+        if(hard) noise(c, 0.08, 'bandpass', 2200 * v, 900, heavy(c, 0.18, 0.001, 0.08, 0.15), 1.2);
+        else noise(c, 0.14, 'lowpass', 1000 * v, 200, heavy(c, 0.25, 0.002, 0.14, 0.1));
+    },
+
+    // Goa'uld staff weapon: a snarling, distorted "tsew" sweeping down into a deep
+    // concussion, with crackling plasma and a long rolling tail.
+    staffShot() {
+        const c = throttle('staff', 0.08);
+        if(!c) return;
+        const v = vary(0.05);
+        if(playSample('staff', 0.85, { rate: vary(0.04), wet: 0.25 })) {
+            tone(c, 'sine', 120 * v, 28, 0.6, heavy(c, 0.5, 0.002, 0.6, 0.3));
+            return;
+        }
+        ringTone(c, 'sawtooth', 1100 * v, 120, 58, 0.36, heavy(c, 0.38, 0.002, 0.36, 0.5));
+        sweep(c, 0.32, 3200 * v, 300, 3, heavy(c, 0.35, 0.001, 0.32, 0.45));
+        tone(c, 'sine', 120 * v, 28, 0.7, heavy(c, 0.8, 0.002, 0.7, 0.4));
+        tone(c, 'square', 70 * v, 30, 0.3, heavy(c, 0.2, 0.002, 0.3, 0.3));
+        noise(c, 0.2, 'highpass', 4000, 2000, envelope(c, 0.06, 0.001, 0.2, 0.3));
+    },
+
+    // Staff blast hitting: a crackling, distorted plasma burst over a deep boom.
+    plasmaImpact() {
+        const c = throttle('plasmaImpact', 0.06);
+        if(!c) return;
+        boom(c, 0.75, 0.45);
+        ringTone(c, 'sawtooth', 600, 70, 45, 0.4, heavy(c, 0.22, 0.002, 0.4, 0.5));
+    },
+
+    // Tau'ri missile: a hard ignition punch, then a roaring, distorted rocket that climbs away.
+    missileLaunch() {
+        const c = throttle('missile', 0.05);
+        if(!c) return;
+        if(playSample('missile', 0.9, { rate: vary(0.04), wet: 0.2 })) return;
+        tone(c, 'sine', 100, 30, 0.4, heavy(c, 0.7, 0.002, 0.4, 0.3));
+        noise(c, 0.06, 'lowpass', 3000, 800, heavy(c, 0.3, 0.001, 0.06));
+        sweep(c, 1.2, 250, 1600, 0.8, heavy(c, 0.4, 0.04, 1.15, 0.45));
+        noise(c, 1, 'lowpass', 700, 120, heavy(c, 0.35, 0.02, 0.95, 0.4));
+    },
+
+    missileExplosion() {
+        const c = throttle('boom', 0.05);
+        if(!c) return;
+        noise(c, 0.08, 'lowpass', 3000, 900, heavy(c, 0.35, 0.001, 0.08));
+        boom(c, 1.2, 0.6);
+    },
+
+    // Ancient drone: a deep, menacing rush of air with a low hum and a growling whistle,
+    // rather than a thin high whine.
+    droneLaunch() {
+        const c = throttle('drones', 0.07);
+        if(!c) return;
+        const v = vary(0.06);
+        if(playSample('drone', 0.75, { rate: v, wet: 0.25 })) return;
+        sweep(c, 0.75, 250 * v, 1400, 2.2, heavy(c, 0.45, 0.02, 0.72, 0.5));
+        tone(c, 'sawtooth', 110 * v, 220, 0.6, heavy(c, 0.22, 0.03, 0.58, 0.5));
+        tone(c, 'sine', 380 * v, 720, 0.55, heavy(c, 0.12, 0.03, 0.52, 0.6));
+        tone(c, 'sine', 70 * v, 45, 0.5, heavy(c, 0.5, 0.01, 0.5, 0.3));
+    },
+
+    // Drone detonation: a hard energy crack into a deep, rolling, distorted blast.
+    droneImpact() {
+        const c = throttle('droneImpact', 0.05);
+        if(!c) return;
+        ringTone(c, 'sawtooth', 900, 90, 70, 0.3, heavy(c, 0.3, 0.001, 0.3, 0.6));
+        boom(c, 1.05, 0.6);
+    },
+
+    beamImpact() {
+        const c = throttle('beamImpact', 0.09);
+        if(!c) return;
+        noise(c, 0.1, 'bandpass', 3000, 1500, envelope(c, 0.08, 0.002, 0.1), 2);
+    },
+
+    overheat() {
+        const c = throttle('overheat', 0.5);
+        if(!c) return;
+        tone(c, 'square', 880, 880, 0.08, envelope(c, 0.08, 0.002, 0.08));
+        setTimeout(() => { if(ac) tone(ac, 'square', 660, 660, 0.12, envelope(ac, 0.08, 0.002, 0.12)); }, 120);
+        noise(c, 0.7, 'highpass', 3000, 1200, envelope(c, 0.07, 0.05, 0.7, 0.3));
+    },
+
+    // Something striking raised shields: an electric zap with a resonant hum.
+    // Like CAP's shields: at most one impact sound every 0.25 s, pitch 90-110%.
+    shieldHit(strength) {
+        const c = throttle('shield', 0.25);
+        if(!c) return;
+        const s = Math.max(0.3, Math.min(1.5, strength || 1));
+        const rate = 0.9 + Math.random() * 0.2;
+        if(s >= 0.9 && playSample('shield_hit_heavy', 0.55 + 0.3 * Math.min(1, s - 0.9), { rate: rate })) return;
+        if(playSample('shield_hit', 0.45 + 0.4 * s, { rate: rate })) return;
+        tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
+        tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
+        noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));
+    },
+
+    shieldUp() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        if(playSample('shield_up', 0.8)) return;
+        tone(c, 'sine', 160, 900, 0.55, envelope(c, 0.2, 0.02, 0.55, 0.5));
+        tone(c, 'triangle', 320, 1800, 0.5, envelope(c, 0.07, 0.02, 0.5, 0.5));
+    },
+
+    shieldDown() {
+        const c = throttle('shieldToggle', 0.2);
+        if(!c) return;
+        if(playSample('shield_down', 0.8)) return;
+        tone(c, 'sine', 900, 110, 0.5, envelope(c, 0.18, 0.01, 0.5, 0.5));
+        noise(c, 0.45, 'bandpass', 2000, 300, envelope(c, 0.06, 0.01, 0.45, 0.3), 2);
+    },
+
+    hullHit() {
+        const c = throttle('hull', 0.1);
+        if(!c) return;
+        boom(c, 0.5, 0.25);
+        tone(c, 'square', 90, 40, 0.25, envelope(c, 0.15, 0.002, 0.25));
+    },
+
+    rockCrack() {
+        const c = throttle('crack', 0.06);
+        if(!c) return;
+        noise(c, 0.35, 'bandpass', 1500, 250, envelope(c, 0.4, 0.001, 0.35, 0.35), 0.8);
+        tone(c, 'triangle', 200, 55, 0.3, envelope(c, 0.22, 0.001, 0.3, 0.3));
+    },
+
+    // Deep rumble as asteroids grind together and merge.
+    merge(size) {
+        const c = throttle('merge', 0.15);
+        if(!c) return;
+        const volume = Math.min(0.5, 0.15 + size / 200);
+        noise(c, 1.4, 'lowpass', 400, 60, envelope(c, volume, 0.15, 1.3, 0.4));
+        tone(c, 'sine', 70, 40, 1.2, envelope(c, volume * 0.6, 0.1, 1.2, 0.3));
+    },
+
+    // Asteroid glancing off the Atlantis city shield.
+    cityShield(volume) {
+        const c = throttle('cityShield', 0.12);
+        if(!c) return;
+        const v = Math.max(0.02, Math.min(0.3, volume));
+        tone(c, 'sine', 700, 160, 0.7, envelope(c, v, 0.004, 0.7, 0.6));
+        tone(c, 'triangle', 1400, 480, 0.45, envelope(c, v * 0.4, 0.004, 0.45, 0.6));
+        noise(c, 0.3, 'highpass', 4000, 1800, envelope(c, v * 0.3, 0.002, 0.3, 0.4));
+    },
+
+    // Tractor beam latching onto a new piece of ore.
+    tractorLock() {
+        const c = throttle('tractorLock', 0.06);
+        if(!c) return;
+        tone(c, 'sine', 700, 1150, 0.14, envelope(c, 0.07, 0.005, 0.14, 0.4));
+    },
+
+    // Ore stowed in the hold: a little two-note chime, higher for valuable ore.
+    pickup(value) {
+        const c = throttle('pickup', 0.05);
+        if(!c) return;
+        const f = 620 + Math.min(600, value * 6);
+        tone(c, 'triangle', f, f, 0.09, envelope(c, 0.09, 0.002, 0.09, 0.3));
+        setTimeout(() => { if(ac) tone(ac, 'sine', f * 1.5, f * 1.5, 0.16, envelope(ac, 0.07, 0.002, 0.16, 0.3)); }, 60);
+    },
+
+    // Scanner sweep ping.
+    scanPing() {
+        const c = throttle('scan', 0.5);
+        if(!c) return;
+        if(playSample('scan', 0.35)) return;
+        tone(c, 'sine', 1320, 1240, 0.5, envelope(c, 0.08, 0.004, 0.5, 0.7));
+        tone(c, 'sine', 660, 640, 0.6, envelope(c, 0.05, 0.004, 0.6, 0.7));
+    },
+
+    dock() {
+        const c = context();
+        if(!c) return;
+        if(playSample('door', 0.8)) return;
+        tone(c, 'sine', 660, 660, 0.25, envelope(c, 0.15, 0.01, 0.25, 0.4));
+        setTimeout(() => { if(ac) tone(ac, 'sine', 990, 990, 0.4, envelope(ac, 0.15, 0.01, 0.4, 0.4)); }, 160);
+    },
+
+    stopAll() {
+        setLooping(engineSound, false);
+        setLooping(thrusterSound, false);
+        beamVoice.stop();
+        tractorVoice.stop();
+        minigunVoice.stop();
+        gateSpinVoice.stop();
+        horizonVoice.stop();
+        hyperVoice.stop();
+        Object.keys(loops).forEach(stopSample);
+    }
+};
+
+Object.assign(sounds, gateSounds);
+
+/* harmony default export */ __webpack_exports__["a"] = (sounds);
+
+
+/***/ }),
+/* 5 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(1);
+// Persistent player profile: credits, owned hulls and the module loadout of each hull.
+
+
+
+
+
+const BASE_MAGNET_RANGE = 90;
+const REPAIR_COST_PER_HP = 2;
+/* harmony export (immutable) */ __webpack_exports__["a"] = REPAIR_COST_PER_HP;
+
+
+const STORAGE_KEY = 'awesome-game-shipyard-v1';
+
+const defaultProfile = () => ({
+    credits: 0,
+    bestScore: 0,
+    seed: Math.floor(Math.random() * 4294967295),
+    cargo: {},
+    hull: 'x302',
+    ownedHulls: ['x302'],
+    loadouts: {
+        x302: { c: { type: 'minigun', level: 1 } }
+    }
+});
+
+const load = () => {
+    try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if(!raw) return defaultProfile();
+        const data = JSON.parse(raw);
+        const profile = Object.assign(defaultProfile(), data);
+        if(!__WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][profile.hull] || (!profile.debug && profile.ownedHulls.indexOf(profile.hull) === -1)) profile.hull = 'x302';
+        return profile;
+    } catch(e) {
+        return defaultProfile();
+    }
+};
+
+const profile = load();
+const listeners = [];
+
+const save = () => {
+    try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    } catch(e) {
+        // Storage unavailable (private mode etc.): keep playing from memory.
+    }
+    listeners.forEach(fn => fn(profile));
+};
+
+const onProfileChange = (fn) => listeners.push(fn);
+/* harmony export (immutable) */ __webpack_exports__["l"] = onProfileChange;
+
+
+const getProfile = () => profile;
+/* harmony export (immutable) */ __webpack_exports__["g"] = getProfile;
+
+
+const loadoutFor = (hullId) => {
+    if(!profile.loadouts[hullId]) profile.loadouts[hullId] = {};
+    return profile.loadouts[hullId];
+};
+/* harmony export (immutable) */ __webpack_exports__["j"] = loadoutFor;
+
+
+const addCredits = (amount) => {
+    profile.credits += amount;
+    save();
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = addCredits;
+
+
+const recordScore = (score) => {
+    if(score > profile.bestScore) {
+        profile.bestScore = score;
+        save();
+    }
+};
+/* unused harmony export recordScore */
+
+
+// ------------------------------------------------------------ debug mode
+// Debug mode unlocks every hull and makes every purchase, upgrade and repair free.
+// Selling gives nothing back while it's on, so it can't be used to farm credits.
+
+const isDebug = () => !!profile.debug;
+/* harmony export (immutable) */ __webpack_exports__["i"] = isDebug;
+
+
+const setDebug = (on) => {
+    profile.debug = !!on;
+    save();
+};
+/* harmony export (immutable) */ __webpack_exports__["s"] = setDebug;
+
+
+// What something costs right now (0 in debug mode).
+const priceOf = (cost) => (profile.debug ? 0 : cost);
+/* harmony export (immutable) */ __webpack_exports__["n"] = priceOf;
+
+
+const ownsHull = (hullId) => !!profile.debug || profile.ownedHulls.indexOf(hullId) !== -1;
+/* harmony export (immutable) */ __webpack_exports__["m"] = ownsHull;
+
+
+const selectHull = (hullId) => {
+    if(!ownsHull(hullId)) return false;
+    profile.hull = hullId;
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["p"] = selectHull;
+
+
+const buyHull = (hullId) => {
+    const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId];
+    if(ownsHull(hullId) || profile.credits < priceOf(hull.cost)) return false;
+    profile.credits -= priceOf(hull.cost);
+    profile.ownedHulls.push(hullId);
+    profile.hull = hullId;
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = buyHull;
+
+
+const installModule = (hullId, slotId, type) => {
+    const loadout = loadoutFor(hullId);
+    if(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].minHullMass && __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId].mass < __WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].minHullMass) return false;
+    if(loadout[slotId] || profile.credits < priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost)) return false;
+    profile.credits -= priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost);
+    loadout[slotId] = { type: type, level: 1 };
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["h"] = installModule;
+
+
+const upgradeModule = (hullId, slotId) => {
+    const module = loadoutFor(hullId)[slotId];
+    if(!module || module.level >= __WEBPACK_IMPORTED_MODULE_1__modules__["a" /* MAX_LEVEL */]) return false;
+    const cost = priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["g" /* upgradeCost */])(module.type, module.level));
+    if(profile.credits < cost) return false;
+    profile.credits -= cost;
+    module.level++;
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["v"] = upgradeModule;
+
+
+const sellModule = (hullId, slotId) => {
+    const loadout = loadoutFor(hullId);
+    const module = loadout[slotId];
+    if(!module) return false;
+    profile.credits += priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["f" /* sellValue */])(module.type, module.level));
+    delete loadout[slotId];
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["r"] = sellModule;
+
+
+// Combine hull + modules into the numbers the ship flies with.
+// `loadoutOverride` builds stats for a loadout that isn't the player's (enemy ships).
+const computeShipStats = (hullId, loadoutOverride) => {
+    const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId];
+    const loadout = loadoutOverride || loadoutFor(hullId);
+
+    const stats = {
+        hull: hull,
+        mass: hull.mass,
+        maxHull: hull.hull,
+        maxShield: hull.baseShield,
+        shieldRegen: hull.baseShield > 0 ? hull.baseShield * 0.15 : 0,
+        thrustForce: hull.thrust,
+        cargo: hull.cargo,
+        magnetRange: BASE_MAGNET_RANGE,
+        torqueForce: hull.torque * hull.mass,
+        guidance: null,
+        scanner: null,
+        // Some hulls come with a hyperdrive built in.
+        hyperdrive: hull.hyperdrive ? { speed: hull.hyperdrive } : null,
+        modules: []
+    };
+
+    hull.slots.forEach(slot => {
+        const module = loadout[slot.id];
+        if(!module) return;
+        const s = Object(__WEBPACK_IMPORTED_MODULE_1__modules__["e" /* moduleStats */])(module.type, module.level);
+        stats.modules.push({ slot: slot, type: module.type, level: module.level, stats: s });
+
+        if(module.type === 'engine') {
+            stats.thrustForce += s.thrust;
+            stats.torqueForce += s.torque;
+        }
+        if(module.type === 'shield') {
+            stats.maxShield += s.capacity;
+            stats.shieldRegen += s.regen;
+        }
+        if(module.type === 'armor') {
+            stats.maxHull += s.hull;
+            stats.mass += s.mass;
+        }
+        if(module.type === 'cargo') stats.cargo += s.capacity;
+        if(module.type === 'hyperdrive') {
+            if(!stats.hyperdrive || s.speed > stats.hyperdrive.speed) stats.hyperdrive = s;
+        }
+        if(module.type === 'scanner') {
+            if(!stats.scanner || s.range > stats.scanner.range) stats.scanner = s;
+        }
+        if(module.type === 'magnet') stats.magnetRange = Math.max(stats.magnetRange, s.range);
+        if(module.type === 'guidance') {
+            if(!stats.guidance || s.range > stats.guidance.range) stats.guidance = s;
+        }
+    });
+
+    stats.acceleration = stats.thrustForce / stats.mass;
+    stats.angularAcceleration = stats.torqueForce / stats.mass;
+    stats.maxTurn = hull.maxTurn * Math.min(1.6, Math.sqrt(stats.angularAcceleration / hull.torque));
+    stats.weapons = stats.modules.filter(m => ['minigun', 'missile', 'staff', 'beam', 'drones'].indexOf(m.type) !== -1).length;
+
+    return stats;
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = computeShipStats;
+
+
+// ------------------------------------------------------------ cargo & market
+
+const cargoUsed = () => Object.keys(profile.cargo).reduce((sum, id) => sum + profile.cargo[id], 0);
+/* harmony export (immutable) */ __webpack_exports__["d"] = cargoUsed;
+
+
+// Adds one unit of ore if it fits. Returns true when stored.
+const storeOre = (material, capacity) => {
+    if(cargoUsed() >= capacity) return false;
+    profile.cargo[material] = (profile.cargo[material] || 0) + 1;
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["u"] = storeOre;
+
+
+const cargoValue = () => Object.keys(profile.cargo)
+    .reduce((sum, id) => sum + profile.cargo[id] * __WEBPACK_IMPORTED_MODULE_2__world_materials__["b" /* default */][id].price, 0);
+/* harmony export (immutable) */ __webpack_exports__["e"] = cargoValue;
+
+
+const sellCargo = (material) => {
+    const ids = material ? [material] : Object.keys(profile.cargo);
+    let earned = 0;
+    ids.forEach(id => {
+        earned += (profile.cargo[id] || 0) * __WEBPACK_IMPORTED_MODULE_2__world_materials__["b" /* default */][id].price;
+        delete profile.cargo[id];
+    });
+    profile.credits += earned;
+    save();
+    return earned;
+};
+/* harmony export (immutable) */ __webpack_exports__["q"] = sellCargo;
+
+
+// Jettison ore from the hold. Returns how many units were removed.
+const removeCargo = (material, count) => {
+    const have = profile.cargo[material] || 0;
+    const removed = Math.min(have, count);
+    if(removed <= 0) return 0;
+    if(have - removed > 0) profile.cargo[material] = have - removed;
+    else delete profile.cargo[material];
+    save();
+    return removed;
+};
+/* harmony export (immutable) */ __webpack_exports__["o"] = removeCargo;
+
+
+const loseCargo = () => {
+    profile.cargo = {};
+    save();
+};
+/* harmony export (immutable) */ __webpack_exports__["k"] = loseCargo;
+
+
+const spendCredits = (amount) => {
+    if(profile.credits < priceOf(amount)) return false;
+    profile.credits -= priceOf(amount);
+    save();
+    return true;
+};
+/* harmony export (immutable) */ __webpack_exports__["t"] = spendCredits;
+
+
+
+/***/ }),
+/* 6 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Star systems you can travel between, the constellations used as Stargate symbols, and
+// the gate addresses.
+//
+// Gate addresses work like coordinates: six constellation symbols form three pairs, and
+// the line between each pair passes through the destination; where the three lines meet
+// is the destination world. The seventh symbol is the point of origin of the gate you
+// dial from. Addresses here are generated from that geometry (constellations sit on a
+// large sphere around the map), so the starmap can draw the three lines meeting exactly
+// at the world.
+
+const CONSTELLATIONS = [
+    'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
+    'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
+    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
+    'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
+    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
+];
+/* harmony export (immutable) */ __webpack_exports__["a"] = CONSTELLATIONS;
+
+
+// Map units: 1 unit = 1 light year. Constellations sit on a sphere around everything.
+const SPHERE_RADIUS = 3600;
+
+const SYSTEMS = [
+    {
+        id: 'lantea', name: 'Lantea', galaxy: 'Pegasus', origin: 'Lantean',
+        description: 'Ocean world of Atlantis. Shipyard and ore market.',
+        map: [1700, -380, 900],
+        station: true, gate: { x: 760, y: -620 },
+        planet: { x: -2600, y: -1900, radius: 900, type: 'ocean' },
+        tint: '60,120,200', materials: {}
+    },
+    {
+        id: 'earth', name: 'Earth', galaxy: 'Milky Way', origin: "Tau'ri",
+        description: 'Home of the SGC. Iron and copper rich belts.',
+        map: [-420, 120, -260],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2400, y: -2100, radius: 950, type: 'earth', moon: true },
+        tint: '70,110,170', materials: { iron: 1.6, copper: 1.8, gold: 0.6 }
+    },
+    {
+        id: 'abydos', name: 'Abydos', galaxy: 'Milky Way', origin: 'Abydonian',
+        description: 'Desert world with naquadah mines. Rich in naquadah.',
+        map: [-180, -340, 110],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2200, y: 2000, radius: 1000, type: 'desert', moon: true },
+        tint: '170,130,70', materials: { naquadah: 4, gold: 1.4, iron: 0.7 }
+    },
+    {
+        id: 'chulak', name: 'Chulak', galaxy: 'Milky Way', origin: 'Chulakian',
+        description: "Jaffa homeworld under Apophis. Titanium-heavy asteroids.",
+        map: [260, 300, -520],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2600, y: 1800, radius: 850, type: 'jungle' },
+        tint: '80,140,90', materials: { titanium: 2.5, copper: 1.2 }
+    },
+    {
+        id: 'dakara', name: 'Dakara', galaxy: 'Milky Way', origin: 'Dakaran',
+        description: 'Ancient temple world. Gold-veined asteroids.',
+        map: [520, -120, 340],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2500, y: -2000, radius: 900, type: 'rocky' },
+        tint: '170,90,70', materials: { gold: 2.6, titanium: 1.2 }
+    },
+    {
+        id: 'langara', name: 'Langara', galaxy: 'Milky Way', origin: 'Langaran',
+        description: 'Industrial world of Kelowna. Dense, metal-rich fields.',
+        map: [-640, -60, 480],
+        gate: { x: 0, y: 0 },
+        planet: { x: 2300, y: 2200, radius: 880, type: 'industrial' },
+        tint: '130,110,150', materials: { naquadah: 2, iron: 1.3, titanium: 1.4 }
+    },
+    {
+        id: 'othala', name: 'Othala', galaxy: 'Ida', origin: 'Asgard',
+        description: 'Asgard homeworld, far from the Milky Way. Pristine titanium and gold.',
+        map: [-1900, 520, -1100],
+        gate: { x: 0, y: 0 },
+        planet: { x: -2300, y: 2100, radius: 920, type: 'ice' },
+        tint: '120,200,220', materials: { titanium: 2.4, gold: 1.8, naquadah: 1.5 }
+    }
+];
+/* harmony export (immutable) */ __webpack_exports__["b"] = SYSTEMS;
+
+
+const systemById = (id) => SYSTEMS.filter(s => s.id === id)[0] || SYSTEMS[0];
+/* harmony export (immutable) */ __webpack_exports__["g"] = systemById;
+
+
+// ------------------------------------------------------------ address geometry
+
+const random = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
+
+// Constellation positions and addresses, built once from a fixed seed so every player
+// has the same addresses.
+const build = () => {
+    const rnd = random(1994);
+    const positions = new Array(CONSTELLATIONS.length);
+    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
+
+    // Anchors: evenly spread over the sphere.
+    for(let i = 0; i < anchorCount; i++) {
+        const y = 1 - (i + 0.5) / anchorCount * 2;
+        const r = Math.sqrt(1 - y * y);
+        const phi = i * 2.399963 + rnd() * 0.2;
+        positions[i] = [Math.cos(phi) * r * SPHERE_RADIUS, y * SPHERE_RADIUS, Math.sin(phi) * r * SPHERE_RADIUS];
+    }
+
+    // For each world, draw three lines from anchors through the world to the far side of
+    // the sphere; the far ends become the remaining constellations.
+    let next = anchorCount;
+    const addresses = {};
+    SYSTEMS.forEach((system, index) => {
+        const d = system.map;
+        const used = {};
+        const glyphs = [];
+        for(let line = 0; line < 3; line++) {
+            let a;
+            do { a = Math.floor(rnd() * anchorCount); } while(used[a]);
+            used[a] = true;
+            const u = normalize(sub(d, positions[a]));
+            // Solve |d + u t| = R for t > 0.
+            const b = dot(d, u);
+            const c = dot(d, d) - SPHERE_RADIUS * SPHERE_RADIUS;
+            const t = -b + Math.sqrt(b * b - c);
+            positions[next] = add(d, scale(u, t));
+            glyphs.push(a, next);
+            next++;
+        }
+        // Mix the order a little so pairs aren't always anchor-first.
+        if(index % 2) glyphs.reverse();
+        addresses[system.id] = glyphs;
+    });
+
+    return { positions: positions, addresses: addresses };
+};
+
+const geometry = build();
+
+const constellationPosition = (index) => geometry.positions[index];
+/* harmony export (immutable) */ __webpack_exports__["e"] = constellationPosition;
+
+
+// Six constellation indices for a destination.
+const addressOf = (systemId) => geometry.addresses[systemId].slice();
+/* harmony export (immutable) */ __webpack_exports__["d"] = addressOf;
+
+
+// Which system (if any) a 6-symbol address leads to.
+const systemForAddress = (glyphs) => {
+    const key = glyphs.join(',');
+    const match = SYSTEMS.filter(s => geometry.addresses[s.id].join(',') === key)[0];
+    return match || null;
+};
+/* harmony export (immutable) */ __webpack_exports__["h"] = systemForAddress;
+
+
+// The three lines of an address, as pairs of 3D points (for the starmap).
+const addressLines = (systemId) => {
+    const g = geometry.addresses[systemId];
+    return [[g[0], g[1]], [g[2], g[3]], [g[4], g[5]]].map(pair => [geometry.positions[pair[0]], geometry.positions[pair[1]]]);
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = addressLines;
+
+
+const distanceBetween = (a, b) => {
+    const d = sub(systemById(a).map, systemById(b).map);
+    return Math.sqrt(dot(d, d));
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = distanceBetween;
+
+
+
+/***/ }),
 /* 7 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+
+
+// Small glowing sparks, plus soft dust that can be drawn into an asteroid
+// (used when asteroids merge: the dust cloud spirals in and settles on the surface).
+
+// Colour strings are cached per colour and fade step, so drawing hundreds of particles
+// doesn't build (and garbage-collect) a new 'rgba(...)' string for each one every frame.
+const STEPS = 12;
+const styleCache = {};
+const style = (color, alpha) => {
+    let row = styleCache[color];
+    if(!row) {
+        row = styleCache[color] = [];
+        for(let i = 0; i <= STEPS; i++) row.push('rgba(' + color + ',' + (i / STEPS).toFixed(3) + ')');
+    }
+    return row[Math.max(0, Math.min(STEPS, Math.round(alpha * STEPS)))];
+};
+
+class Particle {
+
+    constructor(options) {
+        this.x = options.x;
+        this.y = options.y;
+        this.vx = options.vx || 0;
+        this.vy = options.vy || 0;
+        this.life = options.life;
+        this.maxLife = options.life;
+        this.size = options.size || 2;
+        this.color = options.color || '255,255,255';
+        this.shrink = options.shrink !== false;
+        this.dust = !!options.dust;
+        this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
+        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
+        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
+        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
+        this.alpha = options.alpha === undefined ? 1 : options.alpha;
+        this.attractor = options.attractor || null;
+        this.swirl = options.swirl || 0;
+        this.dead = false;
+    }
+
+    static burst(target, x, y, baseVx, baseVy, count, options) {
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
+            target.push(new Particle({
+                x: x,
+                y: y,
+                vx: baseVx + Math.cos(angle) * speed,
+                vy: baseVy + Math.sin(angle) * speed,
+                life: options.minLife + Math.random() * (options.maxLife - options.minLife),
+                size: options.size * (0.6 + Math.random() * 0.8),
+                color: options.color,
+                dust: options.dust,
+                solid: options.solid,
+                pixel: options.pixel,
+                glow: options.glow,
+                drag: options.drag,
+                alpha: options.alpha
+            }));
+        }
+    }
+
+    // A ring of dust around (x, y) that swirls inwards onto `attractor`.
+    static mergeCloud(target, x, y, attractor, count, spread, color) {
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = spread * (0.3 + Math.random() * 0.9);
+            const px = x + Math.cos(angle) * distance;
+            const py = y + Math.sin(angle) * distance;
+            const out = 15 + Math.random() * 35;
+            target.push(new Particle({
+                x: px,
+                y: py,
+                vx: attractor.vx + Math.cos(angle) * out,
+                vy: attractor.vy + Math.sin(angle) * out,
+                life: 1.6 + Math.random() * 1.4,
+                size: 5 + Math.random() * 9,
+                color: color,
+                dust: true,
+                alpha: 0.18 + Math.random() * 0.14,
+                attractor: attractor,
+                swirl: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
+            }));
+        }
+    }
+
+    update(dt) {
+        const a = this.attractor;
+        if(a && !a.dead) {
+            const dx = a.x - this.x;
+            const dy = a.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+            // Fall inwards with a tangential swirl, matching the asteroid's drift.
+            const pull = 160 + 3000 / (distance + 20);
+            this.vx += (dx / distance * pull - dy / distance * pull * this.swirl) * dt;
+            this.vy += (dy / distance * pull + dx / distance * pull * this.swirl) * dt;
+            this.vx += (a.vx - this.vx) * Math.min(1, dt * 1.5);
+            this.vy += (a.vy - this.vy) * Math.min(1, dt * 1.5);
+            if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
+        }
+
+        if(this.drag) {
+            const keep = Math.max(0, 1 - this.drag * dt);
+            this.vx *= keep;
+            this.vy *= keep;
+        }
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+        if(this.life <= 0) this.dead = true;
+    }
+
+    draw(ctx) {
+        const t = Math.max(this.life / this.maxLife, 0);
+        if(this.dust) {
+            // Soft puff: fades in quickly, swells, then thins out.
+            const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
+            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
+            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
+            ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
+            ctx.globalAlpha = 1;
+            return;
+        }
+        if(this.pixel) {
+            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
+            if(t < 0.35 && Math.random() < 0.35) return;
+            const stepped = Math.ceil(t * 4) / 4;
+            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
+            ctx.fillStyle = style(this.color, stepped * this.alpha);
+            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
+            return;
+        }
+        if(this.solid) {
+            ctx.fillStyle = style(this.color, Math.min(1, t * 2));
+            ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+            return;
+        }
+        const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
+        ctx.fillStyle = style(this.color, t * this.alpha);
+        ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (Particle);
+
+
+/***/ }),
+/* 8 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2835,310 +3142,11 @@ const drawModule = (ctx, type, level, options) => {
 
 
 /***/ }),
-/* 8 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(1);
-// Persistent player profile: credits, owned hulls and the module loadout of each hull.
-
-
-
-
-
-const BASE_MAGNET_RANGE = 90;
-const REPAIR_COST_PER_HP = 2;
-/* harmony export (immutable) */ __webpack_exports__["a"] = REPAIR_COST_PER_HP;
-
-
-const STORAGE_KEY = 'awesome-game-shipyard-v1';
-
-const defaultProfile = () => ({
-    credits: 0,
-    bestScore: 0,
-    seed: Math.floor(Math.random() * 4294967295),
-    cargo: {},
-    hull: 'x302',
-    ownedHulls: ['x302'],
-    loadouts: {
-        x302: { c: { type: 'minigun', level: 1 } }
-    }
-});
-
-const load = () => {
-    try {
-        const raw = window.localStorage.getItem(STORAGE_KEY);
-        if(!raw) return defaultProfile();
-        const data = JSON.parse(raw);
-        const profile = Object.assign(defaultProfile(), data);
-        if(!__WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][profile.hull] || (!profile.debug && profile.ownedHulls.indexOf(profile.hull) === -1)) profile.hull = 'x302';
-        return profile;
-    } catch(e) {
-        return defaultProfile();
-    }
-};
-
-const profile = load();
-const listeners = [];
-
-const save = () => {
-    try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    } catch(e) {
-        // Storage unavailable (private mode etc.): keep playing from memory.
-    }
-    listeners.forEach(fn => fn(profile));
-};
-
-const onProfileChange = (fn) => listeners.push(fn);
-/* harmony export (immutable) */ __webpack_exports__["k"] = onProfileChange;
-
-
-const getProfile = () => profile;
-/* harmony export (immutable) */ __webpack_exports__["f"] = getProfile;
-
-
-const loadoutFor = (hullId) => {
-    if(!profile.loadouts[hullId]) profile.loadouts[hullId] = {};
-    return profile.loadouts[hullId];
-};
-/* harmony export (immutable) */ __webpack_exports__["i"] = loadoutFor;
-
-
-const addCredits = (amount) => {
-    profile.credits += amount;
-    save();
-};
-/* unused harmony export addCredits */
-
-
-const recordScore = (score) => {
-    if(score > profile.bestScore) {
-        profile.bestScore = score;
-        save();
-    }
-};
-/* unused harmony export recordScore */
-
-
-// ------------------------------------------------------------ debug mode
-// Debug mode unlocks every hull and makes every purchase, upgrade and repair free.
-// Selling gives nothing back while it's on, so it can't be used to farm credits.
-
-const isDebug = () => !!profile.debug;
-/* harmony export (immutable) */ __webpack_exports__["h"] = isDebug;
-
-
-const setDebug = (on) => {
-    profile.debug = !!on;
-    save();
-};
-/* harmony export (immutable) */ __webpack_exports__["r"] = setDebug;
-
-
-// What something costs right now (0 in debug mode).
-const priceOf = (cost) => (profile.debug ? 0 : cost);
-/* harmony export (immutable) */ __webpack_exports__["m"] = priceOf;
-
-
-const ownsHull = (hullId) => !!profile.debug || profile.ownedHulls.indexOf(hullId) !== -1;
-/* harmony export (immutable) */ __webpack_exports__["l"] = ownsHull;
-
-
-const selectHull = (hullId) => {
-    if(!ownsHull(hullId)) return false;
-    profile.hull = hullId;
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["o"] = selectHull;
-
-
-const buyHull = (hullId) => {
-    const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId];
-    if(ownsHull(hullId) || profile.credits < priceOf(hull.cost)) return false;
-    profile.credits -= priceOf(hull.cost);
-    profile.ownedHulls.push(hullId);
-    profile.hull = hullId;
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = buyHull;
-
-
-const installModule = (hullId, slotId, type) => {
-    const loadout = loadoutFor(hullId);
-    if(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].minHullMass && __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId].mass < __WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].minHullMass) return false;
-    if(loadout[slotId] || profile.credits < priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost)) return false;
-    profile.credits -= priceOf(__WEBPACK_IMPORTED_MODULE_1__modules__["c" /* default */][type].cost);
-    loadout[slotId] = { type: type, level: 1 };
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["g"] = installModule;
-
-
-const upgradeModule = (hullId, slotId) => {
-    const module = loadoutFor(hullId)[slotId];
-    if(!module || module.level >= __WEBPACK_IMPORTED_MODULE_1__modules__["a" /* MAX_LEVEL */]) return false;
-    const cost = priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["g" /* upgradeCost */])(module.type, module.level));
-    if(profile.credits < cost) return false;
-    profile.credits -= cost;
-    module.level++;
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["u"] = upgradeModule;
-
-
-const sellModule = (hullId, slotId) => {
-    const loadout = loadoutFor(hullId);
-    const module = loadout[slotId];
-    if(!module) return false;
-    profile.credits += priceOf(Object(__WEBPACK_IMPORTED_MODULE_1__modules__["f" /* sellValue */])(module.type, module.level));
-    delete loadout[slotId];
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["q"] = sellModule;
-
-
-// Combine hull + modules into the numbers the ship flies with.
-const computeShipStats = (hullId) => {
-    const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][hullId];
-    const loadout = loadoutFor(hullId);
-
-    const stats = {
-        hull: hull,
-        mass: hull.mass,
-        maxHull: hull.hull,
-        maxShield: hull.baseShield,
-        shieldRegen: hull.baseShield > 0 ? hull.baseShield * 0.15 : 0,
-        thrustForce: hull.thrust,
-        cargo: hull.cargo,
-        magnetRange: BASE_MAGNET_RANGE,
-        torqueForce: hull.torque * hull.mass,
-        guidance: null,
-        scanner: null,
-        // Some hulls come with a hyperdrive built in.
-        hyperdrive: hull.hyperdrive ? { speed: hull.hyperdrive } : null,
-        modules: []
-    };
-
-    hull.slots.forEach(slot => {
-        const module = loadout[slot.id];
-        if(!module) return;
-        const s = Object(__WEBPACK_IMPORTED_MODULE_1__modules__["e" /* moduleStats */])(module.type, module.level);
-        stats.modules.push({ slot: slot, type: module.type, level: module.level, stats: s });
-
-        if(module.type === 'engine') {
-            stats.thrustForce += s.thrust;
-            stats.torqueForce += s.torque;
-        }
-        if(module.type === 'shield') {
-            stats.maxShield += s.capacity;
-            stats.shieldRegen += s.regen;
-        }
-        if(module.type === 'armor') {
-            stats.maxHull += s.hull;
-            stats.mass += s.mass;
-        }
-        if(module.type === 'cargo') stats.cargo += s.capacity;
-        if(module.type === 'hyperdrive') {
-            if(!stats.hyperdrive || s.speed > stats.hyperdrive.speed) stats.hyperdrive = s;
-        }
-        if(module.type === 'scanner') {
-            if(!stats.scanner || s.range > stats.scanner.range) stats.scanner = s;
-        }
-        if(module.type === 'magnet') stats.magnetRange = Math.max(stats.magnetRange, s.range);
-        if(module.type === 'guidance') {
-            if(!stats.guidance || s.range > stats.guidance.range) stats.guidance = s;
-        }
-    });
-
-    stats.acceleration = stats.thrustForce / stats.mass;
-    stats.angularAcceleration = stats.torqueForce / stats.mass;
-    stats.maxTurn = hull.maxTurn * Math.min(1.6, Math.sqrt(stats.angularAcceleration / hull.torque));
-    stats.weapons = stats.modules.filter(m => ['minigun', 'missile', 'staff', 'beam', 'drones'].indexOf(m.type) !== -1).length;
-
-    return stats;
-};
-/* harmony export (immutable) */ __webpack_exports__["e"] = computeShipStats;
-
-
-// ------------------------------------------------------------ cargo & market
-
-const cargoUsed = () => Object.keys(profile.cargo).reduce((sum, id) => sum + profile.cargo[id], 0);
-/* harmony export (immutable) */ __webpack_exports__["c"] = cargoUsed;
-
-
-// Adds one unit of ore if it fits. Returns true when stored.
-const storeOre = (material, capacity) => {
-    if(cargoUsed() >= capacity) return false;
-    profile.cargo[material] = (profile.cargo[material] || 0) + 1;
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["t"] = storeOre;
-
-
-const cargoValue = () => Object.keys(profile.cargo)
-    .reduce((sum, id) => sum + profile.cargo[id] * __WEBPACK_IMPORTED_MODULE_2__world_materials__["b" /* default */][id].price, 0);
-/* harmony export (immutable) */ __webpack_exports__["d"] = cargoValue;
-
-
-const sellCargo = (material) => {
-    const ids = material ? [material] : Object.keys(profile.cargo);
-    let earned = 0;
-    ids.forEach(id => {
-        earned += (profile.cargo[id] || 0) * __WEBPACK_IMPORTED_MODULE_2__world_materials__["b" /* default */][id].price;
-        delete profile.cargo[id];
-    });
-    profile.credits += earned;
-    save();
-    return earned;
-};
-/* harmony export (immutable) */ __webpack_exports__["p"] = sellCargo;
-
-
-// Jettison ore from the hold. Returns how many units were removed.
-const removeCargo = (material, count) => {
-    const have = profile.cargo[material] || 0;
-    const removed = Math.min(have, count);
-    if(removed <= 0) return 0;
-    if(have - removed > 0) profile.cargo[material] = have - removed;
-    else delete profile.cargo[material];
-    save();
-    return removed;
-};
-/* harmony export (immutable) */ __webpack_exports__["n"] = removeCargo;
-
-
-const loseCargo = () => {
-    profile.cargo = {};
-    save();
-};
-/* harmony export (immutable) */ __webpack_exports__["j"] = loseCargo;
-
-
-const spendCredits = (amount) => {
-    if(profile.credits < priceOf(amount)) return false;
-    profile.credits -= priceOf(amount);
-    save();
-    return true;
-};
-/* harmony export (immutable) */ __webpack_exports__["s"] = spendCredits;
-
-
-
-/***/ }),
 /* 9 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
 // Stargate symbols, traced after the Milky Way glyph chart (glyphs 1-39). Each glyph is a
 // few polylines in a -1..1 box (y down); they're drawn as thick strokes, optionally with a
 // darker outline like the chart's embossed symbols.
@@ -3338,6 +3346,1212 @@ const drawConstellation = (ctx, id, x, y, size, color, starColor, dotScale) => {
 
 /***/ }),
 /* 10 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(4);
+
+
+
+
+
+
+
+
+
+// Zero-g flight model: thrusters change velocity, nothing slows you down
+// except firing thrusters the other way (or switching on the X stabilizer).
+const SECONDARY_THRUST = 0.55;    // retro / strafe thrust relative to main engines
+const MAX_SPEED = 600;            // px/s, safety cap only
+const MASS_UNIT = 300;            // physics mass per hull mass point
+
+const BULLET_SPEED = 1100;
+const BULLET_SPREAD = 0.022;
+const PLASMA_SPEED = 520;
+const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
+const TURRET_TURN_RATE = 14;      // rad/s
+const SALVO_GAP = 0.12;           // s between launchers firing
+const SHIELD_FLASH_TIME = 0.35;   // s the whole shield bubble glows after a hit
+const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
+const HEAT_COOLING = 0.35;        // minigun heat lost per second
+const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
+
+// Damage types: shields shrug off kinetic rounds and missiles but are drained fast by
+// energy weapons; bare hull is the opposite (armour soaks energy, kinetic punches through).
+const SHIELD_FACTOR = { kinetic: 0.5, energy: 1.5 };
+const HULL_FACTOR = { kinetic: 1.25, energy: 0.6 };
+const DAMAGE_TYPE = { bullet: 'kinetic', missile: 'kinetic', plasma: 'energy', beam: 'energy', drone: 'energy' };
+/* harmony export (immutable) */ __webpack_exports__["a"] = DAMAGE_TYPE;
+
+
+const HIT_COOLDOWN = 0.25;
+const SHIELD_REGEN_DELAY = 2;
+const SPAWN_IMMUNITY = 2;
+
+const TURRET_TYPES = ['minigun', 'staff', 'beam'];
+const LAUNCHER_TYPES = ['missile', 'drones'];
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const angleDifference = (a, b) => {
+    let d = b - a;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    return d;
+};
+
+// Distance along a ray to the first asteroid outline it hits.
+const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
+    let best = null;
+    let bestDistance = range;
+    rocks.forEach(rock => {
+        if(rock.dead) return;
+        const hit = rock.raycast(x, y, dirX, dirY, bestDistance);
+        if(hit !== null && hit < bestDistance) {
+            bestDistance = hit;
+            best = rock;
+        }
+    });
+    return { rock: best, distance: bestDistance };
+};
+
+// Hull line art with its glow, rendered once per hull and colour.
+const hullSprite = (hull, color) => {
+    hull._sprites = hull._sprites || {};
+    const key = color || 'base';
+    if(!hull._sprites[key]) {
+        const b = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["d" /* hullBounds */])(hull);
+        const pad = 8;
+        const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
+            ctx.translate(pad - b.minX, pad - b.minY);
+            Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color });
+        });
+        sprite.x = b.minX - pad;
+        sprite.y = b.minY - pad;
+        hull._sprites[key] = sprite;
+    }
+    return hull._sprites[key];
+};
+
+// Shield bubble (soft edge, hexagon lattice and glowing rim) rendered once per hull.
+const shieldSprite = (hull) => {
+    if(hull._shieldSprite) return hull._shieldSprite;
+    const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(hull);
+    const color = hull.shieldColor || '120,210,255';
+    const pad = 6;
+    hull._shieldSprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
+        ctx.translate(s.rx + pad, s.ry + pad);
+        ctx.scale(1, s.ry / s.rx);
+        const rx = s.rx;
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
+        body.addColorStop(0, 'rgba(' + color + ', 0)');
+        body.addColorStop(0.8, 'rgba(' + color + ', 0.05)');
+        body.addColorStop(1, 'rgba(' + color + ', 0.22)');
+        ctx.fillStyle = body;
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+        const lattice = new Path2D();
+        const size = 7;
+        const w = size * Math.sqrt(3);
+        for(let row = -Math.ceil(rx / (size * 1.5)); row <= Math.ceil(rx / (size * 1.5)); row++) {
+            for(let col = -Math.ceil(rx / w) - 1; col <= Math.ceil(rx / w) + 1; col++) {
+                const cx = col * w + (row % 2 ? w / 2 : 0);
+                const cy = row * size * 1.5;
+                if(cx * cx + cy * cy > (rx + size) * (rx + size)) continue;
+                for(let i = 0; i < 6; i++) {
+                    const a1 = Math.PI / 6 + i * Math.PI / 3;
+                    lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                    lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+                }
+            }
+        }
+        // Lattice is brighter towards the rim.
+        const fade = ctx.createRadialGradient(0, 0, rx * 0.3, 0, 0, rx);
+        fade.addColorStop(0, 'rgba(' + color + ', 0.03)');
+        fade.addColorStop(1, 'rgba(' + color + ', 0.2)');
+        ctx.strokeStyle = fade;
+        ctx.lineWidth = 0.6;
+        ctx.stroke(lattice);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(' + color + ', 0.55)';
+        ctx.lineWidth = 1.4;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = 'rgb(' + color + ')';
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    hull._shieldSprite.pad = pad;
+    return hull._shieldSprite;
+};
+
+class Ship {
+
+    constructor(x, y, stats) {
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.angle = -Math.PI / 2;
+        this.angularVelocity = 0;
+        this.alive = true;
+        this.stabilizer = false;   // toggled with X / the Stabilizer button
+        this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
+        this.side = 'player';      // 'player' or 'enemy': who its shots can hurt
+        this.damageScale = 1;      // multiplier on the damage its weapons deal
+        this.autoTarget = true;
+        this.time = 0;
+        this.exhaustTimer = 0;
+        this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
+        this.hitCooldown = 0;
+        this.immunity = SPAWN_IMMUNITY;
+        this.sinceHit = SHIELD_REGEN_DELAY;
+        this.shieldFlash = 0;
+        this.hullFlash = 0;
+        this.salvoCooldown = 0;
+        this.nextLauncher = 0;
+        this.missileLock = null;
+        this.shieldsEnabled = true;
+        this.shieldLevel = 0;         // animated 0..1 power level of the bubble
+        this.shieldImpacts = [];
+
+        // Animated thruster output levels (0..1), eased towards their targets.
+        this.thrusters = { main: 0, retro: 0, left: 0, right: 0, spinCW: 0, spinCCW: 0 };
+
+        this.applyStats(stats);
+        this.hp = this.maxHull;
+        this.shield = this.maxShield;
+    }
+
+    // (Re)build the ship from shipyard stats. Keeps current damage proportionally.
+    applyStats(stats) {
+        const hullFraction = this.maxHull ? this.hp / this.maxHull : 1;
+        const hull = stats.hull;
+
+        this.stats = stats;
+        this.hullDef = hull;
+        this.mass = stats.mass * MASS_UNIT;
+        this.radius = hull.radius;
+        this.maxHull = stats.maxHull;
+        this.hp = this.maxHull * hullFraction;
+        this.maxShield = stats.maxShield;
+        this.shield = Math.min(this.shield || 0, this.maxShield);
+        this.guidance = stats.guidance;
+        this.scanner = stats.scanner;
+        this.hyperdrive = stats.hyperdrive;
+        this.cargoCapacity = stats.cargo;
+        this.magnetRange = stats.magnetRange;
+        this.collectRadius = hull.radius * 0.55 + 8;
+
+        const u = hull.moduleScale;
+        this.turrets = stats.modules.filter(m => TURRET_TYPES.indexOf(m.type) !== -1).map(m => ({
+            module: m,
+            kind: m.type,
+            aim: this.angle,
+            cooldown: 0,
+            target: null,
+            flash: 0,
+            heat: 0,
+            overheated: false,
+            beamTime: 0,
+            beam: null
+        }));
+        this.launchers = stats.modules.filter(m => LAUNCHER_TYPES.indexOf(m.type) !== -1)
+            .map(m => ({ module: m, kind: m.type, cooldown: 0 }));
+        this.engines = hull.engines.concat(stats.modules
+            .filter(m => m.type === 'engine')
+            .map(m => ({ x: m.slot.x - 4 * u, y: m.slot.y, size: (0.45 + m.level * 0.15) * u * 1.6 })));
+        this.jetList = this.buildJets();
+    }
+
+    // Manoeuvring jet positions from the hull definition: [x, y, dirX, dirY].
+    buildJets() {
+        const j = this.hullDef.jets;
+        const both = (points, dirX) => {
+            const list = [];
+            points.forEach(p => {
+                list.push([p[0], p[1], dirX, 0]);
+                list.push([p[0], -p[1], dirX, 0]);
+            });
+            return list;
+        };
+        return {
+            retro: both(j.retro, 1),
+            left: j.side.map(p => [p[0], Math.abs(p[1]), 0, 1]),
+            right: j.side.map(p => [p[0], -Math.abs(p[1]), 0, -1]),
+            spinCW: [[j.bow[0], -j.bow[1], 0, -1], [j.stern[0], j.stern[1], 0, 1]],
+            spinCCW: [[j.bow[0], j.bow[1], 0, 1], [j.stern[0], -j.stern[1], 0, -1]]
+        };
+    }
+
+    // Lets homing missiles and drones track ships the same way as asteroids.
+    get dead() {
+        return !this.alive;
+    }
+
+    get shieldUp() {
+        return this.shieldsEnabled && this.alive && this.maxShield > 0 && this.shield > 0.5;
+    }
+
+    toggleShields() {
+        if(this.maxShield <= 0) return false;
+        this.shieldsEnabled = !this.shieldsEnabled;
+        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldUp();
+        else __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldDown();
+        return true;
+    }
+
+    // Converts a world point into shield-ellipse space.
+    shieldLocal(worldX, worldY) {
+        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
+        const cos = Math.cos(-this.angle);
+        const sin = Math.sin(-this.angle);
+        const dx = worldX - this.x;
+        const dy = worldY - this.y;
+        return { x: dx * cos - dy * sin - s.x, y: dx * sin + dy * cos - s.y, s: s };
+    }
+
+    // Circle vs shield-ellipse contact. Returns the outward normal (world space),
+    // overlap depth and contact point, or null when not touching.
+    shieldContact(worldX, worldY, radius) {
+        const l = this.shieldLocal(worldX, worldY);
+        const s = l.s;
+        const k = Math.sqrt((l.x / s.rx) * (l.x / s.rx) + (l.y / s.ry) * (l.y / s.ry)) || 0.0001;
+        const length = Math.sqrt(l.x * l.x + l.y * l.y) || 0.0001;
+        const gap = length * (1 - 1 / k);
+        const overlap = radius - gap;
+        if(overlap <= 0) return null;
+
+        const px = l.x / k;
+        const py = l.y / k;
+        let nx = px / (s.rx * s.rx);
+        let ny = py / (s.ry * s.ry);
+        const n = Math.sqrt(nx * nx + ny * ny) || 1;
+        nx /= n;
+        ny /= n;
+
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        const contact = this.localToWorld(px + s.x, py + s.y);
+        return {
+            nx: nx * cos - ny * sin,
+            ny: nx * sin + ny * cos,
+            overlap: overlap,
+            x: contact.x,
+            y: contact.y
+        };
+    }
+
+    // Ripple on the shield where something struck it.
+    shieldImpact(worldX, worldY, strength) {
+        const l = this.shieldLocal(worldX, worldY);
+        const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
+        this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
+        if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
+        // The whole bubble lights up, brighter for harder hits.
+        this.shieldFlash = Math.max(this.shieldFlash, SHIELD_FLASH_TIME * (0.6 + 0.4 * Math.min(1, strength)));
+    }
+
+    // Ore that hits raised shields burns up and costs a sliver of shield energy.
+    absorbOre(worldX, worldY) {
+        this.shield = Math.max(0, this.shield - 0.25);
+        this.sinceHit = 0;
+        this.shieldImpact(worldX, worldY, 0.8);
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit(0.5);
+    }
+
+    // Where the tractor beam comes from: the ore tractor module if fitted, else the hull centre.
+    tractorEmitter() {
+        const module = this.stats.modules.filter(m => m.type === 'magnet')[0];
+        return module ? this.localToWorld(module.slot.x, module.slot.y) : { x: this.x, y: this.y };
+    }
+
+    get thrusting() {
+        const t = this.thrusters;
+        return t.main > 0.2 || t.retro > 0.2 || t.left > 0.2 || t.right > 0.2 ||
+            t.spinCW > 0.2 || t.spinCCW > 0.2;
+    }
+
+    localToWorld(lx, ly) {
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+        return { x: this.x + lx * cos - ly * sin, y: this.y + lx * sin + ly * cos };
+    }
+
+    worldColliders() {
+        return this.hullDef.colliders.map(c => {
+            const p = this.localToWorld(c[0], c[1]);
+            return { x: p.x, y: p.y, r: c[2] };
+        });
+    }
+
+    update(dt, input, world) {
+        if(!this.alive) {
+            this.firing = false;
+            this.minigunFiring = false;
+            this.beaming = false;
+            return;
+        }
+
+        this.time += dt;
+        if(this.hitCooldown > 0) this.hitCooldown -= dt;
+        if(this.immunity > 0) this.immunity -= dt;
+        if(this.shieldFlash > 0) this.shieldFlash -= dt;
+        if(this.hullFlash > 0) this.hullFlash -= dt;
+        if(this.salvoCooldown > 0) this.salvoCooldown -= dt;
+        this.sinceHit += dt;
+
+        if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
+            this.shield = Math.min(this.maxShield, this.shield + this.stats.shieldRegen * dt);
+        }
+        const targetLevel = this.shieldUp ? 1 : 0;
+        this.shieldLevel += (targetLevel - this.shieldLevel) * Math.min(1, dt * (targetLevel ? 3 : 5));
+        this.shieldImpacts.forEach(impact => { impact.life -= dt * 1.4; });
+        this.shieldImpacts = this.shieldImpacts.filter(impact => impact.life > 0);
+
+        this.fly(dt, input, world.particles);
+        this.updateTargeting(input, world);
+        this.updateTurrets(dt, input, world);
+        this.updateLaunchers(dt, input, world);
+    }
+
+    fly(dt, input, particles) {
+        const stats = this.stats;
+        const mainThrust = stats.acceleration;
+        const secondaryThrust = mainThrust * SECONDARY_THRUST;
+        const angularThrust = stats.angularAcceleration;
+
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+
+        // Desired force in the ship's local frame (+x forward, +y right) and torque.
+        let localX = 0;
+        let localY = 0;
+        let torque = 0;
+
+        if(input.forward) localX += mainThrust;
+        if(input.backward) localX -= secondaryThrust;
+        if(input.strafeLeft) localY -= secondaryThrust;
+        if(input.strafeRight) localY += secondaryThrust;
+        if(input.rotateRight) torque += angularThrust;
+        if(input.rotateLeft) torque -= angularThrust;
+
+        // Stabilizer (toggled on/off): fires whatever thrusters are needed to cancel drift
+        // and spin that the pilot isn't asking for. With no thrust input it brakes to a
+        // stop; while thrusting it only cancels sideways drift, so the ship flies where it
+        // points. Spin is cancelled whenever the pilot isn't turning.
+        if(this.stabilizer) {
+            let driftX = this.vx;
+            let driftY = this.vy;
+            const commanded = Math.sqrt(localX * localX + localY * localY);
+            if(commanded > 0) {
+                // Keep the velocity along the commanded direction (if moving that way).
+                const dirX = (localX * cos - localY * sin) / commanded;
+                const dirY = (localX * sin + localY * cos) / commanded;
+                const along = Math.max(0, this.vx * dirX + this.vy * dirY);
+                driftX -= dirX * along;
+                driftY -= dirY * along;
+            }
+            const drift = Math.sqrt(driftX * driftX + driftY * driftY);
+            if(drift > 1) {
+                const brake = Math.min(secondaryThrust, drift / dt);
+                const worldX = -driftX / drift * brake;
+                const worldY = -driftY / drift * brake;
+                localX += worldX * cos + worldY * sin;
+                localY += -worldX * sin + worldY * cos;
+            }
+            if(!input.rotateLeft && !input.rotateRight && Math.abs(this.angularVelocity) > 0.01) {
+                torque -= clamp(this.angularVelocity / dt, -angularThrust, angularThrust);
+            }
+        }
+
+        this.vx += (localX * cos - localY * sin) * dt;
+        this.vy += (localX * sin + localY * cos) * dt;
+        this.angularVelocity = clamp(this.angularVelocity + torque * dt, -stats.maxTurn, stats.maxTurn);
+
+        const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if(speed > MAX_SPEED) {
+            this.vx *= MAX_SPEED / speed;
+            this.vy *= MAX_SPEED / speed;
+        }
+
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.angle += this.angularVelocity * dt;
+
+        this.animateThrusters(dt, localX / mainThrust, localY / secondaryThrust, torque / angularThrust);
+        this.emitExhaust(dt, particles);
+    }
+
+    animateThrusters(dt, forward, side, spin) {
+        const t = this.thrusters;
+        const targets = {
+            main: clamp(forward, 0, 1),
+            retro: clamp(-forward / SECONDARY_THRUST, 0, 1),
+            left: clamp(-side, 0, 1),
+            right: clamp(side, 0, 1),
+            spinCW: clamp(spin, 0, 1),
+            spinCCW: clamp(-spin, 0, 1)
+        };
+        // Quick spool-up, slightly slower cut-off.
+        Object.keys(targets).forEach(key => {
+            const rate = targets[key] > t[key] ? 18 : 10;
+            t[key] += (targets[key] - t[key]) * Math.min(1, rate * dt);
+        });
+    }
+
+    // Spits hot exhaust particles out of the engines (and puffs from the jets).
+    emitExhaust(dt, particles) {
+        const t = this.thrusters;
+        const cos = Math.cos(this.angle);
+        const sin = Math.sin(this.angle);
+
+        this.exhaustTimer -= dt;
+        if(this.exhaustTimer > 0) return;
+        this.exhaustTimer = 1 / 90;
+
+        if(t.main > 0.15) {
+            this.engines.forEach(engine => {
+                const nozzle = this.localToWorld(engine.x, engine.y);
+                const spread = (Math.random() - 0.5) * 0.3;
+                const speed = (160 + Math.random() * 120) * Math.sqrt(engine.size);
+                particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                    x: nozzle.x,
+                    y: nozzle.y,
+                    vx: this.vx - Math.cos(this.angle + spread) * speed * t.main,
+                    vy: this.vy - Math.sin(this.angle + spread) * speed * t.main,
+                    life: 0.2 + Math.random() * 0.2,
+                    size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
+                    color: this.hullDef.exhaust || '255,150,60'
+                }));
+                if(Math.random() < 0.35 * t.main) {
+                    particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                        x: nozzle.x, y: nozzle.y,
+                        vx: this.vx - Math.cos(this.angle + spread * 2) * speed * 1.2,
+                        vy: this.vy - Math.sin(this.angle + spread * 2) * speed * 1.2,
+                        life: 0.3 + Math.random() * 0.4, size: 1.6, color: '255,220,160', pixel: true, glow: true
+                    }));
+                }
+            });
+        }
+
+        const jets = this.jetList;
+        Object.keys(jets).forEach(key => {
+            if(t[key] < 0.2 || Math.random() > 0.5) return;
+            jets[key].forEach(jet => {
+                const p = this.localToWorld(jet[0], jet[1]);
+                const dx = jet[2] * cos - jet[3] * sin;
+                const dy = jet[2] * sin + jet[3] * cos;
+                const speed = 60 + Math.random() * 60;
+                particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                    x: p.x, y: p.y,
+                    vx: this.vx + dx * speed, vy: this.vy + dy * speed,
+                    life: 0.15 + Math.random() * 0.15,
+                    size: 2,
+                    color: '200,225,255'
+                }));
+            });
+        });
+    }
+
+    nearestRock(x, y, rocks, range) {
+        let best = null;
+        let bestDist = range * range;
+        const from = { x: x, y: y };
+        rocks.forEach(rock => {
+            if(rock.dead) return;
+            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(from, rock);
+            const distSq = d.x * d.x + d.y * d.y;
+            if(distSq < bestDist) {
+                bestDist = distSq;
+                best = rock;
+            }
+        });
+        return best;
+    }
+
+    // Nearest of `list` (ships, missiles or rocks) within `range` of (x, y).
+    nearestOf(x, y, list, range) {
+        let best = null;
+        let bestDist = range * range;
+        list.forEach(item => {
+            if(item.dead) return;
+            const dx = item.x - x;
+            const dy = item.y - y;
+            const distSq = dx * dx + dy * dy;
+            if(distSq < bestDist) {
+                bestDist = distSq;
+                best = item;
+            }
+        });
+        return best;
+    }
+
+    // Guidance: pick turret targets and the missile lock. Kinetic turrets shoot down
+    // incoming missiles first, then hostile ships, then asteroids.
+    updateTargeting(input, world) {
+        const rocks = world.rocks;
+        if(!this.guidance) {
+            this.missileLock = null;
+            this.turrets.forEach(turret => { turret.target = null; });
+            return;
+        }
+
+        const range = this.guidance.range;
+        const combat = world.combat;
+        const ships = combat ? combat.hostileShips(this.side) : [];
+        const incoming = combat ? combat.hostileMissiles(this.side, 'missile') : [];
+        this.missileLock = this.nearestOf(input.aimX, input.aimY, ships, MISSILE_LOCK_RADIUS * 1.5)
+            || this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS)
+            || this.nearestOf(this.x, this.y, ships, range * 1.6)
+            || this.nearestRock(this.x, this.y, rocks, range);
+
+        this.turrets.forEach(turret => {
+            if(!this.autoTarget) {
+                turret.target = null;
+                return;
+            }
+            const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
+            const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
+            turret.target = (turret.kind === 'minigun' && this.nearestOf(p.x, p.y, incoming, reach))
+                || this.nearestOf(p.x, p.y, ships, reach)
+                || this.nearestRock(p.x, p.y, rocks, reach);
+        });
+    }
+
+    updateTurrets(dt, input, world) {
+        this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
+
+        this.turrets.forEach(turret => {
+            const stats = turret.module.stats;
+            const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
+            if(turret.cooldown > 0) turret.cooldown -= dt;
+            if(turret.flash > 0) turret.flash -= dt;
+            turret.beam = null;
+
+            // Minigun heat bleeds off continuously.
+            if(turret.kind === 'minigun') {
+                turret.heat = Math.max(0, turret.heat - HEAT_COOLING * dt);
+                if(turret.overheated && turret.heat <= HEAT_RESUME) turret.overheated = false;
+            }
+
+            // Manual fire always aims at the cursor; otherwise the guidance computer
+            // leads the locked target.
+            let desired = Math.atan2(input.aimY - p.y, input.aimX - p.x);
+            const enabled = !this.weaponsOff[turret.kind];
+            let shouldFire = input.firing && enabled;
+
+            if(!input.firing && turret.target && enabled) {
+                const target = turret.target;
+                let d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target);
+                const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
+                const time = turret.kind === 'beam' ? 0 : Math.sqrt(d.x * d.x + d.y * d.y) / speed;
+                d = { x: d.x + target.vx * time, y: d.y + target.vy * time };
+                desired = Math.atan2(d.y, d.x);
+                shouldFire = true;
+            }
+
+            const diff = angleDifference(turret.aim, desired);
+            const maxTurn = TURRET_TURN_RATE * dt;
+            turret.aim += clamp(diff, -maxTurn, maxTurn);
+            const aimed = Math.abs(diff) < 0.2;
+
+            if(turret.kind === 'beam') {
+                this.updateBeam(dt, turret, p, shouldFire && aimed, world);
+                return;
+            }
+
+            if(!shouldFire || !aimed || turret.overheated) return;
+            this.firing = true;
+            if(turret.kind === 'minigun') this.minigunFiring = true;
+            if(turret.cooldown > 0) return;
+
+            if(turret.kind === 'minigun') this.fireMinigun(turret, p, stats, world);
+            if(turret.kind === 'staff') this.fireStaff(turret, p, stats, world);
+        });
+    }
+
+    fireMinigun(turret, p, stats, world) {
+        turret.cooldown = Math.max(0, turret.cooldown) + 1 / stats.fireRate;
+
+        const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
+        const dirX = Math.cos(angle);
+        const dirY = Math.sin(angle);
+        const barrel = 9 * this.hullDef.moduleScale;
+
+        // Bullets inherit the ship's speed along the line of fire, but not its
+        // sideways drift, so they travel where the turret points.
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = BULLET_SPEED + inherited;
+        const round = new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
+            p.x + Math.cos(turret.aim) * barrel,
+            p.y + Math.sin(turret.aim) * barrel,
+            dirX * speed,
+            dirY * speed,
+            stats.damage * this.damageScale
+        );
+        round.side = this.side;
+        world.bullets.push(round);
+
+        // Equal and opposite reaction.
+        const recoil = RECOIL / this.stats.mass;
+        this.vx -= dirX * recoil;
+        this.vy -= dirY * recoil;
+        turret.flash = 0.04;
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].minigunShot();
+        if(Math.random() < 0.35) {
+            world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: p.x + Math.cos(turret.aim) * barrel, y: p.y + Math.sin(turret.aim) * barrel,
+                vx: this.vx + dirX * 30 + (Math.random() - 0.5) * 20, vy: this.vy + dirY * 30 + (Math.random() - 0.5) * 20,
+                life: 0.4 + Math.random() * 0.3, size: 3, color: '230,225,215', dust: true, alpha: 0.08
+            }));
+        }
+
+        // Each round adds enough heat to outpace cooling, so sustained fire
+        // overheats after `heatShots` rounds.
+        turret.heat += 1 / stats.heatShots + HEAT_COOLING / stats.fireRate;
+        if(turret.heat >= 1) {
+            turret.heat = 1;
+            turret.overheated = true;
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].overheat();
+        }
+    }
+
+    fireStaff(turret, p, stats, world) {
+        turret.cooldown = 1 / stats.fireRate;
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const barrel = 8 * this.hullDef.moduleScale;
+        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
+        const speed = PLASMA_SPEED + inherited;
+
+        const bolt = new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
+            p.x + dirX * barrel, p.y + dirY * barrel,
+            dirX * speed, dirY * speed,
+            stats.damage * this.damageScale, 'plasma', stats.splash
+        );
+        bolt.side = this.side;
+        world.bullets.push(bolt);
+        this.vx -= dirX * RECOIL * 6 / this.stats.mass;
+        this.vy -= dirY * RECOIL * 6 / this.stats.mass;
+        turret.flash = 0.14;
+        // Plasma vented from the muzzle.
+        for(let i = 0; i < 8; i++) {
+            const a = turret.aim + (Math.random() - 0.5) * 1.2;
+            const v = 60 + Math.random() * 140;
+            world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: p.x + dirX * barrel, y: p.y + dirY * barrel,
+                vx: this.vx + Math.cos(a) * v, vy: this.vy + Math.sin(a) * v,
+                life: 0.15 + Math.random() * 0.2, size: 3, color: i % 2 ? '255,200,90' : '255,120,40'
+            }));
+        }
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].staffShot();
+    }
+
+    // Asgard beam: fires a burst for a few seconds, then must recharge.
+    updateBeam(dt, turret, p, trigger, world) {
+        const stats = turret.module.stats;
+
+        if(turret.beamTime > 0 && !trigger) {
+            // Released early: recharge for the part of the burst that was used.
+            turret.cooldown = stats.cooldown * (1 - turret.beamTime / stats.burst);
+            turret.beamTime = 0;
+        }
+        if(trigger && turret.beamTime <= 0 && turret.cooldown <= 0) turret.beamTime = stats.burst;
+        if(turret.beamTime <= 0) return;
+
+        turret.beamTime -= dt;
+        if(turret.beamTime <= 0) {
+            turret.beamTime = 0;
+            turret.cooldown = stats.cooldown;
+        }
+
+        const dirX = Math.cos(turret.aim);
+        const dirY = Math.sin(turret.aim);
+        const startX = p.x + dirX * 6 * this.hullDef.moduleScale;
+        const startY = p.y + dirY * 6 * this.hullDef.moduleScale;
+        const hit = raycastRocks(startX, startY, dirX, dirY, stats.range, world.rocks);
+        // Hostile ships in the way (approximated by a circle) stop the beam first.
+        let shipHit = null;
+        if(world.combat) {
+            world.combat.hostileShips(this.side).forEach(ship => {
+                const r = ship.shieldUp ? Math.max(Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(ship.hullDef).rx, Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(ship.hullDef).ry) * 0.9 : ship.radius * 0.7;
+                const ox = ship.x - startX;
+                const oy = ship.y - startY;
+                const along = ox * dirX + oy * dirY;
+                if(along < 0 || along > hit.distance) return;
+                const side = ox * dirY - oy * dirX;
+                if(Math.abs(side) > r) return;
+                const distance = Math.max(0, along - Math.sqrt(r * r - side * side));
+                if(distance < hit.distance) {
+                    hit.distance = distance;
+                    hit.rock = null;
+                    shipHit = ship;
+                }
+            });
+        }
+        const endX = startX + dirX * hit.distance;
+        const endY = startY + dirY * hit.distance;
+
+        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!(hit.rock || shipHit) };
+        this.firing = true;
+        this.beaming = true;
+
+        if(hit.rock) {
+            world.beamHits.push({ rock: hit.rock, damage: stats.dps * dt, x: endX, y: endY, dirX: dirX, dirY: dirY });
+        }
+        if(shipHit) {
+            world.beamHits.push({ ship: shipHit, damage: stats.dps * dt * this.damageScale, x: endX, y: endY, dirX: dirX, dirY: dirY });
+        }
+    }
+
+    pickLauncherTarget(input, rocks) {
+        if(this.guidance) return this.missileLock;
+        return null;
+    }
+
+    updateLaunchers(dt, input, world) {
+        this.launchers.forEach(launcher => {
+            if(launcher.cooldown > 0) launcher.cooldown -= dt;
+            if(launcher.salvo) this.continueSalvo(launcher, input, world, dt);
+        });
+
+        if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
+
+        for(let i = 0; i < this.launchers.length; i++) {
+            const index = (this.nextLauncher + i) % this.launchers.length;
+            const launcher = this.launchers[index];
+            if(launcher.cooldown > 0 || this.weaponsOff[launcher.kind]) continue;
+
+            if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
+            if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
+
+            this.salvoCooldown = SALVO_GAP;
+            this.nextLauncher = index + 1;
+            return;
+        }
+    }
+
+    fireMissile(launcher, input, world) {
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        // Enemy pilots always lock their missiles onto their target.
+        const target = this.guidance ? this.missileLock : (input.lockTarget || null);
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        const angle = Math.atan2(aimAt.y, aimAt.x);
+
+        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 120,
+            vy: this.vy + Math.sin(angle) * 120,
+            angle: angle,
+            damage: stats.damage * this.damageScale,
+            blast: stats.blast,
+            target: target,
+            homing: this.guidance ? this.guidance.homing : (input.lockTarget ? 2.4 : 0),
+            side: this.side
+        }));
+        launcher.cooldown = stats.cooldown;
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].missileLaunch();
+    }
+
+    // Ancient drones: a salvo of drones launched one after another in a stream.
+    fireDrones(launcher, input, world) {
+        const stats = launcher.module.stats;
+        // Drones go for hostile drones first (only drones can stop drones), then the lock.
+        const combat = world.combat;
+        const drones = combat ? combat.hostileMissiles(this.side, 'drone') : [];
+        const target = this.nearestOf(this.x, this.y, drones, 900) || input.lockTarget || this.missileLock
+            || (combat && this.nearestOf(input.aimX, input.aimY, combat.hostileShips(this.side), 250))
+            || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
+        launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
+        launcher.cooldown = stats.cooldown;
+    }
+
+    continueSalvo(launcher, input, world, dt) {
+        const salvo = launcher.salvo;
+        salvo.timer -= dt;
+        if(salvo.timer > 0) return;
+        if(!this.alive || salvo.remaining <= 0) {
+            launcher.salvo = null;
+            return;
+        }
+
+        const stats = launcher.module.stats;
+        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
+        const target = salvo.target && !salvo.target.dead ? salvo.target : null;
+        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
+        // Each drone leaves on a slightly different heading, weaving towards the target.
+        const weave = [0, -0.35, 0.35, -0.6, 0.6, 0][salvo.index % 6];
+        const angle = Math.atan2(aimAt.y, aimAt.x) + weave;
+
+        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
+            kind: 'drone',
+            x: p.x,
+            y: p.y,
+            vx: this.vx + Math.cos(angle) * 220,
+            vy: this.vy + Math.sin(angle) * 220,
+            angle: angle,
+            damage: stats.damage * this.damageScale,
+            blast: stats.blast,
+            target: target,
+            homing: 7,
+            side: this.side
+        }));
+        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].droneLaunch();
+
+        salvo.remaining--;
+        salvo.index++;
+        salvo.timer = 0.11;
+        if(salvo.remaining <= 0) launcher.salvo = null;
+    }
+
+    // Readiness of each weapon group for the HUD: 1 = ready.
+    weaponStatus() {
+        const groups = {};
+        this.turrets.concat(this.launchers).forEach(w => {
+            const def = __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["c" /* default */][w.kind];
+            if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
+            const g = groups[w.kind];
+            const stats = w.module.stats;
+            let ready = 1;
+            let state = 'ready';
+
+            if(w.kind === 'minigun') {
+                ready = 1 - w.heat;
+                state = w.overheated ? 'overheated' : (w.heat > 0.6 ? 'hot' : 'ready');
+            } else if(w.kind === 'beam') {
+                if(w.beamTime > 0) { ready = w.beamTime / stats.burst; state = 'firing'; }
+                else if(w.cooldown > 0) { ready = 1 - w.cooldown / stats.cooldown; state = 'charging'; }
+            } else if(w.cooldown > 0) {
+                const total = w.kind === 'staff' ? 1 / stats.fireRate : stats.cooldown;
+                ready = 1 - w.cooldown / total;
+                state = 'reloading';
+            }
+
+            g.ready += clamp(ready, 0, 1);
+            g.count++;
+            if(state !== 'ready') g.state = state;
+        });
+        return Object.keys(groups).map(kind => {
+            const g = groups[kind];
+            const off = !!this.weaponsOff[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
+        });
+    }
+
+    // Switch a weapon type on or off. Returns the new state (true = on).
+    toggleWeapon(kind) {
+        this.weaponsOff[kind] = !this.weaponsOff[kind];
+        return !this.weaponsOff[kind];
+    }
+
+    // Returns true if damage was applied.
+    // Returns true if damage was applied. `type` ('kinetic' / 'energy') marks a weapon hit:
+    // weapons ignore the short knock cooldown used for collisions, and shields / hull resist
+    // them differently. `quiet` skips the per-hit debris and sounds (continuous beams).
+    takeDamage(amount, particles, hitX, hitY, type, quiet) {
+        if(!this.alive || this.immunity > 0) return false;
+        if(!type && this.hitCooldown > 0) return false;
+        if(!type) this.hitCooldown = HIT_COOLDOWN;
+        this.sinceHit = 0;
+
+        const shieldFactor = type ? SHIELD_FACTOR[type] : 1;
+        const hullFactor = type ? HULL_FACTOR[type] : 1;
+        // Lowered shields don't absorb anything. The shield pays `shieldFactor` per point.
+        let remaining = amount;
+        if(this.shieldUp) {
+            const absorbed = Math.min(amount, this.shield / shieldFactor);
+            this.shield = Math.max(0, this.shield - absorbed * shieldFactor);
+            remaining = amount - absorbed;
+            if(absorbed > 0) {
+                this.shieldFlash = SHIELD_FLASH_TIME;
+                if(!quiet || Math.random() < 0.08) {
+                    if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
+                    __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit(type ? 1 + absorbed / 25 : 0.4 + absorbed / 25);
+                }
+            }
+        }
+
+        if(remaining > 0) {
+            this.hp -= remaining * hullFactor;
+            this.hullFlash = 0.15;
+            if(!quiet || Math.random() < 0.08) {
+                this.explode(particles, Math.min(30, 6 + Math.round(remaining / 2)));
+                __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].hullHit();
+            }
+        }
+
+        if(this.hp <= 0) {
+            this.hp = 0;
+            this.alive = false;
+            this.explode(particles, 40 + this.radius * 2);
+            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shipExplosion();
+        }
+        return true;
+    }
+
+    explode(particles, count) {
+        const spread = this.radius * 0.5;
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 40 + Math.random() * 180;
+            particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: this.x + (Math.random() - 0.5) * spread,
+                y: this.y + (Math.random() - 0.5) * spread,
+                vx: this.vx + Math.cos(angle) * speed,
+                vy: this.vy + Math.sin(angle) * speed,
+                life: 0.4 + Math.random() * 0.8,
+                size: 3 * (0.6 + Math.random() * 0.8),
+                color: '255,200,120'
+            }));
+        }
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 60 + Math.random() * 260;
+            particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
+                x: this.x + (Math.random() - 0.5) * spread,
+                y: this.y + (Math.random() - 0.5) * spread,
+                vx: this.vx + Math.cos(angle) * speed,
+                vy: this.vy + Math.sin(angle) * speed,
+                life: 0.4 + Math.random() * 0.9,
+                size: 1.8,
+                color: i % 3 ? '255,170,80' : '200,210,230',
+                pixel: true,
+                glow: i % 3 !== 0,
+                drag: 0.6
+            }));
+        }
+    }
+
+    drawThrusters(ctx) {
+        const t = this.thrusters;
+        const jetScale = this.hullDef.jetScale || 1;
+        const exhaust = this.hullDef.exhaust || '255,150,60';
+        const plume = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])(exhaust, '255,235,190');
+        const jetFlame = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])('170,210,255', '255,255,255');
+        const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(exhaust);
+        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        this.engines.forEach(engine => {
+            const size = engine.size;
+            // Nozzle glow, pulsing even when idle.
+            const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
+            ctx.globalAlpha = 0.55 + t.main * 0.45;
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
+
+            // Plume straight out of the nozzle, as wide as the nozzle.
+            if(t.main > 0.03) {
+                const length = t.main * (14 + Math.random() * 8) * size * 1.4;
+                const width = 5.2 * size * (0.85 + Math.random() * 0.3);
+                ctx.globalAlpha = 1;
+                ctx.save();
+                ctx.translate(engine.x, engine.y);
+                ctx.rotate(Math.PI);
+                ctx.drawImage(plume.canvas, 0, -width / 2, length, width);
+                ctx.restore();
+            }
+        });
+
+        // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
+        ctx.globalAlpha = 1;
+        const jets = this.jetList;
+        Object.keys(jets).forEach(key => {
+            if(t[key] < 0.02) return;
+            const length = t[key] * 7 * jetScale;
+            jets[key].forEach(jet => {
+                ctx.save();
+                ctx.translate(jet[0], jet[1]);
+                ctx.rotate(Math.atan2(jet[3], jet[2]));
+                ctx.drawImage(jetFlame.canvas, 0, -1.3 * jetScale, length * (0.8 + Math.random() * 0.4), 2.6 * jetScale);
+                ctx.restore();
+            });
+        });
+
+        ctx.restore();
+    }
+
+    drawShield(ctx) {
+        const level = this.shieldLevel;
+        if(this.maxShield <= 0 || level < 0.01) return;
+
+        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
+        const sprite = shieldSprite(this.hullDef);
+        const color = this.hullDef.shieldColor || '120,210,255';
+        const strength = Math.max(0.15, this.shield / this.maxShield);
+        // Bubble expands outwards when powering up and collapses when lowered.
+        const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
+        const flash = Math.max(0, this.shieldFlash) / SHIELD_FLASH_TIME;
+        const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
+
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.globalAlpha = Math.min(1, level * (0.35 + 0.65 * strength) * shimmer + flash);
+        const w = sprite.width * grow;
+        const h = sprite.height * grow;
+        ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+
+        // Hit: the entire shield frame lights up (hex pattern and rim) and fades out.
+        if(flash > 0) {
+            const f = Math.min(1, flash);
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = f * 0.9;
+            ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
+            ctx.globalAlpha = f * 0.35;
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color), 0, 0, w * 1.15, h * 1.15);
+            ctx.globalAlpha = f;
+            ctx.strokeStyle = 'rgb(' + color + ')';
+            ctx.lineWidth = 2 + 2.5 * f;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, s.rx * grow, s.ry * grow, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = f * 0.8;
+            ctx.strokeStyle = 'rgb(235, 248, 255)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
+        if(this.shieldImpacts.length) {
+            ctx.globalCompositeOperation = 'lighter';
+            const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color);
+            this.shieldImpacts.forEach(impact => {
+                const ix = impact.x * grow;
+                const iy = impact.y * grow;
+                const size = (20 + 50 * impact.strength) * impact.life;
+                ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, ix, iy, size, size);
+                ctx.globalAlpha = 0.7 * impact.life;
+                ctx.strokeStyle = 'rgb(' + color + ')';
+                ctx.lineWidth = 2 * impact.life + 0.5;
+                ctx.beginPath();
+                ctx.ellipse(ix, iy, 4 + (1 - impact.life) * s.rx * 0.6, 4 + (1 - impact.life) * s.ry * 0.6, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            });
+        }
+        ctx.restore();
+    }
+
+    // Beams are drawn in world space (after the ship transform is restored).
+    drawBeams(ctx) {
+        this.turrets.forEach(turret => {
+            const beam = turret.beam;
+            if(!beam) return;
+            const flicker = 0.75 + Math.random() * 0.25;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            [[9, 'rgba(90, 170, 255, 0.18)'], [4, 'rgba(140, 210, 255, 0.55)'], [1.6, 'rgba(240, 250, 255, 0.95)']].forEach(layer => {
+                ctx.lineWidth = layer[0] * flicker * this.hullDef.moduleScale;
+                ctx.strokeStyle = layer[1];
+                ctx.beginPath();
+                ctx.moveTo(beam.x1, beam.y1);
+                ctx.lineTo(beam.x2, beam.y2);
+                ctx.stroke();
+            });
+            // Energy pulses racing down the beam.
+            ctx.setLineDash([6, 14]);
+            ctx.lineDashOffset = -this.time * 900;
+            ctx.lineWidth = 3 * this.hullDef.moduleScale;
+            ctx.strokeStyle = 'rgba(220, 245, 255, 0.6)';
+            ctx.beginPath();
+            ctx.moveTo(beam.x1, beam.y1);
+            ctx.lineTo(beam.x2, beam.y2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
+            if(beam.hit) {
+                // Molten contact point.
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
+            }
+            ctx.restore();
+        });
+    }
+
+    draw(ctx) {
+        if(!this.alive || this.hidden) return;
+        // Blink while invulnerable after launch.
+        if(this.immunity > 0 && Math.floor(this.immunity * 10) % 2 === 0) return;
+
+        const u = this.hullDef.moduleScale;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        this.drawThrusters(ctx);
+        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
+        ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
+
+        this.stats.modules.forEach(module => {
+            if(TURRET_TYPES.indexOf(module.type) !== -1) return;
+            ctx.save();
+            ctx.translate(module.slot.x, module.slot.y);
+            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: u, glow: 0 });
+            ctx.restore();
+        });
+
+        this.turrets.forEach(turret => {
+            ctx.save();
+            ctx.translate(turret.module.slot.x, turret.module.slot.y);
+            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, turret.kind, turret.module.level, {
+                scale: u,
+                glow: 0,
+                aim: turret.aim - this.angle,
+                heat: turret.kind === 'minigun' ? turret.heat : 0
+            });
+            if(turret.flash > 0) {
+                const tip = 9 * u;
+                const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
+                if(turret.kind === 'staff') {
+                    // Large plasma bloom at the cannon mouth.
+                    const fx = Math.cos(turret.aim - this.angle) * tip;
+                    const fy = Math.sin(turret.aim - this.angle) * tip;
+                    ctx.globalCompositeOperation = 'lighter';
+                    const bloom = 16 + 20 * turret.flash / 0.14;
+                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
+                }
+                // Star-shaped muzzle flash pointing down the barrel, flickering in size.
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.rotate(turret.aim - this.angle);
+                const flashSize = (turret.kind === 'staff' ? 30 : 18 + Math.random() * 10) * Math.max(0.8, u);
+                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
+            }
+            ctx.restore();
+        });
+
+        this.drawShield(ctx);
+        ctx.restore();
+
+        this.drawBeams(ctx);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["b"] = (Ship);
+
+
+/***/ }),
+/* 11 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4190,14 +5404,14 @@ class Rock {
 
 
 /***/ }),
-/* 11 */
+/* 12 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(5);
 // Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
 
 
@@ -4216,7 +5430,7 @@ const el = (tag, className, text) => {
 
 const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
 // Prices read "FREE" in debug mode.
-const formatPrice = (value) => (Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'FREE' : formatCredits(value));
+const formatPrice = (value) => (Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'FREE' : formatCredits(value));
 
 const setupCanvas = (canvas, width, height) => {
     const ratio = window.devicePixelRatio || 1;
@@ -4269,8 +5483,8 @@ class Shipyard {
         this.debugButton = el('button', 'sy-tab debug-toggle', 'Debug');
         this.debugButton.title = 'Debug mode: unlock everything and make it free';
         this.debugButton.addEventListener('click', () => {
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])());
-            this.flash(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
+            this.flash(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
             this.refresh();
         });
         header.appendChild(this.debugButton);
@@ -4345,7 +5559,7 @@ class Shipyard {
     }
 
     get hull() {
-        return __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().hull];
+        return __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().hull];
     }
 
     open(options) {
@@ -4390,10 +5604,10 @@ class Shipyard {
     }
 
     refresh() {
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])();
-        this.creditsLabel.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'DEBUG · everything free' : formatCredits(profile.credits);
-        this.debugButton.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Debug: ON' : 'Debug: OFF';
-        this.debugButton.classList.toggle('active', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])());
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
+        this.creditsLabel.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'DEBUG · everything free' : formatCredits(profile.credits);
+        this.debugButton.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug: ON' : 'Debug: OFF';
+        this.debugButton.classList.toggle('active', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
         Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
         this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
         this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
@@ -4409,15 +5623,15 @@ class Shipyard {
 
     renderMarket() {
         const box = this.marketBody;
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])();
-        const capacity = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["e" /* computeShipStats */])(this.hull.id).cargo;
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
+        const capacity = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id).cargo;
         box.innerHTML = '';
 
         const panel = el('div', 'shipyard-panel market-panel');
         panel.appendChild(el('h3', '', 'Ore exchange'));
         const canTrade = !!(this.options && this.options.canTrade);
         if(!canTrade) panel.appendChild(el('p', 'market-warning', 'Fly to the shipyard station and dock (B) to sell ore.'));
-        panel.appendChild(el('p', 'muted', 'Cargo hold: ' + Object(__WEBPACK_IMPORTED_MODULE_3__profile__["c" /* cargoUsed */])() + ' / ' + capacity +
+        panel.appendChild(el('p', 'muted', 'Cargo hold: ' + Object(__WEBPACK_IMPORTED_MODULE_3__profile__["d" /* cargoUsed */])() + ' / ' + capacity +
             ' units. Prices are per unit; metals found further from base are worth more.'));
 
         const table = el('table', 'market-table');
@@ -4443,7 +5657,7 @@ class Shipyard {
             const sell = el('button', 'sy-button small', 'Sell');
             sell.disabled = amount === 0 || !canTrade;
             sell.addEventListener('click', () => {
-                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* sellCargo */])(id);
+                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])(id);
                 this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
                 this.refresh();
             });
@@ -4453,11 +5667,11 @@ class Shipyard {
         });
         panel.appendChild(table);
 
-        const total = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["d" /* cargoValue */])();
+        const total = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["e" /* cargoValue */])();
         const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
         sellAll.disabled = total === 0 || !canTrade;
         sellAll.addEventListener('click', () => {
-            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* sellCargo */])();
+            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])();
             this.flash('Cargo sold for ' + formatCredits(earned));
             this.refresh();
         });
@@ -4471,8 +5685,8 @@ class Shipyard {
             if(missing <= 0) {
                 panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
             } else {
-                const cost = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]);
-                const affordable = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? missing : Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
+                const cost = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]);
+                const affordable = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? missing : Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
                 panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
                     ' · ' + __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */] + ' cr per point'));
                 const repair = el('button', 'sy-button', affordable < missing
@@ -4480,7 +5694,7 @@ class Shipyard {
                     : 'Full repair  ' + formatPrice(cost));
                 repair.disabled = affordable <= 0;
                 repair.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["s" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["t" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
                         this.options.repair(affordable);
                         this.flash('Hull repaired.');
                     }
@@ -4494,12 +5708,12 @@ class Shipyard {
     }
 
     renderHullList() {
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])();
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
         this.hullList.innerHTML = '';
 
         __WEBPACK_IMPORTED_MODULE_0__hulls__["a" /* HULL_ORDER */].forEach(id => {
             const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][id];
-            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["l" /* ownsHull */])(id);
+            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* ownsHull */])(id);
             const active = profile.hull === id;
             const card = el('div', 'hull-card' + (active ? ' active' : '') + (owned ? ' owned' : ''));
 
@@ -4523,15 +5737,15 @@ class Shipyard {
             } else if(owned) {
                 action = el('button', 'sy-button small', 'Fly this');
                 action.addEventListener('click', () => {
-                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["o" /* selectHull */])(id);
+                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* selectHull */])(id);
                     this.selectedSlot = null;
                     this.refresh();
                 });
             } else {
                 action = el('button', 'sy-button small buy', 'Buy ' + formatPrice(hull.cost));
-                action.disabled = profile.credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(hull.cost);
+                action.disabled = profile.credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(hull.cost);
                 action.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["b" /* buyHull */])(id)) {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["c" /* buyHull */])(id)) {
                         this.selectedSlot = null;
                         this.flash(hull.name + ' purchased!');
                     }
@@ -4553,7 +5767,7 @@ class Shipyard {
     }
 
     renderStats() {
-        const stats = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["e" /* computeShipStats */])(this.hull.id);
+        const stats = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id);
         const rows = [
             ['Hull', Math.round(stats.maxHull)],
             ['Shield', stats.maxShield ? Math.round(stats.maxShield) + ' (+' + Math.round(stats.shieldRegen) + '/s)' : 'none'],
@@ -4604,11 +5818,11 @@ class Shipyard {
     }
 
     renderPalette() {
-        const credits = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits;
+        const credits = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits;
         __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
             const entry = this.paletteItems[type];
             entry.item.classList.toggle('armed', this.armedModule === type);
-            entry.item.classList.toggle('unaffordable', credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost));
+            entry.item.classList.toggle('unaffordable', credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost));
             entry.price.textContent = formatPrice(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost);
         });
     }
@@ -4623,7 +5837,7 @@ class Shipyard {
             return;
         }
 
-        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id)[this.selectedSlot];
+        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[this.selectedSlot];
         if(!module) {
             box.appendChild(el('p', '', 'Empty mount'));
             box.appendChild(el('p', 'muted', this.armedModule
@@ -4672,15 +5886,15 @@ class Shipyard {
         pop.appendChild(row);
         this.popUpgrade.button.addEventListener('click', (event) => {
             event.stopPropagation();
-            const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
+            const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
             if(!module) return;
-            if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["u" /* upgradeModule */])(this.hull.id, this.selectedSlot)) this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type].short + ' upgraded!');
+            if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["v" /* upgradeModule */])(this.hull.id, this.selectedSlot)) this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type].short + ' upgraded!');
             this.refresh();
         });
         this.popSell.button.addEventListener('click', (event) => {
             event.stopPropagation();
-            if(!this.selectedSlot || !Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(this.hull.id)[this.selectedSlot]) return;
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellModule */])(this.hull.id, this.selectedSlot);
+            if(!this.selectedSlot || !Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot]) return;
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* sellModule */])(this.hull.id, this.selectedSlot);
             this.refresh();
         });
         pop.addEventListener('pointerdown', (event) => event.stopPropagation());
@@ -4690,7 +5904,7 @@ class Shipyard {
     }
 
     renderPopover() {
-        const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
+        const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
         if(!module) {
             this.popover.style.display = 'none';
             return;
@@ -4707,13 +5921,13 @@ class Shipyard {
             up.button.title = 'Max level';
             up.caption.textContent = 'MAX';
         } else {
-            up.button.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(cost);
+            up.button.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(cost);
             up.button.title = 'Upgrade to Mk ' + ['I', 'II', 'III'][module.level] + ' (' + formatPrice(cost) + ')';
             up.caption.textContent = formatPrice(cost);
         }
-        const sellLabel = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Remove' : 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
+        const sellLabel = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
         this.popSell.button.title = sellLabel;
-        this.popSell.caption.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* isDebug */])() ? 'Remove' : '+' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
+        this.popSell.caption.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : '+' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
         this.positionPopover();
     }
 
@@ -4794,7 +6008,7 @@ class Shipyard {
                 this.refresh();
                 return;
             }
-            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(this.hull.id)[slotId];
+            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[slotId];
             if(this.armedModule && !occupied) {
                 this.install(slotId, this.armedModule);
             } else {
@@ -4806,7 +6020,7 @@ class Shipyard {
 
     install(slotId, type) {
         const hull = this.hull;
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id)[slotId]) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[slotId]) {
             this.flash('That mount is taken. Sell its module first.');
             return;
         }
@@ -4814,14 +6028,14 @@ class Shipyard {
             this.flash('The ' + hull.name + ' is too small for a ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '. Use the Stargate instead.');
             return;
         }
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) {
             this.flash('Not enough credits for ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '.');
             return;
         }
-        Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* installModule */])(hull.id, slotId, type);
+        Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* installModule */])(hull.id, slotId, type);
         this.selectedSlot = slotId;
         this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + ' installed.');
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) this.armedModule = null;
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) this.armedModule = null;
         this.refresh();
     }
 
@@ -4885,7 +6099,7 @@ class Shipyard {
         const hull = this.hull;
         const layout = this.layout();
         const fit = layout.fit;
-        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* loadoutFor */])(hull.id);
+        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id);
         const time = performance.now() / 1000;
         const placing = !!(this.armedModule || (this.drag && this.drag.moved));
 
@@ -4967,7 +6181,7 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 12 */
+/* 13 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5208,17 +6422,17 @@ class TouchControls {
 
 
 /***/ }),
-/* 13 */
+/* 14 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(28);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(13);
 
 
 
@@ -5233,7 +6447,7 @@ const menu = document.getElementById('menu');
 const menuCredits = document.getElementById('menuCredits');
 
 const renderMenuCredits = () => {
-    const profile = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["f" /* getProfile */])();
+    const profile = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["g" /* getProfile */])();
     const cargo = Object.keys(profile.cargo).reduce((sum, id) => sum + profile.cargo[id], 0);
     menuCredits.textContent = 'Credits: ' + Math.round(profile.credits).toLocaleString('en-US') +
         (cargo ? ' · Ore in hold: ' + cargo : '');
@@ -5241,17 +6455,17 @@ const renderMenuCredits = () => {
 
 const debugToggle = document.getElementById('debugToggle');
 const renderDebug = () => {
-    debugToggle.textContent = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
-    debugToggle.classList.toggle('on', Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])());
+    debugToggle.textContent = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
+    debugToggle.classList.toggle('on', Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])());
 };
-debugToggle.addEventListener('click', () => Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["r" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])()));
+debugToggle.addEventListener('click', () => Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])()));
 
 // Debug mode can also be switched on from the address bar: index.html?debug
-if(/[?&]debug\b/.test(window.location.search) && !Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["h" /* isDebug */])()) Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["r" /* setDebug */])(true);
+if(/[?&]debug\b/.test(window.location.search) && !Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])()) Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["s" /* setDebug */])(true);
 
 renderMenuCredits();
 renderDebug();
-Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["k" /* onProfileChange */])(() => {
+Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["l" /* onProfileChange */])(() => {
     renderMenuCredits();
     renderDebug();
 });
@@ -5289,30 +6503,32 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 14 */
+/* 15 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(15);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__audio_audio__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_sectors__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_station__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__shipyard_profile__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__world_systems__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_stargate__ = __webpack_require__(22);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ui_dhd__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_starmap__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__render_planets__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__travel__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ui_touch__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_materials__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_sectors__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(22);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_profile__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__shipyard_shipyard__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_systems__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__world_stargate__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(24);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__render_planets__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__travel__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__render_sprites__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ui_touch__ = __webpack_require__(13);
+
 
 
 
@@ -5346,7 +6562,7 @@ const SECTOR_UPDATE_INTERVAL = 0.5;
 const MINIMAP_SIZE = 180;
 
 // Phones and tablets get on-screen controls and a layout that keeps the thumbs' areas clear.
-const TOUCH = Object(__WEBPACK_IMPORTED_MODULE_19__ui_touch__["b" /* isTouchDevice */])();
+const TOUCH = Object(__WEBPACK_IMPORTED_MODULE_20__ui_touch__["b" /* isTouchDevice */])();
 let touchControls = null;
 const hint = (key) => TOUCH ? '' : ' (' + key + ')';
 const MINIMAP_RANGE = 3500;
@@ -5389,18 +6605,18 @@ const hud = {};
 const systemSeed = (id) => {
     let h = 2166136261;
     for(let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-    return (Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().seed ^ h) >>> 0;
+    return (Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().seed ^ h) >>> 0;
 };
-const makeSectors = (system) => new __WEBPACK_IMPORTED_MODULE_8__world_sectors__["a" /* SectorManager */](systemSeed(system.id), system.materials, [{ x: 0, y: 0 }, system.gate]);
-const originIndex = (system) => __WEBPACK_IMPORTED_MODULE_12__world_systems__["b" /* SYSTEMS */].indexOf(system);
+const makeSectors = (system) => new __WEBPACK_IMPORTED_MODULE_9__world_sectors__["a" /* SectorManager */](systemSeed(system.id), system.materials, [{ x: 0, y: 0 }, system.gate]);
+const originIndex = (system) => __WEBPACK_IMPORTED_MODULE_13__world_systems__["b" /* SYSTEMS */].indexOf(system);
 
 const createState = () => {
-    const system = Object(__WEBPACK_IMPORTED_MODULE_12__world_systems__["g" /* systemById */])('lantea');
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* default */](__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["e" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().hull));
+    const system = Object(__WEBPACK_IMPORTED_MODULE_13__world_systems__["g" /* systemById */])('lantea');
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["b" /* default */](__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
     ship.angle = 0;
     return {
         system: system,
-        gate: new __WEBPACK_IMPORTED_MODULE_13__world_stargate__["c" /* default */](system.gate.x, system.gate.y),
+        gate: new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* default */](system.gate.x, system.gate.y),
         transition: null,
         tooBigTimer: 0,
         ship: ship,
@@ -5408,6 +6624,9 @@ const createState = () => {
         newRocks: [],
         bullets: [],
         missiles: [],
+        enemies: [],
+        combat: combat,
+        enemyTimer: 20 + Math.random() * 15,
         particles: [],
         ores: [],
         beamHits: [],
@@ -5453,7 +6672,7 @@ const resize = () => {
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].resize(window.innerWidth, window.innerHeight);
+    __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].resize(window.innerWidth, window.innerHeight);
 };
 
 const setText = (key, text) => {
@@ -5472,16 +6691,16 @@ const setBar = (key, fraction) => {
 };
 
 const distanceToStation = () => {
-    const dx = state.ship.x - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x;
-    const dy = state.ship.y - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y;
+    const dx = state.ship.x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x;
+    const dy = state.ship.y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y;
     return Math.sqrt(dx * dx + dy * dy);
 };
 
 const renderInfo = () => {
     const ship = state.ship;
-    const used = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])();
-    const sector = Object(__WEBPACK_IMPORTED_MODULE_8__world_sectors__["b" /* sectorOf */])(ship.x, ship.y);
-    setText('credits', 'Credits: ' + Math.round(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().credits).toLocaleString('en-US'));
+    const used = Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["d" /* cargoUsed */])();
+    const sector = Object(__WEBPACK_IMPORTED_MODULE_9__world_sectors__["b" /* sectorOf */])(ship.x, ship.y);
+    setText('credits', 'Credits: ' + Math.round(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().credits).toLocaleString('en-US'));
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
     setText('fps', 'Fps: ' + Math.round(fps));
@@ -5525,15 +6744,15 @@ const applyGravity = (dt) => {
     const refresh = gravityCounter++ % GRAVITY_INTERVAL === 0;
 
     const pull = (body) => {
-        if(refresh || !body.gravity) body.gravity = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(body, rocks);
+        if(refresh || !body.gravity) body.gravity = Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["c" /* gravityAt */])(body, rocks);
         body.vx += body.gravity.x * dt;
         body.vy += body.gravity.y * dt;
     };
 
     // Rocks: compute every acceleration before changing any velocity.
-    if(refresh) rocks.forEach(rock => { rock.gravityNext = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(rock, rocks); });
+    if(refresh) rocks.forEach(rock => { rock.gravityNext = Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["c" /* gravityAt */])(rock, rocks); });
     rocks.forEach(rock => {
-        if(refresh || !rock.gravity) rock.gravity = rock.gravityNext || Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["c" /* gravityAt */])(rock, rocks);
+        if(refresh || !rock.gravity) rock.gravity = rock.gravityNext || Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["c" /* gravityAt */])(rock, rocks);
         rock.vx += rock.gravity.x * dt;
         rock.vy += rock.gravity.y * dt;
     });
@@ -5557,7 +6776,7 @@ const spray = (x, y, baseVx, baseVy, dirX, dirY, cone, count, options) => {
     for(let i = 0; i < count; i++) {
         const a = angle + (Math.random() - 0.5) * 2 * cone;
         const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
-        state.particles.push(new __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */]({
+        state.particles.push(new __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */]({
             x: x, y: y,
             vx: baseVx + Math.cos(a) * speed,
             vy: baseVy + Math.sin(a) * speed,
@@ -5642,10 +6861,10 @@ const hitRock = (rock, damage, hitX, hitY, inX, inY, kind) => {
 
     // Ore pops out of the hole, flashing in its metal colour with a burst of glinting pixels.
     result.ore.forEach(material => {
-        const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][material].color;
+        const color = __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][material].color;
         const a = Math.atan2(normal.y, normal.x) + (Math.random() - 0.5) * 1.1;
         const speed = 50 + Math.random() * 70;
-        const ore = new __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__["a" /* default */](
+        const ore = new __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__["a" /* default */](
             hitX + normal.x * 3,
             hitY + normal.y * 3,
             rock.vx + Math.cos(a) * speed,
@@ -5676,33 +6895,33 @@ const hitRock = (rock, damage, hitX, hitY, inX, inY, kind) => {
             const t = (Math.random() - 0.5) * 1.6;
             const x = rock.x + cutX / cutLength * rock.radius * t;
             const y = rock.y + cutY / cutLength * rock.radius * t;
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 1, {
+            __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 1, {
                 minSpeed: 5, maxSpeed: 35, minLife: 1.2, maxLife: 2.6, size: 9, color: dust, dust: true, alpha: 0.26
             });
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 3, {
+            __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, x, y, rock.vx, rock.vy, 3, {
                 minSpeed: 20, maxSpeed: 110, minLife: 0.5, maxLife: 1.3, size: 1.8, color: i % 2 ? light : coreColor, pixel: true
             });
         }
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx, rock.vy, 16, {
+        __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, hitX, hitY, rock.vx, rock.vy, 16, {
             minSpeed: 60, maxSpeed: 260, minLife: 0.2, maxLife: 0.6, size: 1.6, color: '255,230,170', pixel: true, glow: true
         });
         flash(rock.x, rock.y, rock.radius * 1.6, '255,225,190', 0.25);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].rockCrack();
     }
 
     if(result.crumbled) {
         // Falls apart into a cloud of rubble pixels and dust.
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 24, {
+        __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 24, {
             minSpeed: 20, maxSpeed: 140, minLife: 0.5, maxLife: 1.3, size: 1.8, color: light, pixel: true, drag: 0.4
         });
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
+        __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 14, {
             minSpeed: 20, maxSpeed: 120, minLife: 0.5, maxLife: 1.3, size: 2, color: coreColor, pixel: true, drag: 0.4
         });
-        __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 10, {
+        __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, rock.x, rock.y, rock.vx, rock.vy, 10, {
             minSpeed: 5, maxSpeed: 45, minLife: 1.2, maxLife: 2.4, size: 8, color: dust, dust: true, alpha: 0.26, drag: 0.5
         });
         flash(rock.x, rock.y, rock.radius * 2.2, '255,225,190', 0.2);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockCrack();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].rockCrack();
     }
 };
 
@@ -5757,16 +6976,16 @@ const bulletCollisions = () => {
 
             if(bullet.kind === 'plasma') {
                 // Staff blast: fiery splash that also scorches nearby rocks.
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 26, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 26, {
                     minSpeed: 40, maxSpeed: 220, minLife: 0.25, maxLife: 0.7, size: 3.5, color: '255,170,60'
                 });
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 10, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 10, {
                     minSpeed: 10, maxSpeed: 80, minLife: 0.15, maxLife: 0.35, size: 7, color: '255,240,200'
                 });
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 20, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 20, {
                     minSpeed: 60, maxSpeed: 260, minLife: 0.25, maxLife: 0.7, size: 1.8, color: '255,180,70', pixel: true, glow: true, drag: 0.8
                 });
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 5, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, bullet.x, bullet.y, rock.vx, rock.vy, 5, {
                     minSpeed: 5, maxSpeed: 35, minLife: 1, maxLife: 2, size: 9, color: '120,100,90', dust: true, alpha: 0.25
                 });
                 rocks.forEach(other => {
@@ -5776,9 +6995,9 @@ const bulletCollisions = () => {
                     const reach = bullet.splash + other.radius;
                     if(ox * ox + oy * oy < reach * reach) hitRock(other, bullet.damage * 0.5, bullet.x, bullet.y, undefined, undefined, 'plasma');
                 });
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].plasmaImpact();
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].plasmaImpact();
             } else {
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].rockHit(rock.isCoreExposed(Math.atan2(bullet.y - rock.y, bullet.x - rock.x) - rock.angle));
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].rockHit(rock.isCoreExposed(Math.atan2(bullet.y - rock.y, bullet.x - rock.x) - rock.angle));
             }
             return;
         }
@@ -5789,32 +7008,32 @@ const explodeMissile = (missile) => {
     const drone = missile.kind === 'drone';
     const color = drone ? '255,225,140' : '255,160,80';
     // Hot sparks, a white flash, slow dust, and a shockwave ring sized to the blast.
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.15, missile.vy * 0.15, drone ? 34 : 30, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.15, missile.vy * 0.15, drone ? 34 : 30, {
         minSpeed: 40, maxSpeed: missile.blast * 4 + 80, minLife: 0.25, maxLife: 0.8, size: drone ? 3 : 3, color: color
     });
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 8, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 8, {
         minSpeed: 5, maxSpeed: 60, minLife: 0.12, maxLife: 0.3, size: drone ? 10 : 8, color: '255,250,225'
     });
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 8 : 6, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 8 : 6, {
         minSpeed: 10, maxSpeed: 50, minLife: 1, maxLife: 2, size: 11, color: '150,140,130', dust: true, alpha: 0.2
     });
     state.shockwaves.push({ x: missile.x, y: missile.y, radius: 4, maxRadius: missile.blast * 1.6, life: 1, color: drone ? '255,220,140' : '255,170,90' });
     // Pixel shrapnel and glowing embers flung out of the blast, plus a lingering smoke cloud.
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 34 : 28, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, drone ? 34 : 28, {
         minSpeed: 80, maxSpeed: missile.blast * 6 + 120, minLife: 0.3, maxLife: 0.9, size: 1.8, color: color, pixel: true, glow: true, drag: 0.8
     });
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 14, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, missile.vx * 0.1, missile.vy * 0.1, 14, {
         minSpeed: 20, maxSpeed: 90, minLife: 0.6, maxLife: 1.4, size: 2.4, color: '255,120,40', pixel: true, glow: true, drag: 1.2
     });
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 6, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, missile.x, missile.y, 0, 0, 6, {
         minSpeed: 5, maxSpeed: 30, minLife: 1.5, maxLife: 2.8, size: 12, color: '110,100,95', dust: true, alpha: 0.22, drag: 0.6
     });
-    if(drone) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].droneImpact();
-    else __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].missileExplosion();
+    if(drone) __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].droneImpact();
+    else __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].missileExplosion();
 
     state.rocks.forEach(rock => {
         if(rock.dead) return;
-        const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(missile, rock);
+        const d = Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["b" /* delta */])(missile, rock);
         const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
         const reach = missile.blast + rock.radius;
         if(distance > reach) return;
@@ -5827,6 +7046,7 @@ const explodeMissile = (missile) => {
         hitRock(rock, missile.damage * (0.35 + 0.65 * falloff),
             rock.x - d.x / distance * rock.radius, rock.y - d.y / distance * rock.radius);
     });
+    blastCombat(missile);
 };
 
 const missileCollisions = () => {
@@ -5879,12 +7099,12 @@ const startMerge = (a, b) => {
     state.mergeLinks.push(link);
 
     const distance = Math.sqrt(link.offsetX * link.offsetX + link.offsetY * link.offsetY) || 1;
-    const contactX = host.x + link.offsetX / distance * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
-    const contactY = host.y + link.offsetY / distance * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(state.particles, contactX, contactY, host,
+    const contactX = host.x + link.offsetX / distance * host.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
+    const contactY = host.y + link.offsetY / distance * host.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].mergeCloud(state.particles, contactX, contactY, host,
         Math.round(12 + guest.radius), guest.radius * 1.1, colorString(host.dustColor));
     flash(contactX, contactY, 30 + guest.radius, '255,220,180', 0.25);
-    __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, contactX, contactY, host.vx, host.vy, 22, {
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, contactX, contactY, host.vx, host.vy, 22, {
         minSpeed: 20, maxSpeed: 110, minLife: 0.6, maxLife: 1.5, size: 1.8, color: shadeString(host.dustColor, 1.2), pixel: true, drag: 0.4
     });
     const nx = link.offsetX / distance;
@@ -5895,7 +7115,7 @@ const startMerge = (a, b) => {
     spray(contactX, contactY, host.vx, host.vy, ny, -nx, 0.6, 8, {
         minSpeed: 20, maxSpeed: 90, minLife: 0.4, maxLife: 1, size: 2, color: colorString(host.dustColor), solid: true
     });
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].merge(Math.sqrt(host.area + guest.area));
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].merge(Math.sqrt(host.area + guest.area));
 };
 
 const updateMerges = (dt) => {
@@ -5940,9 +7160,9 @@ const updateMerges = (dt) => {
             const distance = Math.sqrt(ox * ox + oy * oy) || 1;
             const along = (Math.random() - 0.5) * 1.2;
             const angle = Math.atan2(oy, ox) + along;
-            const seamX = host.x + Math.cos(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
-            const seamY = host.y + Math.sin(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].mergeCloud(state.particles, seamX, seamY, host, 2, guest.radius * 0.4 + 4, '170,160,148');
+            const seamX = host.x + Math.cos(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
+            const seamY = host.y + Math.sin(angle) * host.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
+            __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].mergeCloud(state.particles, seamX, seamY, host, 2, guest.radius * 0.4 + 4, '170,160,148');
             if(distance < 1) link.dustTimer = 1;
         }
 
@@ -5970,7 +7190,7 @@ const rockCollisions = () => {
 
             const dx = b.x - a.x;
             const dy = b.y - a.y;
-            const reach = (a.radius + b.radius) * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+            const reach = (a.radius + b.radius) * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
             const distSq = dx * dx + dy * dy;
             if(distSq > reach * reach) continue;
 
@@ -5980,12 +7200,12 @@ const rockCollisions = () => {
             const combinedRadius = Math.sqrt(a.area + b.area);
 
             // Fresh fragments, busy pairs and oversized bodies just rest against each other.
-            if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["a" /* MAX_MERGE_RADIUS */]) {
+            if(a.grace > 0 || b.grace > 0 || a.merging || b.merging || combinedRadius > __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["a" /* MAX_MERGE_RADIUS */]) {
                 const impact = resolveImpact(a, b, normalX, normalY, reach - distance, ROCK_BOUNCE);
                 if(impact > 30) {
                     // Grinding knock: grit and dust thrown out sideways from the contact.
-                    const cx = a.x + normalX * a.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
-                    const cy = a.y + normalY * a.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+                    const cx = a.x + normalX * a.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
+                    const cy = a.y + normalY * a.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
                     const dust = colorString(a.dustColor);
                     spray(cx, cy, (a.vx + b.vx) / 2, (a.vy + b.vy) / 2, -normalY, normalX, 0.5, 4, {
                         minSpeed: 20, maxSpeed: 40 + impact, minLife: 0.3, maxLife: 0.8, size: 1.8, color: dust, solid: true
@@ -6007,16 +7227,16 @@ const rockCollisions = () => {
     }
 };
 
-const shipCollisions = () => {
-    const { ship, rocks, particles } = state;
-    if(!ship.alive || state.transition) return;
+const shipCollisions = (ship) => {
+    const { rocks, particles } = state;
+    if(!ship.alive || (ship === state.ship && state.transition)) return;
 
     rocks.forEach(rock => {
         if(rock.dead) return;
-        const rockRadius = rock.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+        const rockRadius = rock.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
 
         // Broad phase against the whole ship first.
-        const center = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(ship, rock);
+        const center = Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["b" /* delta */])(ship, rock);
         const reach = ship.radius * 1.5 + rockRadius;
         if(center.x * center.x + center.y * center.y > reach * reach) return;
 
@@ -6028,7 +7248,7 @@ const shipCollisions = () => {
             if(impactSpeed > 15) {
                 const damage = 2 + impactSpeed * rock.mass / 6000;
                 ship.takeDamage(damage, particles, contact.x, contact.y);
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(particles, contact.x, contact.y, rock.vx, rock.vy, 6, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(particles, contact.x, contact.y, rock.vx, rock.vy, 6, {
                     minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2,
                     color: ship.hullDef.shieldColor || '120,210,255'
                 });
@@ -6039,7 +7259,7 @@ const shipCollisions = () => {
         const colliders = ship.worldColliders();
         for(let i = 0; i < colliders.length; i++) {
             const c = colliders[i];
-            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(c, rock);
+            const d = Object(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["b" /* delta */])(c, rock);
             const distance = Math.sqrt(d.x * d.x + d.y * d.y) || 0.001;
             const overlap = c.r + rockRadius - distance;
             if(overlap <= 0) continue;
@@ -6048,7 +7268,7 @@ const shipCollisions = () => {
             const damage = 4 + impactSpeed * rock.mass / 6000;
 
             if(impactSpeed > 25 && ship.takeDamage(damage, particles)) {
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].explosion(0.6);
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].explosion(0.6);
                 // Ramming chips the asteroid too.
                 hitRock(rock, 1 + impactSpeed * ship.mass / 30000, c.x + d.x / distance * c.r, c.y + d.y / distance * c.r);
             }
@@ -6057,44 +7277,311 @@ const shipCollisions = () => {
     });
 };
 
+
+// ---------------------------------------------------------------- combat
+
+// Who can be shot at, refreshed once per physics step. Ships ask `state.combat` for their
+// targets: the player's weapons go for enemy ships, enemy weapons for the player.
+const combat = {
+    enemies: [],
+    player: [],
+    missiles: { player: [], enemy: [] },
+    refresh() {
+        this.enemies = state.enemies.filter(e => e.alive);
+        const ship = state.ship;
+        this.player = ship.alive && !ship.hidden && !state.transition ? [ship] : [];
+        this.missiles.player = state.missiles.filter(m => !m.dead && m.side === 'player');
+        this.missiles.enemy = state.missiles.filter(m => !m.dead && m.side === 'enemy');
+    },
+    hostileShips(side) {
+        return side === 'player' ? this.enemies : this.player;
+    },
+    // Missiles / drones fired by the other side (optionally only one kind).
+    hostileMissiles(side, kind) {
+        const list = side === 'player' ? this.missiles.enemy : this.missiles.player;
+        return kind ? list.filter(m => m.kind === kind && !m.dead) : list;
+    }
+};
+
+// Does a point (with radius `pad`) touch a ship: its shield bubble when raised, otherwise
+// its hull colliders? Returns the contact point or null.
+const shipHitAt = (ship, x, y, pad) => {
+    const dx = x - ship.x;
+    const dy = y - ship.y;
+    const broad = ship.radius * 1.7 + pad;
+    if(dx * dx + dy * dy > broad * broad) return null;
+    if(ship.shieldUp) {
+        const contact = ship.shieldContact(x, y, pad);
+        return contact ? { x: x, y: y, shield: true } : null;
+    }
+    const colliders = ship.worldColliders();
+    for(let i = 0; i < colliders.length; i++) {
+        const c = colliders[i];
+        const cx = x - c.x;
+        const cy = y - c.y;
+        if(cx * cx + cy * cy < (c.r + pad) * (c.r + pad)) return { x: x, y: y, shield: false };
+    }
+    return null;
+};
+
+const impactSparks = (x, y, ship, kind, shield) => {
+    const color = shield ? (ship.hullDef.shieldColor || '120,210,255') : kind === 'plasma' ? '255,170,60' : '255,220,160';
+    __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, x, y, ship.vx, ship.vy, kind === 'plasma' ? 16 : 5, {
+        minSpeed: 40, maxSpeed: kind === 'plasma' ? 220 : 160, minLife: 0.15, maxLife: 0.45, size: 1.8, color: color, pixel: true, glow: true, drag: 0.8
+    });
+    if(kind === 'plasma') {
+        __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, x, y, ship.vx, ship.vy, 6, {
+            minSpeed: 10, maxSpeed: 70, minLife: 0.12, maxLife: 0.3, size: 7, color: '255,240,200'
+        });
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].plasmaImpact();
+    }
+};
+
+// Shots against ships, guns shooting down missiles, and missiles/drones meeting their targets.
+const combatCollisions = () => {
+    const { bullets, missiles, particles } = state;
+    combat.refresh();
+    if(!combat.enemies.length && !combat.missiles.enemy.length) return;
+
+    // Ships bump off each other instead of overlapping.
+    const ships = combat.player.concat(combat.enemies);
+    for(let i = 0; i < ships.length; i++) {
+        for(let j = i + 1; j < ships.length; j++) {
+            const a = ships[i];
+            const b = ships[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+            const overlap = (a.radius + b.radius) * 0.7 - distance;
+            if(overlap > 0) resolveImpact(a, b, dx / distance, dy / distance, overlap, 0.3);
+        }
+    }
+
+    bullets.forEach(bullet => {
+        if(bullet.dead) return;
+        const targets = combat.hostileShips(bullet.side);
+        for(let i = 0; i < targets.length; i++) {
+            const ship = targets[i];
+            // Staff bolts burst on proximity, so they also catch slim hulls.
+            const hit = shipHitAt(ship, bullet.x, bullet.y, bullet.kind === 'plasma' ? Math.max(8, bullet.splash * 0.4) : 2);
+            if(!hit) continue;
+            bullet.dead = true;
+            ship.takeDamage(bullet.damage, particles, hit.x, hit.y, __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* DAMAGE_TYPE */][bullet.kind]);
+            const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy) || 1;
+            const kick = bullet.mass * 6 / ship.stats.mass;
+            ship.vx += bullet.vx / speed * kick;
+            ship.vy += bullet.vy / speed * kick;
+            impactSparks(hit.x, hit.y, ship, bullet.kind, hit.shield);
+            return;
+        }
+        // Kinetic rounds can shoot down missiles (never drones).
+        if(bullet.kind !== 'bullet') return;
+        const incoming = combat.hostileMissiles(bullet.side, 'missile');
+        for(let i = 0; i < incoming.length; i++) {
+            const missile = incoming[i];
+            if(missile.dead) continue;
+            const mx = missile.x - bullet.x;
+            const my = missile.y - bullet.y;
+            if(mx * mx + my * my > 11 * 11) continue;
+            bullet.dead = true;
+            missile.dead = true;
+            missile.exploded = true;
+            missile.damage *= 0.3;     // shot down early: only a weak blast
+            return;
+        }
+    });
+
+    missiles.forEach(missile => {
+        if(missile.dead || missile.launchDelay > 0) return;
+        const targets = combat.hostileShips(missile.side);
+        for(let i = 0; i < targets.length; i++) {
+            if(shipHitAt(targets[i], missile.x, missile.y, 4)) {
+                missile.dead = true;
+                missile.exploded = true;
+                return;
+            }
+        }
+        // Drones intercept drones head-on.
+        if(missile.kind === 'drone') {
+            const drones = combat.hostileMissiles(missile.side, 'drone');
+            for(let i = 0; i < drones.length; i++) {
+                const other = drones[i];
+                if(other.dead) continue;
+                const dx = other.x - missile.x;
+                const dy = other.y - missile.y;
+                if(dx * dx + dy * dy < 14 * 14) {
+                    missile.dead = missile.exploded = true;
+                    other.dead = other.exploded = true;
+                    return;
+                }
+            }
+        }
+    });
+};
+
+// Blast damage to ships of the other side, and blasts destroying the other side's missiles
+// (missile blasts stop missiles, drone blasts stop drones).
+const blastCombat = (missile) => {
+    const type = __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["a" /* DAMAGE_TYPE */][missile.kind];
+    combat.hostileShips(missile.side).forEach(ship => {
+        const dx = ship.x - missile.x;
+        const dy = ship.y - missile.y;
+        const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+        const reach = missile.blast + ship.radius * 0.8;
+        if(distance > reach) return;
+        const falloff = 1 - distance / reach;
+        ship.takeDamage(missile.damage * (0.4 + 0.6 * falloff), state.particles,
+            missile.x + dx / distance * Math.min(distance, 6), missile.y + dy / distance * Math.min(distance, 6), type);
+        const push = Math.min(40, MISSILE_PUSH * 0.4 * falloff / ship.mass);
+        ship.vx += dx / distance * push;
+        ship.vy += dy / distance * push;
+    });
+    combat.hostileMissiles(missile.side, missile.kind).forEach(other => {
+        if(other.dead) return;
+        const dx = other.x - missile.x;
+        const dy = other.y - missile.y;
+        const reach = missile.blast * 1.1;
+        if(dx * dx + dy * dy > reach * reach) return;
+        other.dead = true;
+        other.exploded = true;
+        other.damage *= 0.3;
+        other.handled = true;
+        explodeMissile(other);
+    });
+};
+
+// Homing missiles and drones pick ship targets: drones always hunt hostile drones first.
+const retargetMissiles = (dt) => {
+    state.missiles.forEach(missile => {
+        if(missile.dead || missile.homing <= 0) return;
+        missile.retargetTimer = (missile.retargetTimer || 0) - dt;
+        if(missile.retargetTimer > 0 && missile.target && !missile.target.dead) return;
+        missile.retargetTimer = 0.25;
+        const near = (list, range) => {
+            let best = null;
+            let bestDist = range * range;
+            list.forEach(item => {
+                if(item.dead) return;
+                const d = (item.x - missile.x) * (item.x - missile.x) + (item.y - missile.y) * (item.y - missile.y);
+                if(d < bestDist) {
+                    bestDist = d;
+                    best = item;
+                }
+            });
+            return best;
+        };
+        if(missile.kind === 'drone') {
+            const drone = near(combat.hostileMissiles(missile.side, 'drone'), 900);
+            if(drone) {
+                missile.target = drone;
+                return;
+            }
+        }
+        if(!missile.target || missile.target.dead) {
+            missile.target = near(combat.hostileShips(missile.side), 900) || null;
+        }
+    });
+};
+
+// Enemy ships: spawning, AI and clean-up.
+const spawnEnemy = (hullId, level, near) => {
+    const ship = state.ship;
+    for(let attempt = 0; attempt < 12; attempt++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = near ? 700 + Math.random() * 300 : 2100 + Math.random() * 600;
+        const x = ship.x + Math.cos(a) * d;
+        const y = ship.y + Math.sin(a) * d;
+        if(state.system.station && Math.sqrt((x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x) * (x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x) + (y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y) * (y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y)) < 3200 && !near) continue;
+        const enemy = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["a" /* createEnemy */])(hullId || Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["c" /* pickEnemyHull */])(state.system.id), level || (Math.random() < 0.35 ? 3 : 2), x, y);
+        enemy.angle = Math.atan2(ship.y - y, ship.x - x);
+        state.enemies.push(enemy);
+        banner('Hostile ' + enemy.hullDef.name + ' detected (Mk ' + (enemy.level === 3 ? 'III' : 'II') + ')', 2.5);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].scanPing();
+        return enemy;
+    }
+    return null;
+};
+
+const updateEnemies = (dt) => {
+    const ship = state.ship;
+    // New contacts turn up every so often, up to the system's limit.
+    if(!state.transition) {
+        state.enemyTimer -= dt;
+        if(state.enemyTimer <= 0) {
+            state.enemyTimer = 35 + Math.random() * 35;
+            if(state.enemies.length < Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["b" /* enemyConfig */])(state.system.id).max) spawnEnemy();
+        }
+    }
+    const target = combat.player[0] || null;
+    const avoid = state.system.station ? { x: __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, y: __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, radius: __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].shieldRadius + 260 } : null;
+    state.enemies.forEach(enemy => {
+        const dx = ship.x - enemy.x;
+        const dy = ship.y - enemy.y;
+        const inRange = target && dx * dx + dy * dy < 3600 * 3600;
+        Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["d" /* updateEnemyAI */])(enemy, dt, inRange ? target : null, state.rocks, combat.missiles.player, avoid);
+        enemy.update(dt, enemy.ai.input, state);
+    });
+};
+
+// Destroyed enemies pay their bounty; ones left far behind are dropped.
+const updateEnemyLosses = () => {
+    const ship = state.ship;
+    state.enemies.forEach(enemy => {
+        if(enemy.alive || enemy.counted) return;
+        enemy.counted = true;
+        Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["b" /* addCredits */])(enemy.bounty);
+        floatText(enemy.x, enemy.y - enemy.radius, '+' + enemy.bounty + ' cr', '255,215,120');
+        banner(enemy.hullDef.name + ' destroyed  +' + enemy.bounty + ' credits', 2.2);
+        state.shockwaves.push({ x: enemy.x, y: enemy.y, radius: 6, maxRadius: 90 + enemy.radius * 2.5, life: 1, color: '255,190,110' });
+        flash(enemy.x, enemy.y, 120 + enemy.radius * 3, '255,220,170', 0.4);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].missileExplosion();
+    });
+    state.enemies = state.enemies.filter(enemy => {
+        if(!enemy.alive) return false;
+        const dx = enemy.x - ship.x;
+        const dy = enemy.y - ship.y;
+        return dx * dx + dy * dy < 7000 * 7000;
+    });
+};
+
 // Atlantis city shield: asteroids bounce off it, ships, shots and ore pass through.
 const cityShield = (dt) => {
-    const R = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].shieldRadius;
+    const R = __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].shieldRadius;
     state.rocks.forEach(rock => {
         if(rock.dead) return;
-        const dx = rock.x - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x;
-        const dy = rock.y - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y;
+        const dx = rock.x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x;
+        const dy = rock.y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y;
         const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
-        const r = rock.radius * __WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["b" /* VISUAL_RADIUS */];
+        const r = rock.radius * __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["b" /* VISUAL_RADIUS */];
         if(distance > R + r || distance < R - r - 40) return;
 
         const nx = dx / distance;
         const ny = dy / distance;
-        rock.x = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + nx * (R + r);
-        rock.y = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y + ny * (R + r);
+        rock.x = __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + nx * (R + r);
+        rock.y = __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y + ny * (R + r);
         const inward = rock.vx * nx + rock.vy * ny;
         if(inward < 0) {
             rock.vx -= 1.6 * inward * nx;
             rock.vy -= 1.6 * inward * ny;
             const strength = Math.min(1.5, 0.3 + -inward / 80 + r / 60);
-            __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.push({ angle: Math.atan2(ny, nx), life: 1, strength: strength });
-            if(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.length > 10) __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.shift();
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x + nx * R, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y + ny * R, rock.vx * 0.3, rock.vy * 0.3, 10, {
+            __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts.push({ angle: Math.atan2(ny, nx), life: 1, strength: strength });
+            if(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts.length > 10) __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts.shift();
+            __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + nx * R, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y + ny * R, rock.vx * 0.3, rock.vy * 0.3, 10, {
                 minSpeed: 30, maxSpeed: 140, minLife: 0.2, maxLife: 0.6, size: 2.5, color: '170,220,255'
             });
-            const sdx = state.ship.x - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - nx * R;
-            const sdy = state.ship.y - __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - ny * R;
+            const sdx = state.ship.x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x - nx * R;
+            const sdy = state.ship.y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y - ny * R;
             const near = 1 - Math.min(1, Math.sqrt(sdx * sdx + sdy * sdy) / 1400);
-            if(near > 0) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].cityShield(0.25 * near * strength);
+            if(near > 0) __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].cityShield(0.25 * near * strength);
         }
     });
-    __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.forEach(impact => { impact.life -= dt * 0.8; });
-    __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts = __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts.filter(impact => impact.life > 0);
+    __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts.forEach(impact => { impact.life -= dt * 0.8; });
+    __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts = __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts.filter(impact => impact.life > 0);
 };
 
 const collectOre = (dt) => {
     const ship = state.ship;
-    const cargoFull = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])() >= ship.cargoCapacity;
+    const cargoFull = Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["d" /* cargoUsed */])() >= ship.cargoCapacity;
     if(state.cargoFullTimer > 0) state.cargoFullTimer -= dt;
     if(state.shieldHintTimer > 0) state.shieldHintTimer -= dt;
 
@@ -6112,11 +7599,11 @@ const collectOre = (dt) => {
                 ship.absorbOre(contact.x, contact.y);
                 // Same impact as an asteroid striking the shield, just smaller.
                 const shieldColor = ship.hullDef.shieldColor || '120,210,255';
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 6, {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 6, {
                     minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2, color: shieldColor
                 });
-                __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 4, {
-                    minSpeed: 20, maxSpeed: 80, minLife: 0.2, maxLife: 0.45, size: 2, color: __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material].color
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, contact.x, contact.y, ship.vx, ship.vy, 4, {
+                    minSpeed: 20, maxSpeed: 80, minLife: 0.2, maxLife: 0.45, size: 2, color: __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][ore.material].color
                 });
                 if(state.shieldHintTimer <= 0) {
                     state.shieldHintTimer = 8;
@@ -6128,13 +7615,13 @@ const collectOre = (dt) => {
 
         const wasHeld = ore.tractored;
         const collected = ore.update(dt, ship, !cargoFull);
-        if(ore.tractored && !wasHeld) __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].tractorLock();
+        if(ore.tractored && !wasHeld) __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].tractorLock();
         if(!collected) return;
 
-        if(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["t" /* storeOre */])(ore.material, ship.cargoCapacity)) {
+        if(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["u" /* storeOre */])(ore.material, ship.cargoCapacity)) {
             ore.dead = true;
-            const material = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material];
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].pickup(material.price);
+            const material = __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][ore.material];
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].pickup(material.price);
             floatText(ship.x, ship.y - ship.radius - 6, '+1 ' + material.name, material.color);
         } else if(state.cargoFullTimer <= 0) {
             state.cargoFullTimer = 4;
@@ -6153,21 +7640,34 @@ const step = (dt) => {
     state.time += dt;
 
     // Mouse is in screen space; turrets need it in world space.
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimX = (__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2) / zoom + state.camera.x;
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].aimY = (__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2) / zoom + state.camera.y;
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].aimX = (__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].mouseX - __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2) / zoom + state.camera.x;
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].aimY = (__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].mouseY - __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2) / zoom + state.camera.y;
 
-    ship.update(dt, __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], state);
+    combat.refresh();
+    ship.update(dt, __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */], state);
+    updateEnemies(dt);
+    retargetMissiles(dt);
     state.beamHits.forEach(hit => {
+        if(hit.ship) {
+            hit.ship.takeDamage(hit.damage, state.particles, hit.x, hit.y, 'energy', true);
+            if(Math.random() < 0.3) {
+                __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.ship.vx, hit.ship.vy, 1, {
+                    minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
+                });
+            }
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].beamImpact();
+            return;
+        }
         const push = Math.min(0.6, 900 * hit.damage / hit.rock.mass);
         hit.rock.vx += hit.dirX * push;
         hit.rock.vy += hit.dirY * push;
         hitRock(hit.rock, hit.damage, hit.x, hit.y, hit.dirX, hit.dirY, 'beam');
         if(Math.random() < 0.35) {
-            __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
+            __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */].burst(state.particles, hit.x, hit.y, hit.rock.vx - hit.dirX * 60, hit.rock.vy - hit.dirY * 60, 1, {
                 minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 2, color: '190,230,255'
             });
         }
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].beamImpact();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].beamImpact();
     });
     state.beamHits = [];
     applyGravity(dt);
@@ -6185,9 +7685,9 @@ const step = (dt) => {
         if(ore.trail > 0) {
             ore.trail -= dt;
             if(Math.random() < 0.7) {
-                state.particles.push(new __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */]({
+                state.particles.push(new __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */]({
                     x: ore.x, y: ore.y, vx: ore.vx * 0.2, vy: ore.vy * 0.2,
-                    life: 0.25 + Math.random() * 0.2, size: 2, color: __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][ore.material].color
+                    life: 0.25 + Math.random() * 0.2, size: 2, color: __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][ore.material].color
                 }));
             }
         }
@@ -6198,7 +7698,7 @@ const step = (dt) => {
     checkGateTravel(dt);
     bullets.forEach(bullet => {
         if(bullet.kind === 'plasma' && Math.random() < 0.6) {
-            state.particles.push(new __WEBPACK_IMPORTED_MODULE_2__components_particle_particle__["a" /* default */]({
+            state.particles.push(new __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__["a" /* default */]({
                 x: bullet.x, y: bullet.y,
                 vx: bullet.vx * 0.15 + (Math.random() - 0.5) * 40, vy: bullet.vy * 0.15 + (Math.random() - 0.5) * 40,
                 life: 0.2 + Math.random() * 0.25, size: 3, color: Math.random() < 0.5 ? '255,140,40' : '255,210,110'
@@ -6217,7 +7717,10 @@ const step = (dt) => {
     bulletCollisions();
     missileCollisions();
     rockCollisions();
-    shipCollisions();
+    shipCollisions(ship);
+    state.enemies.forEach(enemy => shipCollisions(enemy));
+    combatCollisions();
+    updateEnemyLosses();
 
     // Remove dead objects only after all iteration is done (no splicing mid-loop).
     state.rocks = state.rocks.filter(rock => !rock.dead).concat(state.newRocks);
@@ -6252,9 +7755,9 @@ const step = (dt) => {
     state.camera.x += (ship.x + ship.vx * 0.25 - state.camera.x) * followRate;
     state.camera.y += (ship.y + ship.vy * 0.25 - state.camera.y) * followRate;
 
-    state.canDock = !!state.system.station && ship.alive && distanceToStation() < __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].dockRadius;
+    state.canDock = !!state.system.station && ship.alive && distanceToStation() < __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius;
     const dhd = state.gate.dhd;
-    state.nearDHD = ship.alive && Math.sqrt((ship.x - dhd.x) * (ship.x - dhd.x) + (ship.y - dhd.y) * (ship.y - dhd.y)) < __WEBPACK_IMPORTED_MODULE_13__world_stargate__["a" /* DHD_RANGE */];
+    state.nearDHD = ship.alive && Math.sqrt((ship.x - dhd.x) * (ship.x - dhd.x) + (ship.y - dhd.y) * (ship.y - dhd.y)) < __WEBPACK_IMPORTED_MODULE_14__world_stargate__["a" /* DHD_RANGE */];
     if(state.bannerTimer > 0) state.bannerTimer -= dt;
     if(!ship.alive) state.gameOverTimer += dt;
 };
@@ -6265,13 +7768,14 @@ const step = (dt) => {
 // destination gate) or 'hyper' (drop out of hyperspace near the gate).
 const enterSystem = (system, how) => {
     state.system = system;
-    state.gate = new __WEBPACK_IMPORTED_MODULE_13__world_stargate__["c" /* default */](system.gate.x, system.gate.y);
+    state.gate = new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* default */](system.gate.x, system.gate.y);
     state.sectors = makeSectors(system);
-    ['rocks', 'newRocks', 'bullets', 'missiles', 'particles', 'ores', 'mergeLinks', 'flashes', 'shockwaves', 'beamHits', 'floatingTexts']
+    ['rocks', 'newRocks', 'bullets', 'missiles', 'particles', 'ores', 'mergeLinks', 'flashes', 'shockwaves', 'beamHits', 'floatingTexts', 'enemies']
         .forEach(key => { state[key] = []; });
     state.scan.target = null;
     state.scan.pings = [];
-    __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].impacts = [];
+    state.enemyTimer = 20 + Math.random() * 15;
+    __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].impacts = [];
 
     const ship = state.ship;
     const gate = state.gate;
@@ -6305,29 +7809,29 @@ const checkGateTravel = (dt) => {
     if(state.transition || !ship.alive || !gate.isOpen || !gate.outgoing) return;
     const dx = ship.x - gate.x;
     const dy = ship.y - gate.y;
-    if(dx * dx + dy * dy > Math.pow(__WEBPACK_IMPORTED_MODULE_13__world_stargate__["b" /* GATE_INNER */] * 0.8, 2)) return;
-    if(ship.radius > __WEBPACK_IMPORTED_MODULE_13__world_stargate__["b" /* GATE_INNER */] * 0.95) {
+    if(dx * dx + dy * dy > Math.pow(__WEBPACK_IMPORTED_MODULE_14__world_stargate__["b" /* GATE_INNER */] * 0.8, 2)) return;
+    if(ship.radius > __WEBPACK_IMPORTED_MODULE_14__world_stargate__["b" /* GATE_INNER */] * 0.95) {
         if(state.tooBigTimer <= 0) {
             state.tooBigTimer = 3;
             banner('Ship too large for the Stargate: use a hyperdrive.', 2.5);
         }
         return;
     }
-    startTransition({ type: 'gate', phase: 'enter', t: 0, target: Object(__WEBPACK_IMPORTED_MODULE_12__world_systems__["g" /* systemById */])(gate.target) });
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].gateEnter();
+    startTransition({ type: 'gate', phase: 'enter', t: 0, target: Object(__WEBPACK_IMPORTED_MODULE_13__world_systems__["g" /* systemById */])(gate.target) });
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].gateEnter();
 };
 
 const startTransition = (transition) => {
     state.transition = transition;
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].reset();
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = false;
-    if(transition.type === 'hyper') __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].hyperOpen();
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].reset();
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].enabled = false;
+    if(transition.type === 'hyper') __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hyperOpen();
 };
 
 const startHyperjump = (target) => {
     const ship = state.ship;
-    const distance = Object(__WEBPACK_IMPORTED_MODULE_12__world_systems__["f" /* distanceBetween */])(state.system.id, target.id);
-    const duration = Object(__WEBPACK_IMPORTED_MODULE_15__ui_starmap__["b" /* hyperTravelTime */])(distance, ship.hyperdrive.speed);
+    const distance = Object(__WEBPACK_IMPORTED_MODULE_13__world_systems__["f" /* distanceBetween */])(state.system.id, target.id);
+    const duration = Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["b" /* hyperTravelTime */])(distance, ship.hyperdrive.speed);
     startTransition({
         type: 'hyper', phase: 'window', t: 0, target: target, duration: duration, distance: distance,
         wx: ship.x + Math.cos(ship.angle) * (ship.radius + 260),
@@ -6354,21 +7858,21 @@ const updateTransition = (dt) => {
             if(tr.t >= 0.5) {
                 tr.phase = 'tunnel';
                 tr.t = 0;
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].stopAll();
                 state.gate.close(true);
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].wormhole();
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].wormhole();
             }
         } else if(tr.phase === 'tunnel' && tr.t >= 3.4) {
             enterSystem(tr.target, 'gate');
             ship.hidden = false;
             tr.phase = 'exit';
             tr.t = 0;
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].startEngine();
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].gateArrive();
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].horizon(true);
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].startEngine();
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].gateArrive();
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].horizon(true);
         } else if(tr.phase === 'exit' && tr.t >= 0.8) {
             state.transition = null;
-            __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = true;
+            __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].enabled = true;
         }
     } else {
         if(tr.phase === 'window') {
@@ -6386,24 +7890,24 @@ const updateTransition = (dt) => {
                 ship.hidden = true;
                 tr.phase = 'travel';
                 tr.t = 0;
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
-                __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].hyperTravel(true);
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].stopAll();
+                __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hyperTravel(true);
             }
         } else if(tr.phase === 'travel' && tr.t >= tr.duration) {
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].hyperTravel(false);
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].hyperExit();
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hyperTravel(false);
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].hyperExit();
             enterSystem(tr.target, 'hyper');
             tr.phase = 'exit';
             tr.t = 0;
             tr.wx = ship.x - Math.cos(ship.angle) * 30;
             tr.wy = ship.y - Math.sin(ship.angle) * 30;
             ship.hidden = false;
-            __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].startEngine();
+            __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].startEngine();
         } else if(tr.phase === 'exit') {
             tr.open = Math.max(0, 1 - tr.t / 1.6);
             if(tr.t >= 1.6) {
                 state.transition = null;
-                __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = true;
+                __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].enabled = true;
             }
         }
     }
@@ -6426,8 +7930,8 @@ const STAR_LAYERS = [
 
 // Parallax starfield generated from the camera position, so it never runs out.
 const drawStarfield = () => {
-    const w = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width;
-    const h = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height;
+    const w = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width;
+    const h = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height;
     STAR_LAYERS.forEach((layer, index) => {
         const offsetX = state.camera.x * layer.factor;
         const offsetY = state.camera.y * layer.factor;
@@ -6449,14 +7953,14 @@ const drawStarfield = () => {
 };
 
 const isVisible = (x, y, r) => {
-    const halfW = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / (2 * zoom) + r;
-    const halfH = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / (2 * zoom) + r;
+    const halfW = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / (2 * zoom) + r;
+    const halfH = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / (2 * zoom) + r;
     return Math.abs(x - state.camera.x) < halfW && Math.abs(y - state.camera.y) < halfH;
 };
 
 const drawCrosshair = () => {
-    const x = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseX;
-    const y = __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseY;
+    const x = __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].mouseX;
+    const y = __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].mouseY;
     ctx.strokeStyle = 'rgba(255, 90, 90, 0.9)';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -6523,7 +8027,7 @@ const drawTractor = (time) => {
     if(!held.length || !ship.alive) return;
 
     const emitter = ship.tractorEmitter();
-    const glow = Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["d" /* glowSprite */])(TRACTOR);
+    const glow = Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(TRACTOR);
     const pulse = 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
@@ -6602,7 +8106,7 @@ const drawTractor = (time) => {
 
         // Containment field around the captured ore.
         ctx.globalAlpha = 0.5 + 0.3 * pulse;
-        Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["h" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
         ctx.globalAlpha = 1;
         ctx.setLineDash([3, 3]);
         ctx.lineDashOffset = -time * 20;
@@ -6616,7 +8120,7 @@ const drawTractor = (time) => {
 
     // Emitter aura.
     ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["h" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
+    Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
     ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.7)';
     ctx.lineWidth = 1.2;
@@ -6631,7 +8135,7 @@ const drawTractor = (time) => {
 // Estimated sale value of everything an asteroid would yield.
 const rockValue = (rock) => {
     let perArea = 0;
-    Object.keys(rock.composition).forEach(id => { perArea += rock.composition[id] * __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][id].price; });
+    Object.keys(rock.composition).forEach(id => { perArea += rock.composition[id] * __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][id].price; });
     return Math.round(rock.area / 120 * perArea);
 };
 
@@ -6674,7 +8178,7 @@ const updateScanner = (dt) => {
     scan.target = best;
     scan.value = best ? rockValue(best) : 0;
     scan.pings.push({ x: ship.x, y: ship.y, range: range, radius: 0, life: 1 });
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].scanPing();
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].scanPing();
 };
 
 // World-space: ping rings, target brackets with a label, and a dashed guide line.
@@ -6692,7 +8196,7 @@ const drawScanner = (time) => {
 
     const target = scan.target;
     if(target && ship.alive) {
-        const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color;
+        const color = __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][target.material].color;
         const r = target.boundRadius + 10;
         // Rotating corner brackets.
         ctx.strokeStyle = 'rgba(' + color + ', 0.95)';
@@ -6706,7 +8210,7 @@ const drawScanner = (time) => {
         ctx.font = '12px Bungee, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = 'rgba(' + color + ', 0.95)';
-        ctx.fillText(__WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' · ~' + scan.value.toLocaleString('en-US') + ' cr',
+        ctx.fillText(__WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' · ~' + scan.value.toLocaleString('en-US') + ' cr',
             target.x, target.y - r - 8);
 
         // Guide line from the ship.
@@ -6732,18 +8236,18 @@ const drawScanner = (time) => {
 const drawScannerPointer = () => {
     const target = state.scan.target;
     if(!target || !state.ship.alive) return;
-    const sx = (target.x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const sy = (target.y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
-    if(sx > 0 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width && sy > 0 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height) return;
+    const sx = (target.x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const sy = (target.y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
+    if(sx > 0 && sx < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width && sy > 0 && sy < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height) return;
 
     const margin = 46;
-    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const cx = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
     const angle = Math.atan2(sy - cy, sx - cx);
     const scale = Math.min(Math.abs((cx - margin) / Math.cos(angle) || Infinity), Math.abs((cy - margin) / Math.sin(angle) || Infinity));
     const px = cx + Math.cos(angle) * scale;
     const py = cy + Math.sin(angle) * scale;
-    const color = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color;
+    const color = __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][target.material].color;
     const distance = Math.sqrt(Math.pow(target.x - state.ship.x, 2) + Math.pow(target.y - state.ship.y, 2));
 
     ctx.save();
@@ -6751,7 +8255,7 @@ const drawScannerPointer = () => {
     ctx.fillStyle = 'rgba(' + color + ', 0.95)';
     ctx.font = '11px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(__WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' ' + (distance / 1000).toFixed(1) + 'k',
+    ctx.fillText(__WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][target.material].name.toUpperCase() + ' ' + (distance / 1000).toFixed(1) + 'k',
         -Math.cos(angle) * 30, -Math.sin(angle) * 30 + 4);
     ctx.rotate(angle);
     ctx.beginPath();
@@ -6768,7 +8272,7 @@ const drawFlashes = () => {
     state.flashes.forEach(f => {
         const t = f.life / f.maxLife;
         ctx.globalAlpha = t;
-        Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["d" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
     });
     ctx.restore();
 };
@@ -6780,7 +8284,7 @@ const drawShockwaves = () => {
     state.shockwaves.forEach(wave => {
         const glow = wave.maxRadius * 1.6 * wave.life;
         ctx.globalAlpha = wave.life * 0.8;
-        Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_18__render_sprites__["d" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
         ctx.globalAlpha = wave.life;
         ctx.strokeStyle = 'rgb(' + wave.color + ')';
         ctx.lineWidth = 1 + 4 * wave.life;
@@ -6810,9 +8314,9 @@ const drawBanner = () => {
     ctx.textAlign = 'center';
     ctx.lineWidth = 4;
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.strokeText(state.bannerText, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 4);
+    ctx.strokeText(state.bannerText, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 4);
     ctx.fillStyle = '#fff';
-    ctx.fillText(state.bannerText, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 4);
+    ctx.fillText(state.bannerText, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 4);
     ctx.restore();
 };
 
@@ -6820,25 +8324,25 @@ const drawDockPrompt = () => {
     if(!state.canDock) return;
     const ship = state.ship;
     const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-    const text = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? (TOUCH ? 'Slow down to dock (turn on Stabilizer)' : 'Slow down to dock (X: stabilizer)')
+    const text = speed > __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].maxDockSpeed ? (TOUCH ? 'Slow down to dock (turn on Stabilizer)' : 'Slow down to dock (X: stabilizer)')
         : (TOUCH ? 'Tap Dock to enter the shipyard' : 'Press B to dock at the shipyard');
     ctx.save();
     ctx.font = '18px Bungee, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed ? 'rgba(255, 200, 120, 0.95)' : 'rgba(140, 255, 160, 0.95)';
-    ctx.fillText(text, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 60);
+    ctx.fillStyle = speed > __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].maxDockSpeed ? 'rgba(255, 200, 120, 0.95)' : 'rgba(140, 255, 160, 0.95)';
+    ctx.fillText(text, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height - 60);
     ctx.restore();
 };
 
 // Edge-of-screen pointer to the shipyard when it's out of view.
 const drawStationPointer = () => {
-    const sx = (__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const sy = (__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const sx = (__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const sy = (__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
     const margin = 40;
-    if(sx > -100 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width + 100 && sy > -100 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height + 100) return;
+    if(sx > -100 && sx < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width + 100 && sy > -100 && sy < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height + 100) return;
 
-    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const cx = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
     const angle = Math.atan2(sy - cy, sx - cx);
     const scale = Math.min(
         Math.abs((cx - margin) / Math.cos(angle) || Infinity),
@@ -6870,7 +8374,7 @@ const toggleWeapon = (kind) => {
     const ship = state.ship;
     const on = ship.toggleWeapon(kind);
     const row = ship.weaponStatus().filter(w => w.kind === kind)[0];
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].toggle(on);
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].toggle(on);
     banner((row ? row.name : kind) + (on ? ' ON' : ' OFF'), 1.1);
 };
 
@@ -6894,8 +8398,8 @@ const drawWeaponPanel = () => {
     const width = TOUCH ? 196 : 230;
     const barOffset = TOUCH ? 86 : 108;
     const barW = TOUCH ? 50 : 70;
-    const left = TOUCH ? __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height * 0.28)) - 20 - width : 16;
-    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - 16 - weapons.length * rowHeight - 18;
+    const left = TOUCH ? __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width - Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height * 0.28)) - 20 - width : 16;
+    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height - 16 - weapons.length * rowHeight - 18;
     const height = weapons.length * rowHeight + header + (TOUCH ? 2 : 0);
 
     ctx.save();
@@ -6949,7 +8453,7 @@ const setBackdrop = (system) => {
     backdrop.style.background = 'radial-gradient(ellipse at 30% 35%, rgba(' + system.tint + ', 0.22), transparent 60%), ' +
         'radial-gradient(ellipse at 75% 70%, rgba(' + system.tint + ', 0.16), transparent 55%)';
     if(planetEl) planetEl.remove();
-    planetEl = Object(__WEBPACK_IMPORTED_MODULE_16__render_planets__["a" /* planetSprite */])(system).canvas;
+    planetEl = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["a" /* planetSprite */])(system).canvas;
     planetEl.className = 'backdrop-planet';
     backdrop.appendChild(planetEl);
 };
@@ -6957,9 +8461,9 @@ const setBackdrop = (system) => {
 const drawBackdrop = () => {
     const system = state.system;
     setBackdrop(system);
-    const w = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width;
-    const h = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height;
-    const planet = Object(__WEBPACK_IMPORTED_MODULE_16__render_planets__["a" /* planetSprite */])(system);
+    const w = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width;
+    const h = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height;
+    const planet = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["a" /* planetSprite */])(system);
     const parallax = 0.12;
     const px = w / 2 + (system.planet.x - state.camera.x) * parallax;
     const py = h / 2 + (system.planet.y - state.camera.y) * parallax;
@@ -6975,10 +8479,10 @@ const renderTunnel = () => {
     const tr = state.transition;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const time = state.transitionClock || 0;
-    if(tr.type === 'gate') Object(__WEBPACK_IMPORTED_MODULE_17__travel__["c" /* drawWormhole */])(ctx, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height, time, Math.min(1, tr.t / 3.4));
+    if(tr.type === 'gate') Object(__WEBPACK_IMPORTED_MODULE_18__travel__["c" /* drawWormhole */])(ctx, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height, time, Math.min(1, tr.t / 3.4));
     else {
         const remaining = Math.max(0, tr.duration - tr.t);
-        Object(__WEBPACK_IMPORTED_MODULE_17__travel__["b" /* drawHyperspace */])(ctx, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height, time, Math.min(1, tr.t / tr.duration),
+        Object(__WEBPACK_IMPORTED_MODULE_18__travel__["b" /* drawHyperspace */])(ctx, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height, time, Math.min(1, tr.t / tr.duration),
             'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + remaining.toFixed(1) + ' s');
     }
 };
@@ -6992,18 +8496,18 @@ const drawTravelOverlay = () => {
     if(tr.phase === 'exit') flash = Math.max(0, 1 - tr.t / 0.8);
     if(flash <= 0) return;
     ctx.fillStyle = 'rgba(225, 238, 255, ' + Math.min(1, flash) + ')';
-    ctx.fillRect(0, 0, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height);
+    ctx.fillRect(0, 0, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height);
 };
 
 // Edge-of-screen pointer to this system's Stargate.
 const drawGatePointer = () => {
     const gate = state.gate;
-    const sx = (gate.x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const sy = (gate.y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
-    if(sx > -60 && sx < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width + 60 && sy > -60 && sy < __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height + 60) return;
+    const sx = (gate.x - state.camera.x) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const sy = (gate.y - state.camera.y) * zoom + __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
+    if(sx > -60 && sx < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width + 60 && sy > -60 && sy < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height + 60) return;
     const margin = 40;
-    const cx = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2;
-    const cy = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2;
+    const cx = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
     const angle = Math.atan2(sy - cy, sx - cx);
     const scale = Math.min(Math.abs((cx - margin) / Math.cos(angle) || Infinity), Math.abs((cy - margin) / Math.sin(angle) || Infinity));
     const px = cx + Math.cos(angle) * scale;
@@ -7023,10 +8527,77 @@ const drawGatePointer = () => {
     ctx.restore();
 };
 
+// Red brackets with hull / shield bars over enemy ships.
+const drawEnemyBars = () => {
+    ctx.save();
+    state.enemies.forEach(enemy => {
+        if(!enemy.alive || !isVisible(enemy.x, enemy.y, enemy.radius * 2)) return;
+        const r = enemy.radius * 1.05 + 6;
+        const w = Math.max(36, enemy.radius * 1.6);
+        const x = enemy.x - w / 2;
+        const y = enemy.y - r - 14 / zoom;
+        const h = 3.5 / zoom;
+        ctx.lineWidth = 1.2 / zoom;
+        // Corner brackets.
+        ctx.strokeStyle = 'rgba(255, 90, 70, 0.85)';
+        const c = r * 0.35;
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(k => {
+            ctx.beginPath();
+            ctx.moveTo(enemy.x + k[0] * r, enemy.y + k[1] * (r - c));
+            ctx.lineTo(enemy.x + k[0] * r, enemy.y + k[1] * r);
+            ctx.lineTo(enemy.x + k[0] * (r - c), enemy.y + k[1] * r);
+            ctx.stroke();
+        });
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(x, y, w, h);
+        ctx.fillStyle = 'rgb(255, 110, 80)';
+        ctx.fillRect(x, y, w * Math.max(0, enemy.hp / enemy.maxHull), h);
+        if(enemy.maxShield > 0) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(x, y - h - 1.5 / zoom, w, h);
+            ctx.fillStyle = 'rgb(110, 200, 255)';
+            ctx.fillRect(x, y - h - 1.5 / zoom, w * Math.max(0, enemy.shield / enemy.maxShield), h);
+        }
+        ctx.font = (10 / zoom) + 'px Bungee, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(255, 150, 130, 0.9)';
+        ctx.fillText(enemy.hullDef.name + ' Mk ' + (enemy.level === 3 ? 'III' : 'II'), enemy.x, y - h - 5 / zoom);
+    });
+    ctx.restore();
+};
+
+// Edge-of-screen arrows towards enemies that are off screen.
+const drawEnemyPointers = () => {
+    const margin = 34;
+    const cx = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2;
+    const cy = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2;
+    state.enemies.forEach(enemy => {
+        if(!enemy.alive) return;
+        const sx = (enemy.x - state.camera.x) * zoom + cx;
+        const sy = (enemy.y - state.camera.y) * zoom + cy;
+        if(sx > -20 && sx < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width + 20 && sy > -20 && sy < __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height + 20) return;
+        const angle = Math.atan2(sy - cy, sx - cx);
+        const scale = Math.min(Math.abs((cx - margin) / Math.cos(angle) || Infinity), Math.abs((cy - margin) / Math.sin(angle) || Infinity));
+        const distance = Math.sqrt(Math.pow(enemy.x - state.ship.x, 2) + Math.pow(enemy.y - state.ship.y, 2));
+        ctx.save();
+        ctx.translate(cx + Math.cos(angle) * scale, cy + Math.sin(angle) * scale);
+        ctx.fillStyle = 'rgba(255, 90, 70, 0.95)';
+        ctx.font = '10px Bungee, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText((distance / 1000).toFixed(1) + 'k', -Math.cos(angle) * 22, -Math.sin(angle) * 22 + 4);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(9, 0); ctx.lineTo(-5, -6); ctx.lineTo(-2, 0); ctx.lineTo(-5, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
+};
+
 const drawMinimap = () => {
-    const size = TOUCH ? Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height * 0.28)) : MINIMAP_SIZE;
-    const left = __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width - size - (TOUCH ? 10 : 16);
-    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height - size - 16;
+    const size = TOUCH ? Math.min(120, Math.round(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height * 0.28)) : MINIMAP_SIZE;
+    const left = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width - size - (TOUCH ? 10 : 16);
+    const top = TOUCH ? 10 : __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height - size - 16;
     const scale = (size / 2) / MINIMAP_RANGE;
     const cx = left + size / 2;
     const cy = top + size / 2;
@@ -7064,13 +8635,13 @@ const drawMinimap = () => {
     state.rocks.forEach(rock => {
         const x = cx + (rock.x - ship.x) * scale;
         const y = cy + (rock.y - ship.y) * scale;
-        ctx.fillStyle = scanning ? 'rgb(' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][rock.material].color + ')' : 'rgb(140, 140, 150)';
+        ctx.fillStyle = scanning ? 'rgb(' + __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][rock.material].color + ')' : 'rgb(140, 140, 150)';
         const r = Math.max(1.2, rock.radius * scale * 1.5);
         ctx.fillRect(x - r, y - r, r * 2, r * 2);
     });
     const target = state.scan.target;
     if(target && Math.sin(state.time * 6) > -0.3) {
-        ctx.strokeStyle = 'rgb(' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][target.material].color + ')';
+        ctx.strokeStyle = 'rgb(' + __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][target.material].color + ')';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(cx + (target.x - ship.x) * scale, cy + (target.y - ship.y) * scale, 6, 0, Math.PI * 2);
@@ -7109,6 +8680,27 @@ const drawMinimap = () => {
 
     // Station (Lantea only) and Stargate, clamped to the edge when far away.
     const limit = size / 2 - 6;
+    // Enemy ships: red arrowheads, pinned to the edge when out of range.
+    state.enemies.forEach(enemy => {
+        if(!enemy.alive) return;
+        let mx = (enemy.x - ship.x) * scale;
+        let my = (enemy.y - ship.y) * scale;
+        const furthest = Math.max(Math.abs(mx), Math.abs(my));
+        if(furthest > limit) {
+            mx *= limit / furthest;
+            my *= limit / furthest;
+        }
+        ctx.save();
+        ctx.translate(cx + mx, cy + my);
+        ctx.rotate(enemy.angle);
+        ctx.fillStyle = 'rgb(255, 80, 60)';
+        const k = enemy.radius > 50 ? 1.5 : 1;
+        ctx.beginPath();
+        ctx.moveTo(5 * k, 0); ctx.lineTo(-3.5 * k, -3.5 * k); ctx.lineTo(-3.5 * k, 3.5 * k);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    });
     const marker = (x, y) => {
         let mx = (x - ship.x) * scale;
         let my = (y - ship.y) * scale;
@@ -7121,7 +8713,7 @@ const drawMinimap = () => {
     };
     ctx.lineWidth = 1.5;
     if(state.system.station) {
-        const st = marker(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y);
+        const st = marker(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y);
         ctx.strokeStyle = 'rgb(140, 200, 255)';
         ctx.strokeRect(st.x - 4, st.y - 4, 8, 8);
     }
@@ -7150,18 +8742,18 @@ const drawMinimap = () => {
 
 const render = () => {
     const time = state.time;
-    Object(__WEBPACK_IMPORTED_MODULE_1__components_rock_rock__["d" /* resetRebuildBudget */])();
+    Object(__WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["d" /* resetRebuildBudget */])();
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height);
+    ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height);
     drawBackdrop();
     drawStarfield();
 
     ctx.save();
-    ctx.translate(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_6__physics_physics__["d" /* world */].height / 2);
+    ctx.translate(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2);
     ctx.scale(zoom, zoom);
     ctx.translate(-state.camera.x, -state.camera.y);
 
-    if(state.system.station && isVisible(__WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].y, 460)) Object(__WEBPACK_IMPORTED_MODULE_9__world_station__["b" /* drawStation */])(ctx, time, state.canDock);
+    if(state.system.station && isVisible(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 460)) Object(__WEBPACK_IMPORTED_MODULE_10__world_station__["b" /* drawStation */])(ctx, time, state.canDock);
     if(isVisible(state.gate.x, state.gate.y, 300)) {
         state.gate.draw(ctx, time);
         state.gate.drawDHD(ctx, time, state.nearDHD);
@@ -7211,19 +8803,24 @@ const render = () => {
     drawFlashes();
     drawScanner(time);
     const tr = state.transition;
-    if(tr && tr.type === 'hyper' && tr.open > 0) Object(__WEBPACK_IMPORTED_MODULE_17__travel__["a" /* drawHyperWindow */])(ctx, tr.wx, tr.wy, tr.size, time, tr.open);
+    if(tr && tr.type === 'hyper' && tr.open > 0) Object(__WEBPACK_IMPORTED_MODULE_18__travel__["a" /* drawHyperWindow */])(ctx, tr.wx, tr.wy, tr.size, time, tr.open);
+    state.enemies.forEach(enemy => {
+        if(isVisible(enemy.x, enemy.y, enemy.radius * 2 + 40)) enemy.draw(ctx);
+    });
     state.ship.draw(ctx);
+    drawEnemyBars();
     drawFloatingTexts();
     ctx.restore();
 
     if(state.system.station) drawStationPointer();
     drawGatePointer();
+    drawEnemyPointers();
     drawTravelOverlay();
     drawMinimap();
     drawScannerPointer();
     drawWeaponPanel();
     drawDockPrompt();
-    if(!state.paused && (!TOUCH || __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].mouseDown)) drawCrosshair();
+    if(!state.paused && (!TOUCH || __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].mouseDown)) drawCrosshair();
     drawBanner();
 };
 
@@ -7232,39 +8829,39 @@ const render = () => {
 const ejectOre = (material, count) => {
     if(!state || !state.ship.alive) return;
     const ship = state.ship;
-    const removed = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["n" /* removeCargo */])(material, count);
+    const removed = Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["o" /* removeCargo */])(material, count);
     const cos = Math.cos(ship.angle);
     const sin = Math.sin(ship.angle);
     const stern = ship.localToWorld(-ship.radius * 0.7, 0);
     for(let i = 0; i < removed; i++) {
         const spread = (Math.random() - 0.5) * 1.4;
         const speed = 60 + Math.random() * 60;
-        const ore = new __WEBPACK_IMPORTED_MODULE_3__components_ore_ore__["a" /* default */](stern.x + (Math.random() - 0.5) * 8, stern.y + (Math.random() - 0.5) * 8,
+        const ore = new __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__["a" /* default */](stern.x + (Math.random() - 0.5) * 8, stern.y + (Math.random() - 0.5) * 8,
             ship.vx - Math.cos(ship.angle + spread) * speed, ship.vy - Math.sin(ship.angle + spread) * speed, material);
         ore.ejectTimer = 3;
         state.ores.push(ore);
     }
     if(removed) {
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].pickup(1);
-        floatText(stern.x - cos * 10, stern.y - sin * 10, '-' + removed + ' ' + __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][material].name, '255,170,140');
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].pickup(1);
+        floatText(stern.x - cos * 10, stern.y - sin * 10, '-' + removed + ' ' + __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][material].name, '255,170,140');
     }
 };
 
 const renderCargoPanel = () => {
     if(!cargoPanel || cargoPanel.style.display === 'none') return;
-    const profile = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])();
+    const profile = Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])();
     const capacity = state ? state.ship.cargoCapacity : 0;
-    const used = Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])();
+    const used = Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["d" /* cargoUsed */])();
     let value = 0;
 
     let html = '<div class="cargo-header"><span>Cargo hold</span><button data-close="1">×</button></div>' +
         '<div class="cargo-capacity"><div class="cargo-capacity-fill" style="width:' +
         Math.round(Math.min(1, used / Math.max(1, capacity)) * 100) + '%"></div></div>' +
         '<div class="cargo-sub">' + used + ' / ' + capacity + ' units</div><table>';
-    __WEBPACK_IMPORTED_MODULE_7__world_materials__["a" /* MATERIAL_ORDER */].forEach(id => {
+    __WEBPACK_IMPORTED_MODULE_8__world_materials__["a" /* MATERIAL_ORDER */].forEach(id => {
         const amount = profile.cargo[id] || 0;
         if(!amount) return;
-        const material = __WEBPACK_IMPORTED_MODULE_7__world_materials__["b" /* default */][id];
+        const material = __WEBPACK_IMPORTED_MODULE_8__world_materials__["b" /* default */][id];
         value += amount * material.price;
         html += '<tr><td><span class="swatch" style="background:rgb(' + material.color + ');box-shadow:0 0 6px rgb(' + material.color + ')"></span>' +
             material.name + '</td><td>' + amount + '</td><td>' + (amount * material.price) + ' cr</td>' +
@@ -7291,7 +8888,7 @@ const openDHD = () => {
     const gate = state.gate;
     state.paused = true;
     freeze(true);
-    Object(__WEBPACK_IMPORTED_MODULE_14__ui_dhd__["a" /* getDHD */])().open({
+    Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["a" /* getDHD */])().open({
         systemId: state.system.id,
         systemName: state.system.name,
         originIndex: originIndex(state.system),
@@ -7317,7 +8914,7 @@ const openStarmap = () => {
     state.paused = true;
     freeze(true);
     let engageTarget = null;
-    Object(__WEBPACK_IMPORTED_MODULE_15__ui_starmap__["a" /* getStarmap */])().open({
+    Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["a" /* getStarmap */])().open({
         systemId: state.system.id,
         originIndex: originIndex(state.system),
         hyperdrive: state.ship.hyperdrive,
@@ -7334,8 +8931,8 @@ const openStarmap = () => {
 // ---------------------------------------------------------------- loop & menus
 
 const freeze = (frozen) => {
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].reset();
-    __WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */].enabled = !frozen;
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].reset();
+    __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */].enabled = !frozen;
     document.body.classList.toggle('playing', !frozen);
     shieldButton.style.display = state && !frozen ? '' : 'none';
     cargoButton.style.display = state && !frozen ? '' : 'none';
@@ -7344,9 +8941,9 @@ const freeze = (frozen) => {
     if(touchControls) touchControls.show(!!state && !frozen);
     if(frozen) toggleCargoPanel(false);
     if(frozen) {
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].stopAll();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].stopAll();
     } else {
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].startEngine();
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].startEngine();
         lastFrameTime = performance.now();
         accumulator = 0;
     }
@@ -7368,16 +8965,16 @@ const dock = () => {
     ship.vy = 0;
     ship.angularVelocity = 0;
 
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].dock();
-    Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_shipyard__["a" /* getShipyard */])().open({
-        tab: Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["c" /* cargoUsed */])() > 0 ? 'market' : 'ship',
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].dock();
+    Object(__WEBPACK_IMPORTED_MODULE_12__shipyard_shipyard__["a" /* getShipyard */])().open({
+        tab: Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["d" /* cargoUsed */])() > 0 ? 'market' : 'ship',
         closeLabel: 'Undock',
         canTrade: true,
         hullStatus: () => ({ hp: state.ship.hp, max: Math.round(state.ship.maxHull) }),
         repair: (points) => { state.ship.hp = Math.min(state.ship.maxHull, state.ship.hp + points); },
         onClose: () => {
             if(!state) return;
-            ship.applyStats(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["e" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().hull));
+            ship.applyStats(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
             ship.shield = ship.maxShield;
             ship.immunity = 1.5;
             state.paused = false;
@@ -7444,10 +9041,10 @@ const frame = (now) => {
         }
         if(steps === MAX_STEPS_PER_FRAME) accumulator = 0;
 
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setThrust(state.ship.alive && state.ship.thrusting);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setFiring(state.ship.alive && state.ship.minigunFiring);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setBeam(state.ship.alive && state.ship.beaming);
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].setTractor(state.ship.alive && !!state.tractorActive, Math.min(1, (state.tractorCount || 0) / 6));
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].setThrust(state.ship.alive && state.ship.thrusting);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].setFiring(state.ship.alive && state.ship.minigunFiring);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].setBeam(state.ship.alive && state.ship.beaming);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].setTractor(state.ship.alive && !!state.tractorActive, Math.min(1, (state.tractorCount || 0) / 6));
     }
 
     if(inTunnel) renderTunnel();
@@ -7455,7 +9052,7 @@ const frame = (now) => {
     renderInfo();
 
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
-        Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["j" /* loseCargo */])();
+        Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["k" /* loseCargo */])();
         endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
         return;
     }
@@ -7470,15 +9067,15 @@ const initialize = () => {
     gameboard.appendChild(backdrop);
     gameboard.appendChild(canvas);
     window.addEventListener('resize', resize);
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["a" /* default */])();
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["a" /* default */])();
 
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('Escape', () => {
-        if(!state || state.docked || !state.ship.alive || state.transition || Object(__WEBPACK_IMPORTED_MODULE_14__ui_dhd__["b" /* isDHDOpen */])() || Object(__WEBPACK_IMPORTED_MODULE_15__ui_starmap__["c" /* isStarmapOpen */])()) return false;
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('Escape', () => {
+        if(!state || state.docked || !state.ship.alive || state.transition || Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["b" /* isDHDOpen */])() || Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["c" /* isStarmapOpen */])()) return false;
         setPaused(!state.paused);
         return true;
     });
 
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyG', () => {
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyG', () => {
         if(!state || state.paused || !state.ship.guidance) return false;
         state.ship.autoTarget = !state.ship.autoTarget;
         banner('Auto-targeting ' + (state.ship.autoTarget ? 'ON' : 'OFF'), 1.2);
@@ -7495,11 +9092,11 @@ const initialize = () => {
         banner(state.ship.shieldsEnabled ? 'Shields raised' : 'Shields lowered: ore collection enabled', 1.4);
         return true;
     };
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyH', toggleShields);
 
     // 1-5: switch the weapons in the weapon panel on/off; clicking a row does the same.
     ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].forEach((code, i) => {
-        Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])(code, () => {
+        Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])(code, () => {
             if(!state || state.paused || !state.ship.alive) return false;
             const weapons = state.ship.weaponStatus();
             if(!weapons[i]) return false;
@@ -7507,13 +9104,20 @@ const initialize = () => {
             return true;
         });
     });
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["d" /* setClickFilter */])(weaponPanelClick);
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["d" /* setClickFilter */])(weaponPanelClick);
+
+    // N (debug mode only): spawn an enemy ship nearby, for testing.
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyN', () => {
+        if(!state || state.paused || state.transition || !Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["i" /* isDebug */])()) return false;
+        spawnEnemy(null, null, true);
+        return true;
+    });
 
     // X: stabilizer on/off.
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyX', () => {
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyX', () => {
         if(!state || state.paused || !state.ship.alive) return false;
         state.ship.stabilizer = !state.ship.stabilizer;
-        __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].toggle(state.ship.stabilizer);
+        __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].toggle(state.ship.stabilizer);
         banner('Stabilizer ' + (state.ship.stabilizer ? 'ON: cancelling drift and spin' : 'OFF: free drift'), 1.4);
         return true;
     });
@@ -7532,7 +9136,7 @@ const initialize = () => {
         targetZoom = clampZoom(targetZoom * Math.exp(-event.deltaY * 0.0015));
     }, { passive: false });
 
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyC', () => {
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyC', () => {
         if(!state || state.paused) return false;
         toggleCargoPanel();
         return true;
@@ -7544,21 +9148,21 @@ const initialize = () => {
         if(button.dataset.close) toggleCargoPanel(false);
         const material = button.dataset.eject;
         if(material === '*') {
-            Object.keys(Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["f" /* getProfile */])().cargo).forEach(id => ejectOre(id, Infinity));
+            Object.keys(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().cargo).forEach(id => ejectOre(id, Infinity));
         } else if(material) {
             ejectOre(material, button.dataset.count === 'all' ? Infinity : 1);
         }
     });
-    Object(__WEBPACK_IMPORTED_MODULE_10__shipyard_profile__["k" /* onProfileChange */])(() => renderCargoPanel());
+    Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["l" /* onProfileChange */])(() => renderCargoPanel());
     shieldButton.addEventListener('click', () => toggleShields());
 
     // B: dock at Atlantis, or use the DHD when standing next to it.
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyB', () => {
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyB', () => {
         if(!state || state.paused || state.transition) return false;
         if(state.canDock) {
             const ship = state.ship;
             const speed = Math.sqrt(ship.vx * ship.vx + ship.vy * ship.vy);
-            if(speed > __WEBPACK_IMPORTED_MODULE_9__world_station__["a" /* STATION */].maxDockSpeed) banner('Too fast to dock', 1.2);
+            if(speed > __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].maxDockSpeed) banner('Too fast to dock', 1.2);
             else dock();
             return true;
         }
@@ -7571,25 +9175,25 @@ const initialize = () => {
 
     // M: starmap. J: open the starmap to pick a hyperspace destination.
     const toggleStarmap = () => {
-        if(!state || state.transition || state.docked || Object(__WEBPACK_IMPORTED_MODULE_14__ui_dhd__["b" /* isDHDOpen */])()) return false;
-        if(Object(__WEBPACK_IMPORTED_MODULE_15__ui_starmap__["c" /* isStarmapOpen */])()) return false;
+        if(!state || state.transition || state.docked || Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["b" /* isDHDOpen */])()) return false;
+        if(Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["c" /* isStarmapOpen */])()) return false;
         if(state.paused) return false;
         openStarmap();
         return true;
     };
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyM', toggleStarmap);
-    Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["c" /* onKeyPress */])('KeyJ', toggleStarmap);
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyM', toggleStarmap);
+    Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["c" /* onKeyPress */])('KeyJ', toggleStarmap);
     starmapButton.addEventListener('click', () => toggleStarmap());
 
     if(TOUCH) {
         document.body.classList.add('touch');
         starmapButton.textContent = 'Starmap';
-        touchControls = new __WEBPACK_IMPORTED_MODULE_19__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["b" /* input */], canvas, {
-            interact: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyB'),
-            toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyG'),
-            toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('KeyX'),
+        touchControls = new __WEBPACK_IMPORTED_MODULE_20__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */], canvas, {
+            interact: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyB'),
+            toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyG'),
+            toggleStabilizer: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyX'),
             uiTap: weaponPanelClick,
-            pause: () => Object(__WEBPACK_IMPORTED_MODULE_4__components_ship_handlers__["e" /* triggerKey */])('Escape'),
+            pause: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('Escape'),
             zoom: (factor) => { if(state && !state.paused) targetZoom = clampZoom(targetZoom * factor); }
         });
         // Two-finger pinch on the play area zooms the view.
@@ -7623,7 +9227,7 @@ const constructGameBoard = () => {
     if(!initialized) initialize();
     if(frameId) cancelAnimationFrame(frameId);
 
-    __WEBPACK_IMPORTED_MODULE_5__audio_audio__["a" /* default */].unlock();
+    __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].unlock();
     resize();
     state = createState();
     state.rocks = state.sectors.update(state.ship.x, state.ship.y, []);
@@ -7633,1125 +9237,6 @@ const constructGameBoard = () => {
 };
 
 /* harmony default export */ __webpack_exports__["a"] = (constructGameBoard);
-
-
-/***/ }),
-/* 15 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(3);
-
-
-
-
-
-
-
-
-
-// Zero-g flight model: thrusters change velocity, nothing slows you down
-// except firing thrusters the other way (or switching on the X stabilizer).
-const SECONDARY_THRUST = 0.55;    // retro / strafe thrust relative to main engines
-const MAX_SPEED = 600;            // px/s, safety cap only
-const MASS_UNIT = 300;            // physics mass per hull mass point
-
-const BULLET_SPEED = 1100;
-const BULLET_SPREAD = 0.022;
-const PLASMA_SPEED = 520;
-const RECOIL = 0.8;               // px/s per round for a mass-1 hull (a gentle zero-g nudge)
-const TURRET_TURN_RATE = 14;      // rad/s
-const SALVO_GAP = 0.12;           // s between launchers firing
-const SHIELD_FLASH_TIME = 0.35;   // s the whole shield bubble glows after a hit
-const MISSILE_LOCK_RADIUS = 150;  // px around the cursor
-const HEAT_COOLING = 0.35;        // minigun heat lost per second
-const HEAT_RESUME = 0.3;          // overheated guns resume below this heat
-
-const HIT_COOLDOWN = 0.25;
-const SHIELD_REGEN_DELAY = 2;
-const SPAWN_IMMUNITY = 2;
-
-const TURRET_TYPES = ['minigun', 'staff', 'beam'];
-const LAUNCHER_TYPES = ['missile', 'drones'];
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const angleDifference = (a, b) => {
-    let d = b - a;
-    while(d > Math.PI) d -= Math.PI * 2;
-    while(d < -Math.PI) d += Math.PI * 2;
-    return d;
-};
-
-// Distance along a ray to the first asteroid outline it hits.
-const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
-    let best = null;
-    let bestDistance = range;
-    rocks.forEach(rock => {
-        if(rock.dead) return;
-        const hit = rock.raycast(x, y, dirX, dirY, bestDistance);
-        if(hit !== null && hit < bestDistance) {
-            bestDistance = hit;
-            best = rock;
-        }
-    });
-    return { rock: best, distance: bestDistance };
-};
-
-// Hull line art with its glow, rendered once per hull and colour.
-const hullSprite = (hull, color) => {
-    hull._sprites = hull._sprites || {};
-    const key = color || 'base';
-    if(!hull._sprites[key]) {
-        const b = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["d" /* hullBounds */])(hull);
-        const pad = 8;
-        const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(b.maxX - b.minX + pad * 2, b.maxY - b.minY + pad * 2, ctx => {
-            ctx.translate(pad - b.minX, pad - b.minY);
-            Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color });
-        });
-        sprite.x = b.minX - pad;
-        sprite.y = b.minY - pad;
-        hull._sprites[key] = sprite;
-    }
-    return hull._sprites[key];
-};
-
-// Shield bubble (soft edge, hexagon lattice and glowing rim) rendered once per hull.
-const shieldSprite = (hull) => {
-    if(hull._shieldSprite) return hull._shieldSprite;
-    const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(hull);
-    const color = hull.shieldColor || '120,210,255';
-    const pad = 6;
-    hull._shieldSprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
-        ctx.translate(s.rx + pad, s.ry + pad);
-        ctx.scale(1, s.ry / s.rx);
-        const rx = s.rx;
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        const body = ctx.createRadialGradient(0, 0, rx * 0.55, 0, 0, rx);
-        body.addColorStop(0, 'rgba(' + color + ', 0)');
-        body.addColorStop(0.8, 'rgba(' + color + ', 0.05)');
-        body.addColorStop(1, 'rgba(' + color + ', 0.22)');
-        ctx.fillStyle = body;
-        ctx.fill();
-        ctx.save();
-        ctx.clip();
-        const lattice = new Path2D();
-        const size = 7;
-        const w = size * Math.sqrt(3);
-        for(let row = -Math.ceil(rx / (size * 1.5)); row <= Math.ceil(rx / (size * 1.5)); row++) {
-            for(let col = -Math.ceil(rx / w) - 1; col <= Math.ceil(rx / w) + 1; col++) {
-                const cx = col * w + (row % 2 ? w / 2 : 0);
-                const cy = row * size * 1.5;
-                if(cx * cx + cy * cy > (rx + size) * (rx + size)) continue;
-                for(let i = 0; i < 6; i++) {
-                    const a1 = Math.PI / 6 + i * Math.PI / 3;
-                    lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
-                    lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
-                }
-            }
-        }
-        // Lattice is brighter towards the rim.
-        const fade = ctx.createRadialGradient(0, 0, rx * 0.3, 0, 0, rx);
-        fade.addColorStop(0, 'rgba(' + color + ', 0.03)');
-        fade.addColorStop(1, 'rgba(' + color + ', 0.2)');
-        ctx.strokeStyle = fade;
-        ctx.lineWidth = 0.6;
-        ctx.stroke(lattice);
-        ctx.restore();
-        ctx.strokeStyle = 'rgba(' + color + ', 0.55)';
-        ctx.lineWidth = 1.4;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = 'rgb(' + color + ')';
-        ctx.beginPath();
-        ctx.arc(0, 0, rx, 0, Math.PI * 2);
-        ctx.stroke();
-    });
-    hull._shieldSprite.pad = pad;
-    return hull._shieldSprite;
-};
-
-class Ship {
-
-    constructor(x, y, stats) {
-        this.x = x;
-        this.y = y;
-        this.vx = 0;
-        this.vy = 0;
-        this.angle = -Math.PI / 2;
-        this.angularVelocity = 0;
-        this.alive = true;
-        this.stabilizer = false;   // toggled with X / the Stabilizer button
-        this.weaponsOff = {};      // weapon kinds switched off by the pilot (1-5 / weapon panel)
-        this.autoTarget = true;
-        this.time = 0;
-        this.exhaustTimer = 0;
-        this.firing = false;
-        this.minigunFiring = false;
-        this.beaming = false;
-        this.hitCooldown = 0;
-        this.immunity = SPAWN_IMMUNITY;
-        this.sinceHit = SHIELD_REGEN_DELAY;
-        this.shieldFlash = 0;
-        this.hullFlash = 0;
-        this.salvoCooldown = 0;
-        this.nextLauncher = 0;
-        this.missileLock = null;
-        this.shieldsEnabled = true;
-        this.shieldLevel = 0;         // animated 0..1 power level of the bubble
-        this.shieldImpacts = [];
-
-        // Animated thruster output levels (0..1), eased towards their targets.
-        this.thrusters = { main: 0, retro: 0, left: 0, right: 0, spinCW: 0, spinCCW: 0 };
-
-        this.applyStats(stats);
-        this.hp = this.maxHull;
-        this.shield = this.maxShield;
-    }
-
-    // (Re)build the ship from shipyard stats. Keeps current damage proportionally.
-    applyStats(stats) {
-        const hullFraction = this.maxHull ? this.hp / this.maxHull : 1;
-        const hull = stats.hull;
-
-        this.stats = stats;
-        this.hullDef = hull;
-        this.mass = stats.mass * MASS_UNIT;
-        this.radius = hull.radius;
-        this.maxHull = stats.maxHull;
-        this.hp = this.maxHull * hullFraction;
-        this.maxShield = stats.maxShield;
-        this.shield = Math.min(this.shield || 0, this.maxShield);
-        this.guidance = stats.guidance;
-        this.scanner = stats.scanner;
-        this.hyperdrive = stats.hyperdrive;
-        this.cargoCapacity = stats.cargo;
-        this.magnetRange = stats.magnetRange;
-        this.collectRadius = hull.radius * 0.55 + 8;
-
-        const u = hull.moduleScale;
-        this.turrets = stats.modules.filter(m => TURRET_TYPES.indexOf(m.type) !== -1).map(m => ({
-            module: m,
-            kind: m.type,
-            aim: this.angle,
-            cooldown: 0,
-            target: null,
-            flash: 0,
-            heat: 0,
-            overheated: false,
-            beamTime: 0,
-            beam: null
-        }));
-        this.launchers = stats.modules.filter(m => LAUNCHER_TYPES.indexOf(m.type) !== -1)
-            .map(m => ({ module: m, kind: m.type, cooldown: 0 }));
-        this.engines = hull.engines.concat(stats.modules
-            .filter(m => m.type === 'engine')
-            .map(m => ({ x: m.slot.x - 4 * u, y: m.slot.y, size: (0.45 + m.level * 0.15) * u * 1.6 })));
-        this.jetList = this.buildJets();
-    }
-
-    // Manoeuvring jet positions from the hull definition: [x, y, dirX, dirY].
-    buildJets() {
-        const j = this.hullDef.jets;
-        const both = (points, dirX) => {
-            const list = [];
-            points.forEach(p => {
-                list.push([p[0], p[1], dirX, 0]);
-                list.push([p[0], -p[1], dirX, 0]);
-            });
-            return list;
-        };
-        return {
-            retro: both(j.retro, 1),
-            left: j.side.map(p => [p[0], Math.abs(p[1]), 0, 1]),
-            right: j.side.map(p => [p[0], -Math.abs(p[1]), 0, -1]),
-            spinCW: [[j.bow[0], -j.bow[1], 0, -1], [j.stern[0], j.stern[1], 0, 1]],
-            spinCCW: [[j.bow[0], j.bow[1], 0, 1], [j.stern[0], -j.stern[1], 0, -1]]
-        };
-    }
-
-    get shieldUp() {
-        return this.shieldsEnabled && this.alive && this.maxShield > 0 && this.shield > 0.5;
-    }
-
-    toggleShields() {
-        if(this.maxShield <= 0) return false;
-        this.shieldsEnabled = !this.shieldsEnabled;
-        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldUp();
-        else __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldDown();
-        return true;
-    }
-
-    // Converts a world point into shield-ellipse space.
-    shieldLocal(worldX, worldY) {
-        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
-        const cos = Math.cos(-this.angle);
-        const sin = Math.sin(-this.angle);
-        const dx = worldX - this.x;
-        const dy = worldY - this.y;
-        return { x: dx * cos - dy * sin - s.x, y: dx * sin + dy * cos - s.y, s: s };
-    }
-
-    // Circle vs shield-ellipse contact. Returns the outward normal (world space),
-    // overlap depth and contact point, or null when not touching.
-    shieldContact(worldX, worldY, radius) {
-        const l = this.shieldLocal(worldX, worldY);
-        const s = l.s;
-        const k = Math.sqrt((l.x / s.rx) * (l.x / s.rx) + (l.y / s.ry) * (l.y / s.ry)) || 0.0001;
-        const length = Math.sqrt(l.x * l.x + l.y * l.y) || 0.0001;
-        const gap = length * (1 - 1 / k);
-        const overlap = radius - gap;
-        if(overlap <= 0) return null;
-
-        const px = l.x / k;
-        const py = l.y / k;
-        let nx = px / (s.rx * s.rx);
-        let ny = py / (s.ry * s.ry);
-        const n = Math.sqrt(nx * nx + ny * ny) || 1;
-        nx /= n;
-        ny /= n;
-
-        const cos = Math.cos(this.angle);
-        const sin = Math.sin(this.angle);
-        const contact = this.localToWorld(px + s.x, py + s.y);
-        return {
-            nx: nx * cos - ny * sin,
-            ny: nx * sin + ny * cos,
-            overlap: overlap,
-            x: contact.x,
-            y: contact.y
-        };
-    }
-
-    // Ripple on the shield where something struck it.
-    shieldImpact(worldX, worldY, strength) {
-        const l = this.shieldLocal(worldX, worldY);
-        const k = Math.sqrt((l.x / l.s.rx) * (l.x / l.s.rx) + (l.y / l.s.ry) * (l.y / l.s.ry)) || 1;
-        this.shieldImpacts.push({ x: l.x / k, y: l.y / k, life: 1, strength: Math.min(1.5, strength) });
-        if(this.shieldImpacts.length > 12) this.shieldImpacts.shift();
-        // The whole bubble lights up, brighter for harder hits.
-        this.shieldFlash = Math.max(this.shieldFlash, SHIELD_FLASH_TIME * (0.6 + 0.4 * Math.min(1, strength)));
-    }
-
-    // Ore that hits raised shields burns up and costs a sliver of shield energy.
-    absorbOre(worldX, worldY) {
-        this.shield = Math.max(0, this.shield - 0.25);
-        this.sinceHit = 0;
-        this.shieldImpact(worldX, worldY, 0.8);
-        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit(0.5);
-    }
-
-    // Where the tractor beam comes from: the ore tractor module if fitted, else the hull centre.
-    tractorEmitter() {
-        const module = this.stats.modules.filter(m => m.type === 'magnet')[0];
-        return module ? this.localToWorld(module.slot.x, module.slot.y) : { x: this.x, y: this.y };
-    }
-
-    get thrusting() {
-        const t = this.thrusters;
-        return t.main > 0.2 || t.retro > 0.2 || t.left > 0.2 || t.right > 0.2 ||
-            t.spinCW > 0.2 || t.spinCCW > 0.2;
-    }
-
-    localToWorld(lx, ly) {
-        const cos = Math.cos(this.angle);
-        const sin = Math.sin(this.angle);
-        return { x: this.x + lx * cos - ly * sin, y: this.y + lx * sin + ly * cos };
-    }
-
-    worldColliders() {
-        return this.hullDef.colliders.map(c => {
-            const p = this.localToWorld(c[0], c[1]);
-            return { x: p.x, y: p.y, r: c[2] };
-        });
-    }
-
-    update(dt, input, world) {
-        if(!this.alive) {
-            this.firing = false;
-            this.minigunFiring = false;
-            this.beaming = false;
-            return;
-        }
-
-        this.time += dt;
-        if(this.hitCooldown > 0) this.hitCooldown -= dt;
-        if(this.immunity > 0) this.immunity -= dt;
-        if(this.shieldFlash > 0) this.shieldFlash -= dt;
-        if(this.hullFlash > 0) this.hullFlash -= dt;
-        if(this.salvoCooldown > 0) this.salvoCooldown -= dt;
-        this.sinceHit += dt;
-
-        if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
-            this.shield = Math.min(this.maxShield, this.shield + this.stats.shieldRegen * dt);
-        }
-        const targetLevel = this.shieldUp ? 1 : 0;
-        this.shieldLevel += (targetLevel - this.shieldLevel) * Math.min(1, dt * (targetLevel ? 3 : 5));
-        this.shieldImpacts.forEach(impact => { impact.life -= dt * 1.4; });
-        this.shieldImpacts = this.shieldImpacts.filter(impact => impact.life > 0);
-
-        this.fly(dt, input, world.particles);
-        this.updateTargeting(input, world.rocks);
-        this.updateTurrets(dt, input, world);
-        this.updateLaunchers(dt, input, world);
-    }
-
-    fly(dt, input, particles) {
-        const stats = this.stats;
-        const mainThrust = stats.acceleration;
-        const secondaryThrust = mainThrust * SECONDARY_THRUST;
-        const angularThrust = stats.angularAcceleration;
-
-        const cos = Math.cos(this.angle);
-        const sin = Math.sin(this.angle);
-
-        // Desired force in the ship's local frame (+x forward, +y right) and torque.
-        let localX = 0;
-        let localY = 0;
-        let torque = 0;
-
-        if(input.forward) localX += mainThrust;
-        if(input.backward) localX -= secondaryThrust;
-        if(input.strafeLeft) localY -= secondaryThrust;
-        if(input.strafeRight) localY += secondaryThrust;
-        if(input.rotateRight) torque += angularThrust;
-        if(input.rotateLeft) torque -= angularThrust;
-
-        // Stabilizer (toggled on/off): fires whatever thrusters are needed to cancel drift
-        // and spin that the pilot isn't asking for. With no thrust input it brakes to a
-        // stop; while thrusting it only cancels sideways drift, so the ship flies where it
-        // points. Spin is cancelled whenever the pilot isn't turning.
-        if(this.stabilizer) {
-            let driftX = this.vx;
-            let driftY = this.vy;
-            const commanded = Math.sqrt(localX * localX + localY * localY);
-            if(commanded > 0) {
-                // Keep the velocity along the commanded direction (if moving that way).
-                const dirX = (localX * cos - localY * sin) / commanded;
-                const dirY = (localX * sin + localY * cos) / commanded;
-                const along = Math.max(0, this.vx * dirX + this.vy * dirY);
-                driftX -= dirX * along;
-                driftY -= dirY * along;
-            }
-            const drift = Math.sqrt(driftX * driftX + driftY * driftY);
-            if(drift > 1) {
-                const brake = Math.min(secondaryThrust, drift / dt);
-                const worldX = -driftX / drift * brake;
-                const worldY = -driftY / drift * brake;
-                localX += worldX * cos + worldY * sin;
-                localY += -worldX * sin + worldY * cos;
-            }
-            if(!input.rotateLeft && !input.rotateRight && Math.abs(this.angularVelocity) > 0.01) {
-                torque -= clamp(this.angularVelocity / dt, -angularThrust, angularThrust);
-            }
-        }
-
-        this.vx += (localX * cos - localY * sin) * dt;
-        this.vy += (localX * sin + localY * cos) * dt;
-        this.angularVelocity = clamp(this.angularVelocity + torque * dt, -stats.maxTurn, stats.maxTurn);
-
-        const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-        if(speed > MAX_SPEED) {
-            this.vx *= MAX_SPEED / speed;
-            this.vy *= MAX_SPEED / speed;
-        }
-
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
-        this.angle += this.angularVelocity * dt;
-
-        this.animateThrusters(dt, localX / mainThrust, localY / secondaryThrust, torque / angularThrust);
-        this.emitExhaust(dt, particles);
-    }
-
-    animateThrusters(dt, forward, side, spin) {
-        const t = this.thrusters;
-        const targets = {
-            main: clamp(forward, 0, 1),
-            retro: clamp(-forward / SECONDARY_THRUST, 0, 1),
-            left: clamp(-side, 0, 1),
-            right: clamp(side, 0, 1),
-            spinCW: clamp(spin, 0, 1),
-            spinCCW: clamp(-spin, 0, 1)
-        };
-        // Quick spool-up, slightly slower cut-off.
-        Object.keys(targets).forEach(key => {
-            const rate = targets[key] > t[key] ? 18 : 10;
-            t[key] += (targets[key] - t[key]) * Math.min(1, rate * dt);
-        });
-    }
-
-    // Spits hot exhaust particles out of the engines (and puffs from the jets).
-    emitExhaust(dt, particles) {
-        const t = this.thrusters;
-        const cos = Math.cos(this.angle);
-        const sin = Math.sin(this.angle);
-
-        this.exhaustTimer -= dt;
-        if(this.exhaustTimer > 0) return;
-        this.exhaustTimer = 1 / 90;
-
-        if(t.main > 0.15) {
-            this.engines.forEach(engine => {
-                const nozzle = this.localToWorld(engine.x, engine.y);
-                const spread = (Math.random() - 0.5) * 0.3;
-                const speed = (160 + Math.random() * 120) * Math.sqrt(engine.size);
-                particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                    x: nozzle.x,
-                    y: nozzle.y,
-                    vx: this.vx - Math.cos(this.angle + spread) * speed * t.main,
-                    vy: this.vy - Math.sin(this.angle + spread) * speed * t.main,
-                    life: 0.2 + Math.random() * 0.2,
-                    size: (2 + Math.random() * 2) * Math.sqrt(engine.size),
-                    color: this.hullDef.exhaust || '255,150,60'
-                }));
-                if(Math.random() < 0.35 * t.main) {
-                    particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                        x: nozzle.x, y: nozzle.y,
-                        vx: this.vx - Math.cos(this.angle + spread * 2) * speed * 1.2,
-                        vy: this.vy - Math.sin(this.angle + spread * 2) * speed * 1.2,
-                        life: 0.3 + Math.random() * 0.4, size: 1.6, color: '255,220,160', pixel: true, glow: true
-                    }));
-                }
-            });
-        }
-
-        const jets = this.jetList;
-        Object.keys(jets).forEach(key => {
-            if(t[key] < 0.2 || Math.random() > 0.5) return;
-            jets[key].forEach(jet => {
-                const p = this.localToWorld(jet[0], jet[1]);
-                const dx = jet[2] * cos - jet[3] * sin;
-                const dy = jet[2] * sin + jet[3] * cos;
-                const speed = 60 + Math.random() * 60;
-                particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                    x: p.x, y: p.y,
-                    vx: this.vx + dx * speed, vy: this.vy + dy * speed,
-                    life: 0.15 + Math.random() * 0.15,
-                    size: 2,
-                    color: '200,225,255'
-                }));
-            });
-        });
-    }
-
-    nearestRock(x, y, rocks, range) {
-        let best = null;
-        let bestDist = range * range;
-        const from = { x: x, y: y };
-        rocks.forEach(rock => {
-            if(rock.dead) return;
-            const d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(from, rock);
-            const distSq = d.x * d.x + d.y * d.y;
-            if(distSq < bestDist) {
-                bestDist = distSq;
-                best = rock;
-            }
-        });
-        return best;
-    }
-
-    // Guidance: pick turret targets and the missile lock.
-    updateTargeting(input, rocks) {
-        if(!this.guidance) {
-            this.missileLock = null;
-            this.turrets.forEach(turret => { turret.target = null; });
-            return;
-        }
-
-        const range = this.guidance.range;
-        const nearCursor = this.nearestRock(input.aimX, input.aimY, rocks, MISSILE_LOCK_RADIUS);
-        this.missileLock = nearCursor || this.nearestRock(this.x, this.y, rocks, range);
-
-        this.turrets.forEach(turret => {
-            if(!this.autoTarget) {
-                turret.target = null;
-                return;
-            }
-            const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
-            const reach = turret.kind === 'beam' ? Math.min(range, turret.module.stats.range) : range;
-            turret.target = this.nearestRock(p.x, p.y, rocks, reach);
-        });
-    }
-
-    updateTurrets(dt, input, world) {
-        this.firing = false;
-        this.minigunFiring = false;
-        this.beaming = false;
-
-        this.turrets.forEach(turret => {
-            const stats = turret.module.stats;
-            const p = this.localToWorld(turret.module.slot.x, turret.module.slot.y);
-            if(turret.cooldown > 0) turret.cooldown -= dt;
-            if(turret.flash > 0) turret.flash -= dt;
-            turret.beam = null;
-
-            // Minigun heat bleeds off continuously.
-            if(turret.kind === 'minigun') {
-                turret.heat = Math.max(0, turret.heat - HEAT_COOLING * dt);
-                if(turret.overheated && turret.heat <= HEAT_RESUME) turret.overheated = false;
-            }
-
-            // Manual fire always aims at the cursor; otherwise the guidance computer
-            // leads the locked target.
-            let desired = Math.atan2(input.aimY - p.y, input.aimX - p.x);
-            const enabled = !this.weaponsOff[turret.kind];
-            let shouldFire = input.firing && enabled;
-
-            if(!input.firing && turret.target && enabled) {
-                const target = turret.target;
-                let d = Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target);
-                const speed = turret.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
-                const time = turret.kind === 'beam' ? 0 : Math.sqrt(d.x * d.x + d.y * d.y) / speed;
-                d = { x: d.x + target.vx * time, y: d.y + target.vy * time };
-                desired = Math.atan2(d.y, d.x);
-                shouldFire = true;
-            }
-
-            const diff = angleDifference(turret.aim, desired);
-            const maxTurn = TURRET_TURN_RATE * dt;
-            turret.aim += clamp(diff, -maxTurn, maxTurn);
-            const aimed = Math.abs(diff) < 0.2;
-
-            if(turret.kind === 'beam') {
-                this.updateBeam(dt, turret, p, shouldFire && aimed, world);
-                return;
-            }
-
-            if(!shouldFire || !aimed || turret.overheated) return;
-            this.firing = true;
-            if(turret.kind === 'minigun') this.minigunFiring = true;
-            if(turret.cooldown > 0) return;
-
-            if(turret.kind === 'minigun') this.fireMinigun(turret, p, stats, world);
-            if(turret.kind === 'staff') this.fireStaff(turret, p, stats, world);
-        });
-    }
-
-    fireMinigun(turret, p, stats, world) {
-        turret.cooldown = Math.max(0, turret.cooldown) + 1 / stats.fireRate;
-
-        const angle = turret.aim + (Math.random() - 0.5) * 2 * BULLET_SPREAD;
-        const dirX = Math.cos(angle);
-        const dirY = Math.sin(angle);
-        const barrel = 9 * this.hullDef.moduleScale;
-
-        // Bullets inherit the ship's speed along the line of fire, but not its
-        // sideways drift, so they travel where the turret points.
-        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
-        const speed = BULLET_SPEED + inherited;
-        world.bullets.push(new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
-            p.x + Math.cos(turret.aim) * barrel,
-            p.y + Math.sin(turret.aim) * barrel,
-            dirX * speed,
-            dirY * speed,
-            stats.damage
-        ));
-
-        // Equal and opposite reaction.
-        const recoil = RECOIL / this.stats.mass;
-        this.vx -= dirX * recoil;
-        this.vy -= dirY * recoil;
-        turret.flash = 0.04;
-        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].minigunShot();
-        if(Math.random() < 0.35) {
-            world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                x: p.x + Math.cos(turret.aim) * barrel, y: p.y + Math.sin(turret.aim) * barrel,
-                vx: this.vx + dirX * 30 + (Math.random() - 0.5) * 20, vy: this.vy + dirY * 30 + (Math.random() - 0.5) * 20,
-                life: 0.4 + Math.random() * 0.3, size: 3, color: '230,225,215', dust: true, alpha: 0.08
-            }));
-        }
-
-        // Each round adds enough heat to outpace cooling, so sustained fire
-        // overheats after `heatShots` rounds.
-        turret.heat += 1 / stats.heatShots + HEAT_COOLING / stats.fireRate;
-        if(turret.heat >= 1) {
-            turret.heat = 1;
-            turret.overheated = true;
-            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].overheat();
-        }
-    }
-
-    fireStaff(turret, p, stats, world) {
-        turret.cooldown = 1 / stats.fireRate;
-        const dirX = Math.cos(turret.aim);
-        const dirY = Math.sin(turret.aim);
-        const barrel = 8 * this.hullDef.moduleScale;
-        const inherited = Math.max(0, this.vx * dirX + this.vy * dirY);
-        const speed = PLASMA_SPEED + inherited;
-
-        world.bullets.push(new __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__["a" /* default */](
-            p.x + dirX * barrel, p.y + dirY * barrel,
-            dirX * speed, dirY * speed,
-            stats.damage, 'plasma', stats.splash
-        ));
-        this.vx -= dirX * RECOIL * 6 / this.stats.mass;
-        this.vy -= dirY * RECOIL * 6 / this.stats.mass;
-        turret.flash = 0.14;
-        // Plasma vented from the muzzle.
-        for(let i = 0; i < 8; i++) {
-            const a = turret.aim + (Math.random() - 0.5) * 1.2;
-            const v = 60 + Math.random() * 140;
-            world.particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                x: p.x + dirX * barrel, y: p.y + dirY * barrel,
-                vx: this.vx + Math.cos(a) * v, vy: this.vy + Math.sin(a) * v,
-                life: 0.15 + Math.random() * 0.2, size: 3, color: i % 2 ? '255,200,90' : '255,120,40'
-            }));
-        }
-        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].staffShot();
-    }
-
-    // Asgard beam: fires a burst for a few seconds, then must recharge.
-    updateBeam(dt, turret, p, trigger, world) {
-        const stats = turret.module.stats;
-
-        if(turret.beamTime > 0 && !trigger) {
-            // Released early: recharge for the part of the burst that was used.
-            turret.cooldown = stats.cooldown * (1 - turret.beamTime / stats.burst);
-            turret.beamTime = 0;
-        }
-        if(trigger && turret.beamTime <= 0 && turret.cooldown <= 0) turret.beamTime = stats.burst;
-        if(turret.beamTime <= 0) return;
-
-        turret.beamTime -= dt;
-        if(turret.beamTime <= 0) {
-            turret.beamTime = 0;
-            turret.cooldown = stats.cooldown;
-        }
-
-        const dirX = Math.cos(turret.aim);
-        const dirY = Math.sin(turret.aim);
-        const startX = p.x + dirX * 6 * this.hullDef.moduleScale;
-        const startY = p.y + dirY * 6 * this.hullDef.moduleScale;
-        const hit = raycastRocks(startX, startY, dirX, dirY, stats.range, world.rocks);
-        const endX = startX + dirX * hit.distance;
-        const endY = startY + dirY * hit.distance;
-
-        turret.beam = { x1: startX, y1: startY, x2: endX, y2: endY, hit: !!hit.rock };
-        this.firing = true;
-        this.beaming = true;
-
-        if(hit.rock) {
-            world.beamHits.push({ rock: hit.rock, damage: stats.dps * dt, x: endX, y: endY, dirX: dirX, dirY: dirY });
-        }
-    }
-
-    pickLauncherTarget(input, rocks) {
-        if(this.guidance) return this.missileLock;
-        return null;
-    }
-
-    updateLaunchers(dt, input, world) {
-        this.launchers.forEach(launcher => {
-            if(launcher.cooldown > 0) launcher.cooldown -= dt;
-            if(launcher.salvo) this.continueSalvo(launcher, input, world, dt);
-        });
-
-        if(!input.firingMissiles || this.salvoCooldown > 0 || this.launchers.length === 0) return;
-
-        for(let i = 0; i < this.launchers.length; i++) {
-            const index = (this.nextLauncher + i) % this.launchers.length;
-            const launcher = this.launchers[index];
-            if(launcher.cooldown > 0 || this.weaponsOff[launcher.kind]) continue;
-
-            if(launcher.kind === 'missile') this.fireMissile(launcher, input, world);
-            if(launcher.kind === 'drones') this.fireDrones(launcher, input, world);
-
-            this.salvoCooldown = SALVO_GAP;
-            this.nextLauncher = index + 1;
-            return;
-        }
-    }
-
-    fireMissile(launcher, input, world) {
-        const stats = launcher.module.stats;
-        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-        const target = this.guidance ? this.missileLock : null;
-        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-        const angle = Math.atan2(aimAt.y, aimAt.x);
-
-        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
-            x: p.x,
-            y: p.y,
-            vx: this.vx + Math.cos(angle) * 120,
-            vy: this.vy + Math.sin(angle) * 120,
-            angle: angle,
-            damage: stats.damage,
-            blast: stats.blast,
-            target: target,
-            homing: this.guidance ? this.guidance.homing : 0
-        }));
-        launcher.cooldown = stats.cooldown;
-        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].missileLaunch();
-    }
-
-    // Ancient drones: a salvo of drones launched one after another in a stream.
-    fireDrones(launcher, input, world) {
-        const stats = launcher.module.stats;
-        const target = this.missileLock || this.nearestRock(input.aimX, input.aimY, world.rocks, 450);
-        launcher.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
-        launcher.cooldown = stats.cooldown;
-    }
-
-    continueSalvo(launcher, input, world, dt) {
-        const salvo = launcher.salvo;
-        salvo.timer -= dt;
-        if(salvo.timer > 0) return;
-        if(!this.alive || salvo.remaining <= 0) {
-            launcher.salvo = null;
-            return;
-        }
-
-        const stats = launcher.module.stats;
-        const p = this.localToWorld(launcher.module.slot.x, launcher.module.slot.y);
-        const target = salvo.target && !salvo.target.dead ? salvo.target : null;
-        const aimAt = target ? Object(__WEBPACK_IMPORTED_MODULE_6__physics_physics__["b" /* delta */])(p, target) : { x: input.aimX - p.x, y: input.aimY - p.y };
-        // Each drone leaves on a slightly different heading, weaving towards the target.
-        const weave = [0, -0.35, 0.35, -0.6, 0.6, 0][salvo.index % 6];
-        const angle = Math.atan2(aimAt.y, aimAt.x) + weave;
-
-        world.missiles.push(new __WEBPACK_IMPORTED_MODULE_1__missile_missile__["a" /* default */]({
-            kind: 'drone',
-            x: p.x,
-            y: p.y,
-            vx: this.vx + Math.cos(angle) * 220,
-            vy: this.vy + Math.sin(angle) * 220,
-            angle: angle,
-            damage: stats.damage,
-            blast: stats.blast,
-            target: target,
-            homing: 7
-        }));
-        __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].droneLaunch();
-
-        salvo.remaining--;
-        salvo.index++;
-        salvo.timer = 0.11;
-        if(salvo.remaining <= 0) launcher.salvo = null;
-    }
-
-    // Readiness of each weapon group for the HUD: 1 = ready.
-    weaponStatus() {
-        const groups = {};
-        this.turrets.concat(this.launchers).forEach(w => {
-            const def = __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["c" /* default */][w.kind];
-            if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
-            const g = groups[w.kind];
-            const stats = w.module.stats;
-            let ready = 1;
-            let state = 'ready';
-
-            if(w.kind === 'minigun') {
-                ready = 1 - w.heat;
-                state = w.overheated ? 'overheated' : (w.heat > 0.6 ? 'hot' : 'ready');
-            } else if(w.kind === 'beam') {
-                if(w.beamTime > 0) { ready = w.beamTime / stats.burst; state = 'firing'; }
-                else if(w.cooldown > 0) { ready = 1 - w.cooldown / stats.cooldown; state = 'charging'; }
-            } else if(w.cooldown > 0) {
-                const total = w.kind === 'staff' ? 1 / stats.fireRate : stats.cooldown;
-                ready = 1 - w.cooldown / total;
-                state = 'reloading';
-            }
-
-            g.ready += clamp(ready, 0, 1);
-            g.count++;
-            if(state !== 'ready') g.state = state;
-        });
-        return Object.keys(groups).map(kind => {
-            const g = groups[kind];
-            const off = !!this.weaponsOff[kind];
-            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
-        });
-    }
-
-    // Switch a weapon type on or off. Returns the new state (true = on).
-    toggleWeapon(kind) {
-        this.weaponsOff[kind] = !this.weaponsOff[kind];
-        return !this.weaponsOff[kind];
-    }
-
-    // Returns true if damage was applied.
-    takeDamage(amount, particles, hitX, hitY) {
-        if(!this.alive || this.hitCooldown > 0 || this.immunity > 0) return false;
-
-        this.hitCooldown = HIT_COOLDOWN;
-        this.sinceHit = 0;
-
-        // Lowered shields don't absorb anything.
-        const absorbed = this.shieldUp ? Math.min(this.shield, amount) : 0;
-        this.shield -= absorbed;
-        const remaining = amount - absorbed;
-        if(absorbed > 0) {
-            this.shieldFlash = SHIELD_FLASH_TIME;
-            if(hitX !== undefined) this.shieldImpact(hitX, hitY, 1 + absorbed / 20);
-            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shieldHit();
-        }
-
-        if(remaining > 0) {
-            this.hp -= remaining;
-            this.hullFlash = 0.15;
-            this.explode(particles, 10 + Math.round(remaining / 2));
-            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].hullHit();
-        }
-
-        if(this.hp <= 0) {
-            this.hp = 0;
-            this.alive = false;
-            this.explode(particles, 40 + this.radius * 2);
-            __WEBPACK_IMPORTED_MODULE_7__audio_audio__["a" /* default */].shipExplosion();
-        }
-        return true;
-    }
-
-    explode(particles, count) {
-        const spread = this.radius * 0.5;
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 40 + Math.random() * 180;
-            particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                x: this.x + (Math.random() - 0.5) * spread,
-                y: this.y + (Math.random() - 0.5) * spread,
-                vx: this.vx + Math.cos(angle) * speed,
-                vy: this.vy + Math.sin(angle) * speed,
-                life: 0.4 + Math.random() * 0.8,
-                size: 3 * (0.6 + Math.random() * 0.8),
-                color: '255,200,120'
-            }));
-        }
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 60 + Math.random() * 260;
-            particles.push(new __WEBPACK_IMPORTED_MODULE_2__particle_particle__["a" /* default */]({
-                x: this.x + (Math.random() - 0.5) * spread,
-                y: this.y + (Math.random() - 0.5) * spread,
-                vx: this.vx + Math.cos(angle) * speed,
-                vy: this.vy + Math.sin(angle) * speed,
-                life: 0.4 + Math.random() * 0.9,
-                size: 1.8,
-                color: i % 3 ? '255,170,80' : '200,210,230',
-                pixel: true,
-                glow: i % 3 !== 0,
-                drag: 0.6
-            }));
-        }
-    }
-
-    drawThrusters(ctx) {
-        const t = this.thrusters;
-        const jetScale = this.hullDef.jetScale || 1;
-        const exhaust = this.hullDef.exhaust || '255,150,60';
-        const plume = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])(exhaust, '255,235,190');
-        const jetFlame = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["c" /* flameSprite */])('170,210,255', '255,255,255');
-        const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(exhaust);
-        const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
-
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-
-        this.engines.forEach(engine => {
-            const size = engine.size;
-            // Nozzle glow, pulsing even when idle.
-            const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
-            ctx.globalAlpha = 0.55 + t.main * 0.45;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
-
-            // Plume straight out of the nozzle, as wide as the nozzle.
-            if(t.main > 0.03) {
-                const length = t.main * (14 + Math.random() * 8) * size * 1.4;
-                const width = 5.2 * size * (0.85 + Math.random() * 0.3);
-                ctx.globalAlpha = 1;
-                ctx.save();
-                ctx.translate(engine.x, engine.y);
-                ctx.rotate(Math.PI);
-                ctx.drawImage(plume.canvas, 0, -width / 2, length, width);
-                ctx.restore();
-            }
-        });
-
-        // Manoeuvring jets on the hull edges: retro, strafe and attitude control.
-        ctx.globalAlpha = 1;
-        const jets = this.jetList;
-        Object.keys(jets).forEach(key => {
-            if(t[key] < 0.02) return;
-            const length = t[key] * 7 * jetScale;
-            jets[key].forEach(jet => {
-                ctx.save();
-                ctx.translate(jet[0], jet[1]);
-                ctx.rotate(Math.atan2(jet[3], jet[2]));
-                ctx.drawImage(jetFlame.canvas, 0, -1.3 * jetScale, length * (0.8 + Math.random() * 0.4), 2.6 * jetScale);
-                ctx.restore();
-            });
-        });
-
-        ctx.restore();
-    }
-
-    drawShield(ctx) {
-        const level = this.shieldLevel;
-        if(this.maxShield <= 0 || level < 0.01) return;
-
-        const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(this.hullDef);
-        const sprite = shieldSprite(this.hullDef);
-        const color = this.hullDef.shieldColor || '120,210,255';
-        const strength = Math.max(0.15, this.shield / this.maxShield);
-        // Bubble expands outwards when powering up and collapses when lowered.
-        const grow = 0.7 + 0.3 * (1 - Math.pow(1 - level, 3));
-        const flash = Math.max(0, this.shieldFlash) / SHIELD_FLASH_TIME;
-        const shimmer = 0.85 + 0.15 * Math.sin(this.time * 3);
-
-        ctx.save();
-        ctx.translate(s.x, s.y);
-        ctx.globalAlpha = Math.min(1, level * (0.35 + 0.65 * strength) * shimmer + flash);
-        const w = sprite.width * grow;
-        const h = sprite.height * grow;
-        ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
-
-        // Hit: the entire shield frame lights up (hex pattern and rim) and fades out.
-        if(flash > 0) {
-            const f = Math.min(1, flash);
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = f * 0.9;
-            ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
-            ctx.globalAlpha = f * 0.35;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color), 0, 0, w * 1.15, h * 1.15);
-            ctx.globalAlpha = f;
-            ctx.strokeStyle = 'rgb(' + color + ')';
-            ctx.lineWidth = 2 + 2.5 * f;
-            ctx.beginPath();
-            ctx.ellipse(0, 0, s.rx * grow, s.ry * grow, 0, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = f * 0.8;
-            ctx.strokeStyle = 'rgb(235, 248, 255)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
-        }
-
-        // Impact ripples: a flare at the hit point and a ring spreading over the bubble.
-        if(this.shieldImpacts.length) {
-            ctx.globalCompositeOperation = 'lighter';
-            const glow = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color);
-            this.shieldImpacts.forEach(impact => {
-                const ix = impact.x * grow;
-                const iy = impact.y * grow;
-                const size = (20 + 50 * impact.strength) * impact.life;
-                ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, ix, iy, size, size);
-                ctx.globalAlpha = 0.7 * impact.life;
-                ctx.strokeStyle = 'rgb(' + color + ')';
-                ctx.lineWidth = 2 * impact.life + 0.5;
-                ctx.beginPath();
-                ctx.ellipse(ix, iy, 4 + (1 - impact.life) * s.rx * 0.6, 4 + (1 - impact.life) * s.ry * 0.6, 0, 0, Math.PI * 2);
-                ctx.stroke();
-            });
-        }
-        ctx.restore();
-    }
-
-    // Beams are drawn in world space (after the ship transform is restored).
-    drawBeams(ctx) {
-        this.turrets.forEach(turret => {
-            const beam = turret.beam;
-            if(!beam) return;
-            const flicker = 0.75 + Math.random() * 0.25;
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.lineCap = 'round';
-            [[9, 'rgba(90, 170, 255, 0.18)'], [4, 'rgba(140, 210, 255, 0.55)'], [1.6, 'rgba(240, 250, 255, 0.95)']].forEach(layer => {
-                ctx.lineWidth = layer[0] * flicker * this.hullDef.moduleScale;
-                ctx.strokeStyle = layer[1];
-                ctx.beginPath();
-                ctx.moveTo(beam.x1, beam.y1);
-                ctx.lineTo(beam.x2, beam.y2);
-                ctx.stroke();
-            });
-            // Energy pulses racing down the beam.
-            ctx.setLineDash([6, 14]);
-            ctx.lineDashOffset = -this.time * 900;
-            ctx.lineWidth = 3 * this.hullDef.moduleScale;
-            ctx.strokeStyle = 'rgba(220, 245, 255, 0.6)';
-            ctx.beginPath();
-            ctx.moveTo(beam.x1, beam.y1);
-            ctx.lineTo(beam.x2, beam.y2);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
-            if(beam.hit) {
-                // Molten contact point.
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
-            }
-            ctx.restore();
-        });
-    }
-
-    draw(ctx) {
-        if(!this.alive || this.hidden) return;
-        // Blink while invulnerable after launch.
-        if(this.immunity > 0 && Math.floor(this.immunity * 10) % 2 === 0) return;
-
-        const u = this.hullDef.moduleScale;
-
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
-
-        this.drawThrusters(ctx);
-        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
-        ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
-
-        this.stats.modules.forEach(module => {
-            if(TURRET_TYPES.indexOf(module.type) !== -1) return;
-            ctx.save();
-            ctx.translate(module.slot.x, module.slot.y);
-            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: u, glow: 0 });
-            ctx.restore();
-        });
-
-        this.turrets.forEach(turret => {
-            ctx.save();
-            ctx.translate(turret.module.slot.x, turret.module.slot.y);
-            Object(__WEBPACK_IMPORTED_MODULE_5__shipyard_modules__["d" /* drawModule */])(ctx, turret.kind, turret.module.level, {
-                scale: u,
-                glow: 0,
-                aim: turret.aim - this.angle,
-                heat: turret.kind === 'minigun' ? turret.heat : 0
-            });
-            if(turret.flash > 0) {
-                const tip = 9 * u;
-                const color = turret.kind === 'staff' ? '255, 190, 90' : '255, 230, 150';
-                if(turret.kind === 'staff') {
-                    // Large plasma bloom at the cannon mouth.
-                    const fx = Math.cos(turret.aim - this.angle) * tip;
-                    const fy = Math.sin(turret.aim - this.angle) * tip;
-                    ctx.globalCompositeOperation = 'lighter';
-                    const bloom = 16 + 20 * turret.flash / 0.14;
-                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
-                }
-                // Star-shaped muzzle flash pointing down the barrel, flickering in size.
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.rotate(turret.aim - this.angle);
-                const flashSize = (turret.kind === 'staff' ? 30 : 18 + Math.random() * 10) * Math.max(0.8, u);
-                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
-            }
-            ctx.restore();
-        });
-
-        this.drawShield(ctx);
-        ctx.restore();
-
-        this.drawBeams(ctx);
-    }
-}
-
-/* harmony default export */ __webpack_exports__["a"] = (Ship);
 
 
 /***/ }),
@@ -8776,6 +9261,7 @@ class Bullet {
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
         this.mass = this.kind === 'plasma' ? 30 : 1.2;
+        this.side = 'player';    // set by the firing ship
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }
@@ -8830,7 +9316,7 @@ class Bullet {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
@@ -8864,6 +9350,7 @@ class Missile {
         this.blast = options.blast;
         this.target = options.target || null;
         this.homing = options.homing || 0;   // 0 = dumb-fire
+        this.side = options.side || 'player';  // whose weapon it is
         this.launchDelay = options.launchDelay || 0;
         this.life = this.profile.lifetime;
         this.trailTimer = 0;
@@ -9002,6 +9489,223 @@ class Missile {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__ship__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__shipyard_profile__ = __webpack_require__(5);
+// Enemy ships: the same hulls the player can fly, fitted out at mid level (Mk II) or fully
+// upgraded (Mk III), flown by a simple AI pilot that feeds the ship the same kind of input
+// the player's keyboard and mouse do.
+
+
+
+
+
+// Weapons and systems each faction fits, in order; slots are filled cycling through it.
+const FACTION_FIT = {
+    "Goa'uld": ['staff', 'staff', 'missile', 'shield', 'staff', 'engine', 'armor', 'staff', 'shield'],
+    "Tau'ri": ['minigun', 'missile', 'shield', 'guidance', 'minigun', 'missile', 'engine', 'armor', 'shield', 'minigun'],
+    Asgard: ['beam', 'shield', 'beam', 'missile', 'engine', 'shield', 'beam', 'armor', 'shield'],
+    Ancient: ['drones', 'shield', 'minigun', 'drones', 'engine', 'shield', 'beam', 'armor', 'drones']
+};
+// Small craft keep a mount free for an engine instead of a second heavy system.
+const FIGHTER_FIT = {
+    glider: ['staff', 'staff', 'engine'],
+    x302: ['minigun', 'missile', 'missile'],
+    jumper: ['drones', 'shield', 'engine', 'minigun']
+};
+
+// Enemy weapons hit a little softer than the player's, so a fair fight is winnable.
+const ENEMY_DAMAGE = 0.75;
+
+const loadoutFor = (hull, level) => {
+    const fit = FIGHTER_FIT[hull.id] || FACTION_FIT[hull.faction] || FACTION_FIT["Tau'ri"];
+    const loadout = {};
+    hull.slots.forEach((slot, i) => {
+        loadout[slot.id] = { type: fit[i % fit.length], level: level };
+    });
+    return loadout;
+};
+
+const createEnemy = (hullId, level, x, y) => {
+    const hull = __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["b" /* default */][hullId];
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship__["b" /* default */](x, y, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, loadoutFor(hull, level)));
+    ship.side = 'enemy';
+    ship.damageScale = ENEMY_DAMAGE;
+    ship.autoTarget = false;
+    ship.stabilizer = true;
+    ship.immunity = 0.6;
+    ship.level = level;
+    ship.angle = Math.random() * Math.PI * 2;
+    ship.ai = {
+        input: {
+            forward: false, backward: false, rotateLeft: false, rotateRight: false,
+            strafeLeft: false, strafeRight: false, firing: false, firingMissiles: false,
+            aimX: x, aimY: y, lockTarget: null
+        },
+        orbit: Math.random() < 0.5 ? 1 : -1,
+        orbitTimer: 2 + Math.random() * 3,
+        missileTimer: 1.5 + Math.random() * 2,
+        aimError: 0
+    };
+    // Preferred fighting distance from its weapons.
+    const kinds = ship.turrets.map(t => t.kind).concat(ship.launchers.map(l => l.kind));
+    ship.ai.range = kinds.indexOf('beam') !== -1 ? 380 : kinds.indexOf('staff') !== -1 || kinds.indexOf('minigun') !== -1 ? 430 : 650;
+    ship.ai.range += hull.radius * 1.5;
+    // Bounty paid when destroyed.
+    ship.bounty = Math.round((150 + hull.cost * 0.12) * (level === 3 ? 1.5 : 1));
+    return ship;
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = createEnemy;
+
+
+const angleDifference = (a, b) => {
+    let d = b - a;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    return d;
+};
+
+// Turn towards `desired` without overshooting (zero-g: counter the spin in time).
+const steer = (ship, input, desired) => {
+    const error = angleDifference(ship.angle, desired);
+    const wanted = Math.max(-ship.stats.maxTurn, Math.min(ship.stats.maxTurn, error * 2.5));
+    input.rotateRight = ship.angularVelocity < wanted - 0.05;
+    input.rotateLeft = ship.angularVelocity > wanted + 0.05;
+    return error;
+};
+
+// One AI tick: decide how to fly and when to shoot. `target` is the player ship (or null),
+// `avoid` an optional point to keep away from (the Atlantis city shield).
+const updateEnemyAI = (ship, dt, target, rocks, incoming, avoid) => {
+    const ai = ship.ai;
+    const input = ai.input;
+    input.forward = input.backward = input.strafeLeft = input.strafeRight = false;
+    input.firing = input.firingMissiles = false;
+    input.lockTarget = null;
+    if(!ship.alive) return;
+
+    ai.orbitTimer -= dt;
+    if(ai.orbitTimer <= 0) {
+        ai.orbit = -ai.orbit;
+        ai.orbitTimer = 2.5 + Math.random() * 3;
+        ai.aimError = (Math.random() - 0.5) * 0.06;
+    }
+
+    // Keep clear of the city shield.
+    if(avoid) {
+        const ax = ship.x - avoid.x;
+        const ay = ship.y - avoid.y;
+        const ad = Math.sqrt(ax * ax + ay * ay) || 1;
+        if(ad < avoid.radius) {
+            steer(ship, input, Math.atan2(ay, ax));
+            input.forward = true;
+            return;
+        }
+    }
+
+    if(!target) {
+        // Patrol: drift slowly on the current heading.
+        input.forward = Math.random() < 0.02;
+        return;
+    }
+
+    const dx = target.x - ship.x;
+    const dy = target.y - ship.y;
+    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+
+    // Point defence: gun ships shoot at incoming missiles that get close.
+    const threat = incoming.filter(m => !m.dead && (m.x - ship.x) * (m.x - ship.x) + (m.y - ship.y) * (m.y - ship.y) < 320 * 320)[0];
+
+    // Aim with lead for the travel time of its shots, plus a little error.
+    const projectileSpeed = ship.turrets.some(t => t.kind === 'staff') ? 520 : 1100;
+    const aimAt = threat || target;
+    const ex = aimAt.x - ship.x;
+    const ey = aimAt.y - ship.y;
+    const t = Math.sqrt(ex * ex + ey * ey) / projectileSpeed;
+    // Shots don't inherit the shooter's sideways drift, so lead by the target's own motion.
+    const lx = aimAt.x + aimAt.vx * t;
+    const ly = aimAt.y + aimAt.vy * t;
+    const aimAngle = Math.atan2(ly - ship.y, lx - ship.x) + ai.aimError;
+    const aimDist = Math.sqrt((lx - ship.x) * (lx - ship.x) + (ly - ship.y) * (ly - ship.y));
+    input.aimX = ship.x + Math.cos(aimAngle) * aimDist;
+    input.aimY = ship.y + Math.sin(aimAngle) * aimDist;
+
+    // Face the target and hold the preferred range, circling it.
+    const facing = steer(ship, input, Math.atan2(dy, dx));
+    const range = ai.range;
+    if(distance > range * 1.15 && Math.abs(facing) < 0.7) input.forward = true;
+    if(distance < range * 0.6) input.backward = true;
+    if(distance < range * 1.6) {
+        if(ai.orbit > 0) input.strafeRight = true;
+        else input.strafeLeft = true;
+    }
+
+    // Dodge asteroids in the way.
+    for(let i = 0; i < rocks.length; i++) {
+        const rock = rocks[i];
+        if(rock.dead) continue;
+        const rx = rock.x - ship.x;
+        const ry = rock.y - ship.y;
+        const reach = rock.radius + ship.radius + 60;
+        if(rx * rx + ry * ry > reach * reach) continue;
+        const side = Math.cos(ship.angle) * ry - Math.sin(ship.angle) * rx;
+        input.strafeLeft = side > 0;
+        input.strafeRight = side <= 0;
+        input.forward = false;
+        break;
+    }
+
+    // Shoot when in range (turrets swing to the aim point by themselves).
+    input.firing = !!threat || distance < range * 1.7;
+
+    // Missiles and drones in volleys, locked onto the target.
+    ai.missileTimer -= dt;
+    if(ship.launchers.length && ai.missileTimer <= 0 && distance < 1300 && distance > 160) {
+        input.firingMissiles = true;
+        input.lockTarget = target;
+        if(ship.launchers.every(l => l.cooldown > 0) || Math.random() < 0.02) {
+            ai.missileTimer = 2.5 + Math.random() * 3;
+        }
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = updateEnemyAI;
+
+
+// Which hulls turn up in each star system (weights), and how many at most at once.
+const SYSTEM_ENEMIES = {
+    lantea: { max: 2, hulls: { glider: 4, jumper: 2, alkesh: 1 } },
+    earth: { max: 2, hulls: { glider: 3, alkesh: 2, x303: 1, jumper: 1 } },
+    abydos: { max: 3, hulls: { glider: 5, alkesh: 2, hatak: 1 } },
+    chulak: { max: 3, hulls: { glider: 5, alkesh: 3, hatak: 1 } },
+    dakara: { max: 3, hulls: { glider: 4, alkesh: 3, hatak: 1, x302: 1 } },
+    langara: { max: 2, hulls: { x302: 3, x303: 2, alkesh: 1 } },
+    othala: { max: 3, hulls: { alkesh: 2, x304: 1, hatak: 1, aurora: 1, asgard: 1 } }
+};
+
+const enemyConfig = (systemId) => SYSTEM_ENEMIES[systemId] || SYSTEM_ENEMIES.lantea;
+/* harmony export (immutable) */ __webpack_exports__["b"] = enemyConfig;
+
+
+const pickEnemyHull = (systemId) => {
+    const hulls = enemyConfig(systemId).hulls;
+    const total = Object.keys(hulls).reduce((sum, id) => sum + hulls[id], 0);
+    let roll = Math.random() * total;
+    const ids = Object.keys(hulls);
+    for(let i = 0; i < ids.length; i++) {
+        roll -= hulls[ids[i]];
+        if(roll <= 0) return ids[i];
+    }
+    return ids[0];
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = pickEnemyHull;
+
+
+
+/***/ }),
+/* 19 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_sprites__ = __webpack_require__(0);
 
@@ -9116,7 +9820,7 @@ class Ore {
 
 
 /***/ }),
-/* 19 */
+/* 20 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9242,11 +9946,11 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 20 */
+/* 21 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(11);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(1);
 // Endless asteroid fields. Space is divided into square sectors that are generated
 // deterministically from a seed the first time the ship comes near. Sectors that
@@ -9410,7 +10114,7 @@ class SectorManager {
 
 
 /***/ }),
-/* 21 */
+/* 22 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9670,13 +10374,13 @@ const drawStation = (ctx, time, canDock) => {
 
 
 /***/ }),
-/* 22 */
+/* 23 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
 // The Stargate in each system, and the DHD (dial-home device) next to it.
 //
 // Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
@@ -10143,13 +10847,13 @@ class Stargate {
 
 
 /***/ }),
-/* 23 */
+/* 24 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
 // DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
 // origin, then press the dome to dial.
 
@@ -10540,11 +11244,11 @@ const isDHDOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 24 */
+/* 25 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
 // Starmap: a rotatable 3D map of the constellations (gate symbols) and known worlds.
 // Selecting a world draws the three lines of its gate address meeting at it, and shows
@@ -10910,7 +11614,7 @@ const isStarmapOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11069,7 +11773,7 @@ const nebulaSprite = (system) => {
 
 
 /***/ }),
-/* 26 */
+/* 27 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11233,13 +11937,13 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
 
 
 /***/ }),
-/* 27 */
+/* 28 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(28);
+var content = __webpack_require__(29);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -11247,7 +11951,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(30)(content, options);
+var update = __webpack_require__(31)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -11264,10 +11968,10 @@ if(false) {
 }
 
 /***/ }),
-/* 28 */
+/* 29 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(29)(undefined);
+exports = module.exports = __webpack_require__(30)(undefined);
 // imports
 
 
@@ -11278,7 +11982,7 @@ exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 
 
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ (function(module, exports) {
 
 /*
@@ -11360,7 +12064,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -11416,7 +12120,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(31);
+var	fixUrls = __webpack_require__(32);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -11732,7 +12436,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ (function(module, exports) {
 
 

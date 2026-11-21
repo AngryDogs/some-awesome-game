@@ -433,7 +433,10 @@ const SAMPLE_FILES = {
     missile: ['f302/missilefire.mp3'],
     drone: ['weapons/drone_shot.mp3'],
     asgard_beam: ['weapons/asgard_beam.mp3'],
+    // Ship shield impacts: CAP's ship-shield crackle for light knocks, the deep gate-shield
+    // impacts for weapon hits and heavy blows.
     shield_hit: ['shields/shield_hit.mp3'],
+    shield_hit_heavy: ['stargate/shield/hit.mp3', 'stargate/shield/hit_2.mp3'],
     shield_up: ['shields/shield_engage.mp3'],
     shield_down: ['shields/shield_disengage.mp3'],
     door: ['door/atlantis_door_open.mp3'],
@@ -951,10 +954,14 @@ const sounds = {
     },
 
     // Something striking raised shields: an electric zap with a resonant hum.
+    // Like CAP's shields: at most one impact sound every 0.25 s, pitch 90-110%.
     shieldHit(strength) {
-        const c = throttle('shield', 0.07);
+        const c = throttle('shield', 0.25);
         if(!c) return;
         const s = Math.max(0.3, Math.min(1.5, strength || 1));
+        const rate = 0.9 + Math.random() * 0.2;
+        if(s >= 0.9 && playSample('shield_hit_heavy', 0.55 + 0.3 * Math.min(1, s - 0.9), { rate: rate })) return;
+        if(playSample('shield_hit', 0.45 + 0.4 * s, { rate: rate })) return;
         tone(c, 'sine', 1500, 260, 0.35, envelope(c, 0.2 * s, 0.002, 0.35, 0.4));
         tone(c, 'sawtooth', 120, 70, 0.3, envelope(c, 0.12 * s, 0.002, 0.3, 0.3));
         noise(c, 0.2, 'highpass', 5000, 2000, envelope(c, 0.08 * s, 0.001, 0.2, 0.3));

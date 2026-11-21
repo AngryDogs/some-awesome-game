@@ -132,9 +132,10 @@ export const sellModule = (hullId, slotId) => {
 };
 
 // Combine hull + modules into the numbers the ship flies with.
-export const computeShipStats = (hullId) => {
+// `loadoutOverride` builds stats for a loadout that isn't the player's (enemy ships).
+export const computeShipStats = (hullId, loadoutOverride) => {
     const hull = HULLS[hullId];
-    const loadout = loadoutFor(hullId);
+    const loadout = loadoutOverride || loadoutFor(hullId);
 
     const stats = {
         hull: hull,

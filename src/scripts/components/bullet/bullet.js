@@ -14,6 +14,7 @@ class Bullet {
         this.kind = kind || 'bullet';
         this.splash = splash || 0;
         this.mass = this.kind === 'plasma' ? 30 : 1.2;
+        this.side = 'player';    // set by the firing ship
         this.life = LIFETIME[this.kind];
         this.dead = false;
     }
