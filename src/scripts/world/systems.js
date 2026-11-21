@@ -8,12 +8,13 @@
 // large sphere around the map), so the starmap can draw the three lines meeting exactly
 // at the world.
 
+// 36 constellations: one per triangle of the DHD (see ui/dhd.js).
 export const CONSTELLATIONS = [
     'Andromeda', 'Aquarius', 'Aries', 'Auriga', 'Bootes', 'Cancer', 'Canis Minor', 'Capricornus',
     'Centaurus', 'Cetus', 'Corona Australis', 'Crater', 'Equuleus', 'Eridanus', 'Gemini', 'Hydra',
-    'Leo', 'Leo Minor', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
+    'Leo', 'Libra', 'Lynx', 'Microscopium', 'Monoceros', 'Norma', 'Orion',
     'Pegasus', 'Perseus', 'Pisces', 'Piscis Austrinus', 'Sagittarius', 'Scorpius', 'Sculptor', 'Scutum',
-    'Serpens Caput', 'Sextans', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
+    'Serpens Caput', 'Taurus', 'Triangulum', 'Virgo', 'Aquila'
 ];
 
 // Map units: 1 unit = 1 light year. Constellations sit on a sphere around everything.
@@ -104,7 +105,7 @@ const normalize = (a) => scale(a, 1 / (Math.sqrt(dot(a, a)) || 1));
 const build = () => {
     const rnd = random(1994);
     const positions = new Array(CONSTELLATIONS.length);
-    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 17 anchors, 21 line ends
+    const anchorCount = CONSTELLATIONS.length - SYSTEMS.length * 3;   // 15 anchors, 21 line ends
 
     // Anchors: evenly spread over the sphere.
     for(let i = 0; i < anchorCount; i++) {

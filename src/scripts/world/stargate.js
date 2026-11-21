@@ -1,13 +1,13 @@
 // The Stargate in each system, and the DHD (dial-home device) next to it.
 //
-// Dialling: for each of the seven chevrons the inner ring spins to the next symbol, then
-// the chevron locks with a heavy clunk and lights up. After the seventh the unstable
-// vortex (the "kawoosh") bursts out of the gate, then settles into a rippling event
-// horizon. Small ships can fly through an outgoing wormhole; it closes after a while.
+// Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
+// sounds line up exactly: the ring starts rolling, chevrons 1-6 encode at slightly random
+// intervals while it turns, the ring stops, chevron 7 locks, and 1.2 s later the gate opens
+// with the kawoosh (7 s from pressing the dome), settling into a rippling event horizon.
+// Small ships can fly through an outgoing wormhole; it closes after a while.
 
 import { createSprite, glowSprite, stamp } from '../render/sprites';
-import { drawGlyph } from '../render/glyphs';
-import { CONSTELLATIONS } from './systems';
+import { drawGlyph, GLYPH_NAMES } from '../render/glyphs';
 import sounds from '../audio/audio';
 
 export const GATE_RADIUS = 78;        // outer ring
@@ -15,8 +15,13 @@ export const GATE_INNER = 58;         // event horizon radius (ships bigger than
 export const DHD_OFFSET = { x: 0, y: 220 };
 export const DHD_RANGE = 170;         // how close to the DHD you need to be to use it
 
-const SPIN_TIME = 0.75;               // ring spin per chevron
-const LOCK_TIME = 0.4;                // chevron locking
+// DHD dial timeline (seconds after the dome is pressed), from CAP's stargate_sg1 sequence.
+const RING_START = 0.1;               // ring starts rolling
+const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
+const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
+const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
+const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
+const KAWOOSH_DELAY = 0.25;           // opening sound to the vortex bursting out
 const KAWOOSH_TIME = 1.3;
 const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
 const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
@@ -25,7 +30,7 @@ const SYMBOLS = 39;
 
 const CHEVRON_ANGLES = [];
 for(let i = 0; i < 9; i++) CHEVRON_ANGLES.push(-Math.PI / 2 + i * Math.PI * 2 / 9);
-// Order in which chevrons lock: around the top first, like the show's gates.
+// Order in which chevrons light: chevrons 1-6 around the gate, then the top one (7).
 const LOCK_ORDER = [1, 2, 3, 6, 7, 8, 0];
 
 let ringSprite = null;
@@ -74,7 +79,9 @@ const buildSymbols = () => createSprite(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx =>
         const a = i * Math.PI * 2 / SYMBOLS;
         ctx.save();
         ctx.rotate(a);
-        drawGlyph(ctx, i < CONSTELLATIONS.length ? i : 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        // Slot 38 holds the point of origin (where the ring comes to rest after a dial).
+        if(i < GLYPH_NAMES.length) drawGlyph(ctx, GLYPH_NAMES[i], 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        else if(i === SYMBOLS - 1) drawGlyph(ctx, 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
         ctx.restore();
     }
 }, 2);
@@ -118,10 +125,31 @@ class Stargate {
         this.symbols = symbols;
         this.locked = 0;
         this.phase = 'spin';
-        this.timer = SPIN_TIME;
+        this.clock = 0;
+        this.ringOn = false;
+        // Chevrons 1-6 at random-ish intervals (CAP: 0.3-1.0 s each plus an even share, the
+        // last gap always the longest) that together span CHEVRONS_SPAN.
+        const gaps = [];
+        for(let i = 0; i < 5; i++) gaps.push(0.3 + Math.random() * 0.7);
+        gaps.push(1);
+        const total = gaps.reduce((a, b) => a + b, 0);
+        const delta = (CHEVRONS_SPAN - total) / 6;
+        this.chevronTimes = [];
+        let t = FIRST_CHEVRON;
+        for(let i = 0; i < 6; i++) {
+            this.chevronTimes.push(t);
+            t += gaps[i] + delta;
+        }
+        this.ringStop = t;
+        this.lockTime = t + RING_STOP_TO_LOCK;
+        this.openTime = this.lockTime + LOCK_TO_OPEN;
+        // The ring turns one way for the whole dial and comes to rest with the point of
+        // origin under the top chevron.
         this.spinFrom = this.spin;
-        this.spinTo = this.spinAngleFor(0);
-        sounds.gateSpin(true);
+        const finalAngle = -Math.PI / 2 + Math.PI / 2 - 38 * Math.PI * 2 / SYMBOLS;
+        let to = finalAngle;
+        while(to < this.spin + Math.PI * 4) to += Math.PI * 2;
+        this.spinTo = to;
         return true;
     }
 
@@ -135,26 +163,14 @@ class Stargate {
         sounds.horizon(true);
     }
 
-    close() {
+    // `silent`: shut down without the closing sound (the ship has just gone through).
+    close(silent) {
         if(this.state === 'idle' || this.state === 'closing') return;
         this.state = 'closing';
         this.timer = CLOSE_TIME;
         sounds.gateSpin(false);
         sounds.horizon(false);
-        sounds.gateClose();
-    }
-
-    spinAngleFor(index) {
-        const symbol = this.symbols[index];
-        const slot = typeof symbol === 'string' ? 38 : symbol;
-        // Bring the symbol to the chevron that will lock next, spinning alternate ways.
-        const chevron = CHEVRON_ANGLES[LOCK_ORDER[index]];
-        const base = chevron + Math.PI / 2 - slot * Math.PI * 2 / SYMBOLS;
-        const dir = index % 2 ? -1 : 1;
-        let target = base;
-        while(dir > 0 && target < this.spin + 1) target += Math.PI * 2;
-        while(dir < 0 && target > this.spin - 1) target -= Math.PI * 2;
-        return target;
+        sounds.gateClose(silent);
     }
 
     update(dt) {
@@ -163,28 +179,44 @@ class Stargate {
         this.timer -= dt;
 
         if(this.state === 'dialing') {
-            if(this.phase === 'spin') {
-                const t = 1 - Math.max(0, this.timer) / SPIN_TIME;
-                const ease = t * t * (3 - 2 * t);
-                this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
-                if(this.timer <= 0) {
-                    this.phase = 'lock';
-                    this.timer = LOCK_TIME;
-                    this.locked++;
-                    sounds.chevronLock(this.locked === 7);
-                }
-            } else if(this.timer <= 0) {
-                if(this.locked >= 7) {
-                    sounds.gateSpin(false);
-                    this.state = 'kawoosh';
-                    this.timer = KAWOOSH_TIME;
-                    sounds.kawoosh();
-                } else {
-                    this.phase = 'spin';
-                    this.timer = SPIN_TIME;
-                    this.spinFrom = this.spin;
-                    this.spinTo = this.spinAngleFor(this.locked);
-                }
+            const t = (this.clock += dt);
+            if(!this.ringOn && t >= RING_START && t < this.ringStop) {
+                this.ringOn = true;
+                sounds.gateSpin(true);
+            }
+            // Ring: ease in, roll, ease out to a stop at ringStop.
+            const span = this.ringStop - RING_START;
+            const u = Math.max(0, Math.min(1, (t - RING_START) / span));
+            const ease = u < 0.12 ? (u * u) / (2 * 0.12 * 0.88) :
+                u > 0.88 ? 1 - ((1 - u) * (1 - u)) / (2 * 0.12 * 0.88) :
+                (u - 0.06) / 0.88;
+            this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
+            // Chevrons 1-6 encode while the ring turns.
+            while(this.locked < 6 && t >= this.chevronTimes[this.locked]) {
+                this.locked++;
+                this.phase = 'encode';
+                this.lockFlash = 0.3;
+                sounds.chevronLock(false);
+            }
+            // Ring stopped: its sound stops as chevron 7 locks.
+            if(this.locked === 6 && t >= this.lockTime) {
+                this.locked = 7;
+                this.phase = 'lock';
+                this.lockFlash = 0.6;
+                sounds.gateSpin(false);
+                this.ringOn = false;
+                sounds.chevronLock(true);
+            }
+            if(this.lockFlash > 0) this.lockFlash -= dt;
+            if(t >= this.openTime) {
+                this.state = 'opening';
+                this.timer = KAWOOSH_DELAY;
+                sounds.kawoosh();
+            }
+        } else if(this.state === 'opening') {
+            if(this.timer <= 0) {
+                this.state = 'kawoosh';
+                this.timer = KAWOOSH_TIME;
             }
         } else if(this.state === 'kawoosh') {
             this.kawoosh = 1 - Math.max(0, this.timer) / KAWOOSH_TIME;
@@ -228,7 +260,7 @@ class Stargate {
         CHEVRON_ANGLES.forEach((a, i) => {
             const order = LOCK_ORDER.indexOf(i);
             const lit = order !== -1 && order < this.locked;
-            const engaging = this.state === 'dialing' && this.phase === 'lock' && order === this.locked - 1;
+            const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
             ctx.save();
             ctx.rotate(a + Math.PI / 2);
             ctx.translate(0, -R + 2);

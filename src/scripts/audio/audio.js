@@ -419,12 +419,13 @@ const SAMPLE_FILES = {
         'stargate/dhd/sg1/press_4.mp3', 'stargate/dhd/sg1/press_5.mp3', 'stargate/dhd/sg1/press_6.mp3', 'stargate/dhd/sg1/press_7.mp3'],
     dhd_dome: ['stargate/stargate/dhd/dhd_usual_dial.wav'],
     dial_fail: ['stargate/dial_fail_sg1.mp3'],
-    gate_spin: ['stargate/gate_roll.mp3'],
-    chevron: ['stargate/sg1/chevron.mp3', 'stargate/sg1/chevron_2.mp3'],
-    chevron_lock: ['stargate/sg1/lock.mp3'],
+    // Same files CAP's Milky Way gate uses for a DHD dial (stargate_sg1, event_horizon).
+    gate_spin: ['alexalx/stargate/gate_roll_long.wav'],
+    chevron: ['stargate/chevron_dhd.mp3'],
+    chevron_lock: ['stargate/chevron_lock.mp3'],
     kawoosh: ['stargate/sg1/open.mp3'],
     horizon: ['stargate/wormhole_loop.wav'],
-    gate_enter: ['stargate/stargate/eh/eh_go_1.wav', 'stargate/stargate/eh/eh_go_2.wav', 'stargate/stargate/eh/eh_go_3.wav'],
+    gate_enter: ['stargate/teleport.mp3', 'stargate/teleport_2.mp3', 'stargate/teleport_3.mp3', 'stargate/teleport_4.mp3'],
     wormhole: ['stargate/gate_travel.mp3'],
     gate_close: ['stargate/gate_close.mp3'],
     hyper_window: ['tech/hyperwindow.wav'],
@@ -444,6 +445,7 @@ const SAMPLE_FILES = {
 const LOOPING_SAMPLES = { gate_spin: true, horizon: true };
 const buffers = {};
 const loops = {};
+const lastShots = {};
 let samplesRequested = false;
 
 function loadSamples(c) {
@@ -498,9 +500,20 @@ const playSample = (name, volume, options) => {
     if(LOOPING_SAMPLES[name]) {
         source.loop = true;
         loops[name] = { source: source, gain: gain };
+    } else {
+        lastShots[name] = { source: source, gain: gain };
     }
     source.start();
     return true;
+};
+
+// Fade out the most recent one-shot of `name` (e.g. the wormhole ride on arrival).
+const cutSample = (name, fade) => {
+    const shot = lastShots[name];
+    if(!shot || !ac) return;
+    delete lastShots[name];
+    shot.gain.gain.setTargetAtTime(0.0001, ac.currentTime, fade || 0.15);
+    try { shot.source.stop(ac.currentTime + (fade || 0.15) * 6); } catch(e) { /* already stopped */ }
 };
 
 const stopSample = (name) => {
@@ -653,12 +666,13 @@ const gateSounds = {
             gateSpinVoice.stop();
             return;
         }
-        if(!playSample('gate_spin', 0.7)) gateSpinVoice.start();
+        if(!playSample('gate_spin', 0.9, { rate: 0.97 })) gateSpinVoice.start();
     },
 
     // Chevron locking: a heavy mechanical "ka-chunk" with a resonant metal clang.
     chevronLock(final) {
-        if(playSample(final ? 'chevron_lock' : 'chevron', final ? 1 : 0.85, { wet: 0.15 })) return;
+        // CAP plays each with a random pitch of 97-104%.
+        if(playSample(final ? 'chevron_lock' : 'chevron', 1, { rate: 0.97 + Math.random() * 0.07 })) return;
         const c = context();
         if(!c) return;
         noise(c, 0.08, 'lowpass', 2500, 400, heavy(c, 0.5, 0.001, 0.08, 0.3));
@@ -676,7 +690,7 @@ const gateSounds = {
 
     // The kawoosh: a huge rushing surge that splashes out and is sucked back in.
     kawoosh() {
-        if(playSample('kawoosh', 1, { wet: 0.2 })) return;
+        if(playSample('kawoosh', 1, { rate: 0.98 + Math.random() * 0.04 })) return;
         const c = context();
         if(!c) return;
         sweep(c, 1.4, 150, 2200, 1.2, heavy(c, 0.55, 0.12, 1.3, 0.7));
@@ -697,13 +711,12 @@ const gateSounds = {
             horizonVoice.stop();
             return;
         }
-        if(!playSample('horizon', 0.6)) horizonVoice.start();
+        if(!playSample('horizon', 0.7)) horizonVoice.start();
     },
 
     // Riding the wormhole: a long, roaring, flanging rush.
     wormhole() {
-        const entered = playSample('gate_enter', 0.9);
-        if(playSample('wormhole', 1) || entered) return;
+        if(playSample('wormhole', 1)) return;
         const c = context();
         if(!c) return;
         sweep(c, 3.4, 300, 2600, 1.5, heavy(c, 0.45, 0.3, 3.1, 0.6));
@@ -712,8 +725,20 @@ const gateSounds = {
         tone(c, 'sine', 48, 70, 3.2, heavy(c, 0.5, 0.3, 3, 0.4));
     },
 
-    gateClose() {
-        if(playSample('gate_close', 0.9)) return;
+    // Something passing through the event horizon (CAP's teleport splash).
+    gateEnter() {
+        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
+    },
+
+    // Arriving: cut the wormhole ride short and splash out of the horizon.
+    gateArrive() {
+        cutSample('wormhole', 0.12);
+        playSample('gate_enter', 1, { rate: 0.9 + Math.random() * 0.2 });
+    },
+
+    gateClose(silent) {
+        if(silent) return;
+        if(playSample('gate_close', 1, { rate: 0.97 + Math.random() * 0.06 })) return;
         const c = context();
         if(!c) return;
         sweep(c, 0.8, 1800, 200, 2, envelope(c, 0.25, 0.01, 0.8, 0.6));

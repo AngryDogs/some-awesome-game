@@ -52,8 +52,10 @@ const SHAPES = {
     'Leo':               [[[0.3, -0.85], [0.55, -0.5], [0.0, 0.2], [0.1, 0.85]], [[0.0, 0.2], [-0.45, -0.05]]]                                                                  // 39
 };
 
-// Chart order (glyphs 2-39), used to lay out the DHD keys.
-export const GLYPH_ORDER = Object.keys(SHAPES).map(name => CONSTELLATIONS.indexOf(name));
+// All chart glyphs 2-39 by name (the gate's ring shows every one), and the constellations
+// used for addresses in chart order (the DHD's tiles).
+export const GLYPH_NAMES = Object.keys(SHAPES);
+export const GLYPH_ORDER = GLYPH_NAMES.map(name => CONSTELLATIONS.indexOf(name)).filter(i => i !== -1);
 
 // Glyph 1: the pyramid with the sun above it. Other gates' points of origin vary the crown.
 const origin = (index) => {
@@ -73,7 +75,8 @@ const cache = {};
 const shapeOf = (id) => {
     if(cache[id]) return cache[id];
     let shape;
-    if(typeof id === 'string') shape = origin(parseInt(id.split(':')[1], 10) || 0);
+    if(typeof id === 'string' && id.indexOf('origin:') === 0) shape = origin(parseInt(id.split(':')[1], 10) || 0);
+    else if(typeof id === 'string') shape = { lines: SHAPES[id] || [[[0, -0.8], [0, 0.8]]], sun: null };
     else shape = { lines: SHAPES[CONSTELLATIONS[id]] || [[[0, -0.8], [0, 0.8]]], sun: null };
     cache[id] = shape;
     return shape;
@@ -121,27 +124,64 @@ export const drawGlyph = (ctx, id, x, y, size, color, lineWidth, outline) => {
     ctx.restore();
 };
 
-// The constellation as a star figure: stars at the glyph's vertices joined by faint lines.
-export const drawConstellation = (ctx, id, x, y, size, color, starColor) => {
+// Star figure of a constellation: the glyph's vertices are its main stars, plus a few
+// fainter stars branching off them (fixed per constellation), like a star chart.
+const figures = {};
+const figureOf = (id) => {
+    if(figures[id]) return figures[id];
     const shape = shapeOf(id);
+    let seed = (typeof id === 'number' ? id + 1 : 99) * 2654435761 >>> 0;
+    const rand = () => {
+        seed = (seed + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const stars = [];
+    const links = [];
+    shape.lines.forEach(line => {
+        line.forEach((p, i) => {
+            stars.push({ x: p[0], y: p[1], big: i === 0 || i === line.length - 1 });
+            if(i > 0) links.push([stars.length - 2, stars.length - 1]);
+        });
+    });
+    const main = stars.length;
+    const extra = 2 + Math.floor(rand() * 3);
+    for(let i = 0; i < extra; i++) {
+        const from = stars[Math.floor(rand() * main)];
+        const a = rand() * Math.PI * 2;
+        const d = 0.25 + rand() * 0.3;
+        const x = Math.max(-0.95, Math.min(0.95, from.x + Math.cos(a) * d));
+        const y = Math.max(-0.95, Math.min(0.95, from.y + Math.sin(a) * d));
+        stars.push({ x: x, y: y, big: false });
+        if(rand() < 0.75) links.push([stars.indexOf(from), stars.length - 1]);
+    }
+    figures[id] = { stars: stars, links: links };
+    return figures[id];
+};
+
+// The constellation as a star figure (dots joined by thin lines), centred at (x, y).
+export const drawConstellation = (ctx, id, x, y, size, color, starColor, dotScale) => {
+    const figure = figureOf(id);
     const s = size / 2;
+    const k = dotScale || 1;
     ctx.save();
     ctx.translate(x, y);
     ctx.strokeStyle = color;
-    ctx.lineWidth = 0.8;
+    ctx.lineWidth = Math.max(0.8, 0.8 * k);
     ctx.beginPath();
-    shape.lines.forEach(line => line.forEach((p, i) => {
-        if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
-        else ctx.lineTo(p[0] * s, p[1] * s);
-    }));
+    figure.links.forEach(link => {
+        const a = figure.stars[link[0]];
+        const b = figure.stars[link[1]];
+        ctx.moveTo(a.x * s, a.y * s);
+        ctx.lineTo(b.x * s, b.y * s);
+    });
     ctx.stroke();
     ctx.fillStyle = starColor || color;
-    shape.lines.forEach(line => line.forEach((p, i) => {
-        // Line ends are the brighter stars.
-        const r = (i === 0 || i === line.length - 1) ? 1.9 : 1.4;
+    figure.stars.forEach(star => {
         ctx.beginPath();
-        ctx.arc(p[0] * s, p[1] * s, r, 0, Math.PI * 2);
+        ctx.arc(star.x * s, star.y * s, (star.big ? 1.9 : 1.4) * k, 0, Math.PI * 2);
         ctx.fill();
-    }));
+    });
     ctx.restore();
 };
