@@ -60,7 +60,7 @@ const use3D = () => can3D() && !isTouchDevice();
 startGame.addEventListener('click', () => {
     goFullscreen();
     menu.style.visibility = 'hidden';
-    if(use3D()) start3D();
+    if(use3D()) start3D(null, () => constructGameBoard());
     else constructGameBoard();
 });
 

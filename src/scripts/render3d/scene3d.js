@@ -21,14 +21,23 @@ const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
 // Same light direction the asteroid surface art is painted with (upper left), lifted up.
 const LIGHT = { x: -0.55, y: 0.65, z: 0.85 };
 
+// Checked once, and the probe context is released straight away: browsers (Safari above
+// all) only allow a few live WebGL contexts and start killing them when there are more.
+let webglChecked = null;
 export const webglAvailable = () => {
+    if(webglChecked !== null) return webglChecked;
+    webglChecked = false;
     if(!window.THREE) return false;
     try {
         const canvas = document.createElement('canvas');
-        return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        webglChecked = !!gl;
+        const lose = gl && gl.getExtension('WEBGL_lose_context');
+        if(lose) lose.loseContext();
     } catch(e) {
-        return false;
+        webglChecked = false;
     }
+    return webglChecked;
 };
 
 const parseRgb = (text) => text.split(',').map(v => parseFloat(v) / 255);
@@ -210,7 +219,7 @@ class Scene3D {
         const THREE = window.THREE;
         this.THREE = THREE;
         this.renderer = new THREE.WebGLRenderer({
-            antialias: true, alpha: true, powerPreference: 'high-performance',
+            antialias: true, alpha: true,
             failIfMajorPerformanceCaveat: !!requireHardware
         });
         this.renderer.setClearColor(0x000000, 0);

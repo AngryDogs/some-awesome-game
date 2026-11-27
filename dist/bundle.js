@@ -6437,14 +6437,23 @@ const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
 // Same light direction the asteroid surface art is painted with (upper left), lifted up.
 const LIGHT = { x: -0.55, y: 0.65, z: 0.85 };
 
+// Checked once, and the probe context is released straight away: browsers (Safari above
+// all) only allow a few live WebGL contexts and start killing them when there are more.
+let webglChecked = null;
 const webglAvailable = () => {
+    if(webglChecked !== null) return webglChecked;
+    webglChecked = false;
     if(!window.THREE) return false;
     try {
         const canvas = document.createElement('canvas');
-        return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        webglChecked = !!gl;
+        const lose = gl && gl.getExtension('WEBGL_lose_context');
+        if(lose) lose.loseContext();
     } catch(e) {
-        return false;
+        webglChecked = false;
     }
+    return webglChecked;
 };
 /* harmony export (immutable) */ __webpack_exports__["c"] = webglAvailable;
 
@@ -6630,7 +6639,7 @@ class Scene3D {
         const THREE = window.THREE;
         this.THREE = THREE;
         this.renderer = new THREE.WebGLRenderer({
-            antialias: true, alpha: true, powerPreference: 'high-performance',
+            antialias: true, alpha: true,
             failIfMajorPerformanceCaveat: !!requireHardware
         });
         this.renderer.setClearColor(0x000000, 0);
@@ -10508,7 +10517,7 @@ const use3D = () => Object(__WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__[
 startGame.addEventListener('click', () => {
     goFullscreen();
     menu.style.visibility = 'hidden';
-    if(use3D()) Object(__WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__["b" /* start3D */])();
+    if(use3D()) Object(__WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__["b" /* start3D */])(null, () => Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])());
     else Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
 });
 
@@ -14163,6 +14172,10 @@ let height = 0;
 let pixelRatio = 1;
 let initialized = false;
 let onExit = null;
+let onFallback = null;
+let glLost = false;
+let glLostAt = 0;
+let glErrors = 0;
 const mouse = { x: 0, y: 0, left: false, right: false };
 const keys = {};
 const domHud = {};
@@ -14179,9 +14192,24 @@ const initialize = () => {
     initialized = true;
     T = window.THREE;
     const board = document.getElementById('gameboard');
-    renderer = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    // No 'high-performance' GPU request: on Macs with two GPUs Safari may switch GPUs for
+    // it and lose the WebGL context.
+    renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.className = 'game3d-layer';
+    // If the browser takes the graphics context away, wait for it to come back instead of
+    // failing every frame (Three.js rebuilds everything when it is restored).
+    renderer.domElement.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        glLost = true;
+        glLostAt = performance.now();
+        if(state) banner('Graphics reset by the browser: restoring...', 3);
+    }, false);
+    renderer.domElement.addEventListener('webglcontextrestored', () => {
+        glLost = false;
+        glErrors = 0;
+        if(state) banner('Graphics restored', 1.5);
+    }, false);
     board.appendChild(renderer.domElement);
     hudCanvas = document.createElement('canvas');
     hudCanvas.className = 'game3d-hud';
@@ -15690,7 +15718,16 @@ const frame = (now) => {
         } else {
             elapsed = 0;
         }
-        render(elapsed);
+        if(glLost) {
+            // Still gone after a few seconds: give up on 3D and switch to the classic game.
+            if(performance.now() - glLostAt > 4000) {
+                fallBackTo2D('The 3D view lost its graphics context');
+                return;
+            }
+        } else {
+            render(elapsed);
+            glErrors = 0;
+        }
         if(state.gameOverTimer >= GAME_OVER_DELAY) {
             Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["k" /* loseCargo */])();
             endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
@@ -15698,14 +15735,31 @@ const frame = (now) => {
         }
     } catch(error) {
         if(window.console) console.error('3D frame error:', error);
+        glErrors++;
+        // Graphics errors that keep coming (e.g. a lost WebGL context): use the 2D game.
+        if(glErrors >= 3 || (renderer.getContext().isContextLost && renderer.getContext().isContextLost())) {
+            fallBackTo2D((error && error.message) || String(error));
+            return;
+        }
         if(state) banner('Error: ' + ((error && error.message) || error), 4);
     }
     if(state) frameId = requestAnimationFrame(frame);
 };
 
+const fallBackTo2D = (reason) => {
+    if(window.console) console.warn('3D game stopped, switching to classic 2D:', reason);
+    if(!state) return;
+    endGame('');
+    document.getElementById('menu').style.visibility = 'hidden';
+    if(onFallback) onFallback();
+};
+
 // Launch the 3D game from the menu. `exit` is called when it returns to the menu.
-const start3D = (exit) => {
+// `fallback` starts the classic 2D game if the 3D view can't run on this browser.
+const start3D = (exit, fallback) => {
     onExit = exit || null;
+    onFallback = fallback || null;
+    glErrors = 0;
     if(!initialized) initialize();
     __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].unlock();
     renderer.domElement.style.display = '';
