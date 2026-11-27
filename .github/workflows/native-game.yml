@@ -52,6 +52,7 @@ jobs:
           mkdir -p dist/SomeAwesomeGame
           cp target/release/some-awesome-game dist/SomeAwesomeGame/
           cp README.md assets/sounds/CREDITS.txt dist/SomeAwesomeGame/
+          cp assets/models/CREDITS.txt dist/SomeAwesomeGame/MODEL-CREDITS.txt
           tar -C dist -czf SomeAwesomeGame-linux-x86_64.tar.gz SomeAwesomeGame
       - uses: actions/upload-artifact@v4
         with:

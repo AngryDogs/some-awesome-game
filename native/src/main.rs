@@ -5,6 +5,7 @@
 mod data;
 mod hud;
 mod meshes;
+mod models;
 mod profile;
 mod sim;
 mod sound;
@@ -54,6 +55,8 @@ pub struct DialSequence {
 fn main() {
     let profile = Profile::load();
     let mut app = App::new();
+    // Imported 3D models are served from memory; the source must exist before the asset plugin.
+    models::register(&mut app);
     app
         .add_plugins(
             DefaultPlugins
@@ -79,7 +82,7 @@ fn main() {
         .init_resource::<hud::Mouse>()
         .init_resource::<ui::Pending>()
         .init_resource::<ui::Yard>()
-        .add_systems(PreStartup, (sound::setup_sounds, visuals::setup_art))
+        .add_systems(PreStartup, (sound::setup_sounds, visuals::setup_art, models::load_models))
         .add_systems(Startup, (visuals::setup_scene, configure_gizmos))
         .add_systems(OnEnter(Screen::Menu), (ui::spawn_menu, show_cursor))
         .add_systems(OnExit(Screen::Menu), ui::despawn::<ui::MenuRoot>)
@@ -111,6 +114,7 @@ fn main() {
                 ui::rebuild_overlay.run_if(in_state(Screen::Flight)),
                 (ui::button_visuals, ui::collect_actions, ui::handle_actions).chain(),
                 menu_keys,
+                (models::fix_new_parts, models::assign_chevrons).chain(),
                 sound::play_sounds,
                 sound::update_loops,
                 testdrive::drive,

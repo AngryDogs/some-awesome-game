@@ -2,7 +2,16 @@
 name = "some-awesome-game"
 version = "0.1.0"
 edition = "2021"
+default-run = "some-awesome-game"
 description = "Stargate-themed 3D space mining and combat game (native, GPU accelerated)"
+
+# Development tool that renders a glTF model from several angles: cargo run --features dev-tools --bin model_viewer
+[[bin]]
+name = "model_viewer"
+required-features = ["dev-tools"]
+
+[features]
+dev-tools = []
 
 [dependencies]
 # Bevy renders with wgpu: Metal on macOS, Vulkan on Linux.
@@ -10,7 +19,8 @@ bevy = { version = "0.16", default-features = false, features = [
     "std", "bevy_asset", "bevy_audio", "bevy_color", "bevy_core_pipeline", "bevy_gizmos", "bevy_pbr",
     "bevy_render", "bevy_state", "bevy_text", "bevy_ui", "bevy_window", "bevy_winit", "bevy_log",
     "default_font", "hdr", "multi_threaded", "tonemapping_luts", "ktx2", "zstd", "smaa_luts",
-    "mp3", "wav", "x11", "wayland", "sysinfo_plugin", "png"
+    "mp3", "wav", "x11", "wayland", "sysinfo_plugin", "png",
+    "bevy_gltf", "bevy_scene", "jpeg"
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

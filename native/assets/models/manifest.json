@@ -1,0 +1,110 @@
+{
+  "x302": {
+    "size": [
+      1,
+      0.3606,
+      1.6157
+    ],
+    "inner_radius": 0.0117,
+    "title": "302 - SG1",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "url": "https://sketchfab.com/3d-models/5aa8f0a3634c44d2ae42a04c44437ec3"
+  },
+  "glider": {
+    "size": [
+      1,
+      0.6774,
+      2.3217
+    ],
+    "inner_radius": 0.0086,
+    "title": "Inspired by Stargate SG-1: Goa'Uld Death Glider",
+    "author": "ska-ara",
+    "license": "CC BY-NC-SA 4.0",
+    "url": "https://sketchfab.com/3d-models/814874dcf1334df38727c2132454787d"
+  },
+  "jumper": {
+    "size": [
+      1,
+      0.2883,
+      0.594
+    ],
+    "inner_radius": 0.0576,
+    "title": "Puddle Jumper - Stargate SG1",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "url": "https://sketchfab.com/3d-models/1bcbde7bf7044592a5b444ffb7c0a658"
+  },
+  "x303": {
+    "size": [
+      1,
+      0.3777,
+      0.4322
+    ],
+    "inner_radius": 0.0345,
+    "title": "X303 - SG",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "url": "https://sketchfab.com/3d-models/75cdc6dbb9f94b0bbab2c611e65381ca"
+  },
+  "alkesh": {
+    "size": [
+      1,
+      0.3931,
+      0.7016
+    ],
+    "inner_radius": 0.0073,
+    "title": "Inspired By Stargate SG-1: Goa'Uld Alkesh",
+    "author": "ska-ara",
+    "license": "CC BY-NC-SA 4.0",
+    "url": "https://sketchfab.com/3d-models/a2c2858c553f42d7a1d0b11af4196411"
+  },
+  "x304": {
+    "size": [
+      1,
+      0.2121,
+      0.5111
+    ],
+    "inner_radius": 0.0024,
+    "title": "Stargate BC - 304",
+    "author": "Ace_Fighter",
+    "license": "CC BY-NC 4.0",
+    "url": "https://sketchfab.com/3d-models/2b9a79284ea24a4485d5cbff48159524"
+  },
+  "hatak": {
+    "size": [
+      1,
+      0.4784,
+      1.0212
+    ],
+    "inner_radius": 0.0024,
+    "title": "Ha'tak",
+    "author": "TaurWing",
+    "license": "CC BY 4.0",
+    "url": "https://sketchfab.com/3d-models/b8134aff08d645d8b72869f69d1989df"
+  },
+  "gate": {
+    "size": [
+      1,
+      0.9997,
+      0.0773
+    ],
+    "inner_radius": 0.3726,
+    "title": "Milky Way Stargate | Stargate SG-1",
+    "author": "anquietas-sys",
+    "license": "CC BY-NC 4.0",
+    "url": "https://sketchfab.com/3d-models/517b56e322a548ac81dd8454dbbd95bf"
+  },
+  "atlantis": {
+    "size": [
+      1,
+      0.3843,
+      1.0475
+    ],
+    "inner_radius": 0.0013,
+    "title": "Atlantis City Ship",
+    "author": "Ace_Fighter",
+    "license": "CC BY-NC 4.0",
+    "url": "https://sketchfab.com/3d-models/a4d4105890994f97b60632dcadb33875"
+  }
+}

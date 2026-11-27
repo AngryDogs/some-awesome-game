@@ -1,0 +1,17 @@
+{
+  "name": "some-awesome-game-models",
+  "private": true,
+  "type": "module",
+  "description": "Downloads and prepares the Sketchfab models used by the native game",
+  "scripts": {
+    "download": "node download-models.mjs downloads",
+    "prepare-models": "node prepare-models.mjs downloads"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
+    "meshoptimizer": "^1.3.0",
+    "sharp": "^0.35.5"
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "x302": {
+    "uid": "5aa8f0a3634c44d2ae42a04c44437ec3",
+    "title": "302 - SG1",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "forward": "+z",
+    "triangles": 20000
+  },
+  "glider": {
+    "uid": "814874dcf1334df38727c2132454787d",
+    "title": "Inspired by Stargate SG-1: Goa'Uld Death Glider",
+    "author": "ska-ara",
+    "license": "CC BY-NC-SA 4.0",
+    "forward": "+z"
+  },
+  "jumper": {
+    "uid": "1bcbde7bf7044592a5b444ffb7c0a658",
+    "title": "Puddle Jumper - Stargate SG1",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "forward": "+z"
+  },
+  "x303": {
+    "uid": "75cdc6dbb9f94b0bbab2c611e65381ca",
+    "title": "X303 - SG",
+    "author": "rossrobotics",
+    "license": "CC BY 4.0",
+    "forward": "+x",
+    "triangles": 30000
+  },
+  "alkesh": {
+    "uid": "a2c2858c553f42d7a1d0b11af4196411",
+    "title": "Inspired By Stargate SG-1: Goa'Uld Alkesh",
+    "author": "ska-ara",
+    "license": "CC BY-NC-SA 4.0",
+    "forward": "-x"
+  },
+  "x304": {
+    "uid": "2b9a79284ea24a4485d5cbff48159524",
+    "title": "Stargate BC - 304",
+    "author": "Ace_Fighter",
+    "license": "CC BY-NC 4.0",
+    "forward": "-x",
+    "triangles": 40000,
+    "texture": 1024,
+    "sloppy": true
+  },
+  "hatak": {
+    "uid": "b8134aff08d645d8b72869f69d1989df",
+    "title": "Ha'tak",
+    "author": "TaurWing",
+    "license": "CC BY 4.0",
+    "forward": "-z",
+    "texture": 1024
+  },
+  "gate": {
+    "uid": "517b56e322a548ac81dd8454dbbd95bf",
+    "title": "Milky Way Stargate | Stargate SG-1",
+    "author": "anquietas-sys",
+    "license": "CC BY-NC 4.0",
+    "forward": "+x",
+    "texture": 512
+  },
+  "atlantis": {
+    "uid": "a4d4105890994f97b60632dcadb33875",
+    "title": "Atlantis City Ship",
+    "author": "Ace_Fighter",
+    "license": "CC BY-NC 4.0",
+    "forward": "+x",
+    "texture": 1024
+  }
+}

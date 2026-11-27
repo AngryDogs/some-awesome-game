@@ -175,7 +175,7 @@ pub fn spawn_menu(mut commands: Commands, fonts: Res<Fonts>, profile: Res<Profil
         button(root, "Quit", Action::Quit, true, Val::Px(320.0));
         root.spawn(Node { height: Val::Px(20.0), ..default() });
         label(root, format!("Credits {:.0}   Ship: {}", profile.credits, data().hull(&profile.hull).name), 15.0, Color::srgb(0.6, 0.7, 0.8));
-        label(root, "Sounds: Stargate Carter Addon Pack (CC BY-NC-SA 4.0)", 12.0, Color::srgb(0.45, 0.5, 0.6));
+        label(root, "Sounds: Stargate Carter Addon Pack (CC BY-NC-SA 4.0).  3D models: Sketchfab artists rossrobotics, ska-ara, Ace_Fighter, TaurWing, anquietas-sys (CC BY / BY-NC / BY-NC-SA).", 12.0, Color::srgb(0.45, 0.5, 0.6));
     });
 }
 

@@ -38,7 +38,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target,id=sag-linux-target \
     cargo build --release --locked \
     && mkdir -p /out/SomeAwesomeGame \
-    && cp target/release/some-awesome-game README.md assets/sounds/CREDITS.txt /out/SomeAwesomeGame/
+    && cp target/release/some-awesome-game README.md assets/sounds/CREDITS.txt /out/SomeAwesomeGame/ \
+    && cp assets/models/CREDITS.txt /out/SomeAwesomeGame/MODEL-CREDITS.txt
 
 FROM scratch AS linux
 COPY --from=linux-build /out/ /
@@ -93,7 +94,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
        '  <key>LSMinimumSystemVersion</key><string>11.0</string>' \
        '  <key>NSHighResolutionCapable</key><true/>' \
        '</dict></plist>' > "$APP/Contents/Info.plist" \
-    && cp assets/sounds/CREDITS.txt /out/
+    && cp assets/sounds/CREDITS.txt /out/ \
+    && cp assets/models/CREDITS.txt /out/MODEL-CREDITS.txt
 
 FROM scratch AS macos
 COPY --from=macos-build /out/ /

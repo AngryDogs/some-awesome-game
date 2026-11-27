@@ -34,8 +34,14 @@ pub struct ShieldVis(pub u64, pub Handle<StandardMaterial>);
 pub struct EngineGlow(pub u64, pub f32);
 #[derive(Component)]
 pub struct SystemVis;
+/// The gate's spinning glyph ring. `base` is the imported model's own rotation for that
+/// part (None for the built-in ring); `axis` is the gate's axis in the part's own frame,
+/// found once its world transform is known.
 #[derive(Component)]
-pub struct GateSpin;
+pub struct GateSpin {
+    pub base: Option<Quat>,
+    pub axis: Option<Vec3>,
+}
 #[derive(Component)]
 pub struct ChevronLamp(pub usize, pub Handle<StandardMaterial>);
 #[derive(Component)]
@@ -252,6 +258,7 @@ pub fn build_system(
     mut images: ResMut<Assets<Image>>,
     old: Query<Entity, With<SystemVis>>,
     art: Res<Art>,
+    models: Res<crate::models::Models>,
 ) {
     if !sim.system_changed {
         return;
@@ -282,10 +289,19 @@ pub fn build_system(
     commands
         .spawn((Transform::from_translation(sim.gate.pos), Visibility::Visible, SystemVis))
         .with_children(|g| {
-            g.spawn((Mesh3d(meshes.add(meshes::gate_ring(68.0, GATE_RADIUS + 2.0, 12.0))), MeshMaterial3d(stone.clone()), Transform::default()));
-            g.spawn((Mesh3d(meshes.add(meshes::gate_ring(GATE_INNER - 1.0, 68.5, 9.0))), MeshMaterial3d(stone.clone()), Transform::default(), GateSpin));
+            // The imported Stargate, sized so its opening matches the event horizon. Its
+            // glyph ring and chevron lights are found once spawned (models::fix_new_parts).
+            let gate_model = models.scene("gate").zip(crate::models::manifest().get("gate"));
+            let has_gate_model = gate_model.is_some();
+            if let Some((scene, info)) = gate_model {
+                let diameter = GATE_INNER / info.inner_radius;
+                g.spawn((SceneRoot(scene), Transform::from_scale(Vec3::splat(diameter)), crate::models::GateModel));
+            } else {
+                g.spawn((Mesh3d(meshes.add(meshes::gate_ring(68.0, GATE_RADIUS + 2.0, 12.0))), MeshMaterial3d(stone.clone()), Transform::default()));
+                g.spawn((Mesh3d(meshes.add(meshes::gate_ring(GATE_INNER - 1.0, 68.5, 9.0))), MeshMaterial3d(stone.clone()), Transform::default(), GateSpin { base: None, axis: None }));
+            }
             let chev = meshes.add(meshes::chevron());
-            for i in 0..9 {
+            for i in (0..9).filter(|_| !has_gate_model) {
                 let a = FRAC_PI_2 + i as f32 * TAU / 9.0;
                 let lamp = mats.add(glow_material(lamp_off, 1.0));
                 // Chevrons stand proud of both faces with a lamp on each side, so the
@@ -325,9 +341,14 @@ pub fn build_system(
         commands
             .spawn((Transform::from_translation(st), Visibility::Visible, SystemVis))
             .with_children(|c| {
-                c.spawn((Mesh3d(meshes.add(a.metal)), MeshMaterial3d(metal.clone()), Transform::default()));
-                c.spawn((Mesh3d(meshes.add(a.towers)), MeshMaterial3d(metal), Transform::default()));
-                c.spawn((Mesh3d(meshes.add(a.glow)), MeshMaterial3d(glow), Transform::default()));
+                if let Some(scene) = models.scene("atlantis") {
+                    // The imported city ship, as wide as the city shield allows.
+                    c.spawn((SceneRoot(scene), Transform::from_xyz(0.0, -60.0, 0.0).with_scale(Vec3::splat(CITY_SHIELD * 1.85))));
+                } else {
+                    c.spawn((Mesh3d(meshes.add(a.metal)), MeshMaterial3d(metal.clone()), Transform::default()));
+                    c.spawn((Mesh3d(meshes.add(a.towers)), MeshMaterial3d(metal), Transform::default()));
+                    c.spawn((Mesh3d(meshes.add(a.glow)), MeshMaterial3d(glow), Transform::default()));
+                }
                 c.spawn((Mesh3d(art.sphere.clone()), MeshMaterial3d(bubble), Transform::from_xyz(0.0, -70.0, 0.0).with_scale(Vec3::new(CITY_SHIELD, CITY_SHIELD * 0.55, CITY_SHIELD))));
                 c.spawn((PointLight { color: Color::srgb(0.7, 0.8, 1.0), intensity: 4.0e7, range: 1800.0, radius: 80.0, ..default() }, Transform::from_xyz(0.0, 120.0, 0.0)));
             });
@@ -448,6 +469,7 @@ pub fn sync_ships(
     mut commands: Commands,
     sim: Res<Sim>,
     art: Res<Art>,
+    models: Res<crate::models::Models>,
     mut mats: ResMut<Assets<StandardMaterial>>,
     mut q: Query<(Entity, &ShipVis, &mut Transform, &mut Visibility)>,
 ) {
@@ -484,8 +506,16 @@ pub fn sync_ships(
         commands
             .spawn((Transform::from_translation(s.pos).with_rotation(s.rot), Visibility::Visible, ShipVis(s.id, h.id.clone())))
             .with_children(|p| {
-                p.spawn((Mesh3d(body), MeshMaterial3d(body_mat), Transform::default()));
-                p.spawn((Mesh3d(edges), MeshMaterial3d(edge_mat), Transform::default()));
+                // The imported model when there is one, otherwise the hull built from its line art.
+                match models.scene(&h.id).zip(crate::models::ship_transform(h)) {
+                    Some((scene, transform)) => {
+                        p.spawn((SceneRoot(scene), transform, crate::models::hull_tint(h)));
+                    }
+                    None => {
+                        p.spawn((Mesh3d(body), MeshMaterial3d(body_mat), Transform::default()));
+                        p.spawn((Mesh3d(edges), MeshMaterial3d(edge_mat), Transform::default()));
+                    }
+                }
                 p.spawn((Mesh3d(art.sphere.clone()), MeshMaterial3d(shield_mat.clone()), Transform::from_translation(c).with_scale(radii), ShieldVis(id, shield_mat)));
                 for en in &h.engines {
                     p.spawn((Mesh3d(art.sphere.clone()), MeshMaterial3d(exhaust.clone()), Transform::from_xyz(en.x, 0.0, en.y), EngineGlow(id, en.size)));
@@ -604,7 +634,7 @@ pub fn update_gate_visuals(
     sim: Res<Sim>,
     time: Res<Time>,
     mut mats: ResMut<Assets<StandardMaterial>>,
-    mut spin: Query<&mut Transform, (With<GateSpin>, Without<Horizon>, Without<Kawoosh>)>,
+    mut spin: Query<(&mut GateSpin, &mut Transform, &GlobalTransform), (Without<Horizon>, Without<Kawoosh>)>,
     lamps: Query<&ChevronLamp>,
     mut horizon: Query<(&Horizon, &mut Transform, &mut Visibility), (Without<GateSpin>, Without<Kawoosh>)>,
     mut kawoosh: Query<(&mut Transform, &mut Visibility), (With<Kawoosh>, Without<GateSpin>, Without<Horizon>)>,
@@ -612,13 +642,26 @@ pub fn update_gate_visuals(
     domes: Query<&DhdDome>,
 ) {
     let g = &sim.gate;
-    for mut t in &mut spin {
-        t.rotation = Quat::from_rotation_z(g.spin);
+    for (mut ring, mut t, global) in &mut spin {
+        match ring.base {
+            None => t.rotation = Quat::from_rotation_z(g.spin),
+            Some(base) => {
+                if ring.axis.is_none() {
+                    if *global == GlobalTransform::IDENTITY {
+                        continue;
+                    }
+                    // The gate faces world Z; express that axis in the ring's own frame.
+                    let (_, rotation, _) = global.to_scale_rotation_translation();
+                    ring.axis = Some((rotation.inverse() * Vec3::Z).normalize());
+                }
+                t.rotation = base * Quat::from_axis_angle(ring.axis.unwrap(), g.spin);
+            }
+        }
     }
     for lamp in &lamps {
         let lit = g.chevron_lit(lamp.0);
         if let Some(m) = mats.get_mut(&lamp.1) {
-            let k = if lit { 9.0 } else { 0.6 };
+            let k = if lit { 9.0 } else { 0.12 };
             let c = Color::srgb(1.0, 0.42, 0.12).to_linear();
             m.base_color = Color::LinearRgba(LinearRgba::new(c.red * k, c.green * k, c.blue * k, 1.0));
         }

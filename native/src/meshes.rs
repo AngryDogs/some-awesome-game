@@ -184,6 +184,22 @@ fn part_points(part: &crate::data::ArtPart) -> Option<Vec<[f32; 2]>> {
 
 // ------------------------------------------------------------ hulls
 
+/// Bounds of a hull's line art in the ship frame (art x -> X, art y -> Z): (min, max).
+pub fn art_bounds(hull: &HullDef) -> (Vec2, Vec2) {
+    let (mut lo, mut hi) = (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN));
+    for part in &hull.art {
+        let pts = part_points(part).unwrap_or_else(|| part.pts.clone());
+        for p in pts {
+            lo = lo.min(Vec2::from(p));
+            hi = hi.max(Vec2::from(p));
+        }
+    }
+    if lo.x > hi.x {
+        return (Vec2::splat(-hull.radius), Vec2::splat(hull.radius));
+    }
+    (lo, hi)
+}
+
 /// Solid hull: every closed piece of the line art as a bevelled plate. Bigger plates are
 /// thicker; later pieces (details) sit slightly higher.
 pub fn hull_mesh(hull: &HullDef) -> Mesh {

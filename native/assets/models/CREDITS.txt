@@ -1,0 +1,21 @@
+3D models from Sketchfab (https://sketchfab.com), used under their Creative Commons licenses.
+They were rotated, rescaled, simplified and had their textures resized for the game.
+
+x302: "302 - SG1" by rossrobotics, CC BY 4.0
+    https://sketchfab.com/3d-models/5aa8f0a3634c44d2ae42a04c44437ec3
+glider: "Inspired by Stargate SG-1: Goa'Uld Death Glider" by ska-ara, CC BY-NC-SA 4.0
+    https://sketchfab.com/3d-models/814874dcf1334df38727c2132454787d
+jumper: "Puddle Jumper - Stargate SG1" by rossrobotics, CC BY 4.0
+    https://sketchfab.com/3d-models/1bcbde7bf7044592a5b444ffb7c0a658
+x303: "X303 - SG" by rossrobotics, CC BY 4.0
+    https://sketchfab.com/3d-models/75cdc6dbb9f94b0bbab2c611e65381ca
+alkesh: "Inspired By Stargate SG-1: Goa'Uld Alkesh" by ska-ara, CC BY-NC-SA 4.0
+    https://sketchfab.com/3d-models/a2c2858c553f42d7a1d0b11af4196411
+x304: "Stargate BC - 304" by Ace_Fighter, CC BY-NC 4.0
+    https://sketchfab.com/3d-models/2b9a79284ea24a4485d5cbff48159524
+hatak: "Ha'tak" by TaurWing, CC BY 4.0
+    https://sketchfab.com/3d-models/b8134aff08d645d8b72869f69d1989df
+gate: "Milky Way Stargate | Stargate SG-1" by anquietas-sys, CC BY-NC 4.0
+    https://sketchfab.com/3d-models/517b56e322a548ac81dd8454dbbd95bf
+atlantis: "Atlantis City Ship" by Ace_Fighter, CC BY-NC 4.0
+    https://sketchfab.com/3d-models/a4d4105890994f97b60632dcadb33875

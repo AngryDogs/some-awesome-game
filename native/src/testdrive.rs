@@ -23,6 +23,17 @@ pub struct Script {
     checked: bool,
     step: usize,
     clock: f32,
+    dial_shot: bool,
+}
+
+/// Parks a ship with no pilot and lowered shields, for the model parade screenshots.
+fn park(sim: &mut Sim, hull: &str, pos: Vec3, facing: Vec3) {
+    sim.next_id += 1;
+    let mut ship = Ship::new(sim.next_id, crate::data::ship_stats(hull, &Default::default()), Side::Enemy);
+    ship.pos = pos;
+    ship.rot = Quat::from_rotation_arc(Vec3::X, facing.normalize());
+    ship.shields_enabled = false;
+    sim.ships.push(ship);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -38,6 +49,7 @@ pub fn drive(
     mut exit: EventWriter<AppExit>,
     window: Query<&Window>,
     mut profile: ResMut<crate::profile::Profile>,
+    mut rig: ResMut<crate::visuals::CameraRig>,
 ) {
     if !script.checked {
         script.checked = true;
@@ -55,7 +67,12 @@ pub fn drive(
     };
     let center = window.iter().next().map(|w| Vec2::new(w.width() / 2.0, w.height() / 2.0)).unwrap_or(Vec2::new(800.0, 450.0));
     // (time to wait before this step, action)
-    let wait = [3.0, 1.0, 5.0, 4.0, 5.0, 2.0, 2.0, 1.0, 1.5, 3.0, 3.0, 3.0, 2.0, 5.0, 4.0, 1.0, 3.0, 4.0, 2.0];
+    let wait = [3.0, 1.0, 5.0, 4.0, 5.0, 2.0, 2.0, 1.0, 1.5, 3.0, 3.0, 3.0, 2.0, 5.0, 4.0, 1.0, 4.0, 1.0, 4.0, 1.0, 3.0, 4.0, 2.0];
+    // Mid-dial close-up: the glyph ring turning and the first chevrons lit.
+    if script.step == 6 && !script.dial_shot && sim.gate.locked >= 4 {
+        script.dial_shot = true;
+        shot(&mut commands, "04a-dialing");
+    }
     if script.step >= wait.len() || script.clock < wait[script.step] {
         return;
     }
@@ -128,13 +145,41 @@ pub fn drive(
         }
         14 => shot(&mut commands, "08-capital-combat"),
         15 => {
+            // Model parade, fighters: in a row ahead, seen from the side and a little ahead.
             input.fire = false;
             input.missiles = false;
             sim.ships.truncate(1);
+            let g = sim.gate.pos;
+            let base = g + Vec3::new(0.0, 250.0, -900.0);
+            let p = sim.player_mut();
+            p.pos = base;
+            p.vel = Vec3::ZERO;
+            p.rot = Quat::IDENTITY;
+            p.hidden = true;
+            p.auto_target = false;
+            rig.zoom = 0.3;
+            for (i, hull) in ["x302", "glider", "jumper", "alkesh"].iter().enumerate() {
+                park(&mut sim, hull, base + Vec3::new(300.0, 0.0, -195.0 + i as f32 * 130.0), Vec3::new(-0.35, 0.0, 1.0));
+            }
+        }
+        16 => shot(&mut commands, "11-fighters"),
+        17 => {
+            // Capital ships, further out.
+            sim.ships.truncate(1);
+            rig.zoom = 0.55;
+            let base = sim.player().pos;
+            for (i, hull) in ["x303", "x304", "hatak"].iter().enumerate() {
+                park(&mut sim, hull, base + Vec3::new(1250.0, 0.0, -560.0 + i as f32 * 560.0), Vec3::new(-0.35, 0.0, 1.0));
+            }
+        }
+        18 => shot(&mut commands, "12-capitals"),
+        19 => {
+            sim.ships.truncate(1);
+            sim.player_mut().hidden = false;
             sim.start_hyperjump("earth", &mut sounds);
         }
-        16 => shot(&mut commands, "09-hyper-window"),
-        17 => shot(&mut commands, "10-hyperspace"),
+        20 => shot(&mut commands, "09-hyper-window"),
+        21 => shot(&mut commands, "10-hyperspace"),
         _ => {
             exit.write(AppExit::Success);
         }

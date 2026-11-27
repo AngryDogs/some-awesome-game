@@ -1896,7 +1896,8 @@ impl Sim {
         }
         let player_ok = self.player().alive && !self.player().hidden && self.transition.is_none();
         for i in 1..self.ships.len() {
-            if !self.ships[i].alive {
+            // Ships without a pilot (parked, e.g. in the self-test's model parade) just drift.
+            if !self.ships[i].alive || self.ships[i].ai.is_none() {
                 continue;
             }
             let controls = self.ai_controls(i, dt, player_ok);
