@@ -49,13 +49,13 @@ FROM toolchain AS macos-build
 RUN rustup target add aarch64-apple-darwin x86_64-apple-darwin
 # Apple's SDK, copied into ./macos-sdk by docker-build.sh.
 COPY macos-sdk/ /sdk/
-# Cross compilers: clang targeting macOS, with LLVM's Mach-O linker. On Apple silicon,
-# ld64.lld also adds the ad-hoc code signature that arm64 Macs require.
-RUN LD64="$(ls /usr/lib/llvm-*/bin/ld64.lld | sort -V | tail -1)" \
-    && for arch in aarch64:arm64 x86_64:x86_64; do \
+# Cross compilers: clang targeting macOS, with LLVM's Mach-O linker (ld64.lld). It must be
+# chosen with -fuse-ld=lld (not --ld-path) so clang passes the -platform_version flags it
+# needs. On Apple silicon ld64.lld also adds the ad-hoc code signature arm64 Macs require.
+RUN for arch in aarch64:arm64 x86_64:x86_64; do \
          rust="${arch%%:*}"; apple="${arch##*:}"; \
-         printf '#!/bin/sh\nexec clang --target=%s-apple-macos11 -isysroot /sdk --ld-path=%s -Wno-unused-command-line-argument "$@"\n' \
-           "$apple" "$LD64" > "/usr/local/bin/macos-cc-$rust"; \
+         printf '#!/bin/sh\nexec clang --target=%s-apple-macos11 -isysroot /sdk -fuse-ld=lld -Wno-unused-command-line-argument "$@"\n' \
+           "$apple" > "/usr/local/bin/macos-cc-$rust"; \
          chmod +x "/usr/local/bin/macos-cc-$rust"; \
        done
 ENV SDKROOT=/sdk \

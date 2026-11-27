@@ -37,6 +37,7 @@ pub struct ShieldShape {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)] // mirrors the exported game data; not every field is shown in this edition
 pub struct HullDef {
     pub id: String,
     pub name: String,
@@ -65,6 +66,7 @@ pub struct HullDef {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)] // mirrors the exported game data; not every field is shown in this edition
 pub struct ModuleDef {
     pub id: String,
     pub name: String,
@@ -88,6 +90,7 @@ pub struct MaterialDef {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)] // mirrors the exported game data; not every field is shown in this edition
 pub struct PlanetDef {
     pub x: f32,
     pub y: f32,
@@ -105,6 +108,7 @@ pub struct GatePos {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(dead_code)] // mirrors the exported game data; not every field is shown in this edition
 pub struct SystemDef {
     pub id: String,
     pub name: String,
@@ -162,9 +166,6 @@ impl GameData {
     pub fn system(&self, id: &str) -> &SystemDef {
         self.systems.iter().find(|s| s.id == id).unwrap_or(&self.systems[0])
     }
-    pub fn system_index(&self, id: &str) -> usize {
-        self.systems.iter().position(|s| s.id == id).unwrap_or(0)
-    }
 }
 
 /// "r,g,b" (0-255) to sRGB floats 0..1.
@@ -209,6 +210,7 @@ pub fn sell_value(id: &str, level: u32) -> u32 {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct FittedModule {
     pub slot: Slot,
     pub kind: String,

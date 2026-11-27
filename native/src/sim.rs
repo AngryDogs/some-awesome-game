@@ -115,7 +115,6 @@ pub struct Controls {
 #[derive(Clone, Debug)]
 pub struct Turret {
     pub kind: String,
-    pub level: u32,
     pub stats: crate::data::Stats,
     pub local: Vec3,
     pub aim: Vec3,
@@ -202,7 +201,7 @@ impl Ship {
             .iter()
             .filter(|m| TURRETS.contains(&m.kind.as_str()))
             .map(|m| Turret {
-                kind: m.kind.clone(), level: m.level, stats: m.stats.clone(), local: Vec3::new(m.slot.x, 2.0 * u, m.slot.y),
+                kind: m.kind.clone(), stats: m.stats.clone(), local: Vec3::new(m.slot.x, 2.0 * u, m.slot.y),
                 aim: Vec3::X, cooldown: 0.0, target: None, heat: 0.0, overheated: false, beam_time: 0.0, beam: None,
             })
             .collect();
@@ -230,9 +229,6 @@ impl Ship {
     }
     pub fn forward(&self) -> Vec3 {
         self.rot * Vec3::X
-    }
-    pub fn up(&self) -> Vec3 {
-        self.rot * Vec3::Y
     }
     pub fn to_world(&self, local: Vec3) -> Vec3 {
         self.pos + self.rot * local
@@ -504,7 +500,6 @@ pub struct Sim {
     pub tractor_count: usize,
     pub can_dock: bool,
     pub near_dhd: bool,
-    pub free_aim: bool,
     pub controls: Controls,
     pub seed: u32,
     dormant: HashMap<(i32, i32, i32), Vec<Rock>>,
@@ -515,10 +510,6 @@ pub struct Sim {
     pub explosions: Vec<(Vec3, f32)>,
 }
 
-pub fn player(sim: &Sim) -> &Ship {
-    &sim.ships[0]
-}
-
 impl Sim {
     pub fn new(profile: &Profile) -> Sim {
         let stats = ship_stats(&profile.hull, &profile.current_loadout());
@@ -527,7 +518,7 @@ impl Sim {
             next_id: ((rand::random::<u32>() as u64) << 20) + 100, system: "lantea".into(), time: 0.0, ships: vec![ship], rocks: vec![], ores: vec![], bullets: vec![],
             missiles: vec![], particles: vec![], floats: vec![], gate: Gate::new(Vec3::ZERO), dhd_pos: Vec3::ZERO, station: None,
             transition: None, banner: String::new(), banner_timer: 0.0, enemy_timer: 25.0, field_timer: 0.0, game_over_timer: 0.0,
-            tractor_count: 0, can_dock: false, near_dhd: false, free_aim: false, controls: Controls::default(), seed: profile.seed,
+            tractor_count: 0, can_dock: false, near_dhd: false, controls: Controls::default(), seed: profile.seed,
             dormant: HashMap::new(), seen: HashSet::new(), active: HashSet::new(), hold_full_warned: false, system_changed: true,
             explosions: vec![],
         };

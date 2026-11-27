@@ -34,7 +34,6 @@ pub enum Action {
     Upgrade(String),
     Sell(String),
     Dial(String),
-    CloseGate,
     Jump(String),
     CloseOverlay,
     Respawn,
@@ -554,10 +553,6 @@ pub fn handle_actions(
                 dial.glyphs = glyphs;
                 dial.target = Some(target);
                 dial.timer = 0.0;
-            }
-            Action::CloseGate => {
-                sim.close_gate(false, &mut sounds);
-                *overlay = Overlay::None;
             }
             Action::Jump(target) => {
                 *overlay = Overlay::None;
