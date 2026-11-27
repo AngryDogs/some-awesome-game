@@ -24,6 +24,30 @@ choose **Open**. You can also clear the quarantine flag from Terminal:
 xattr -dr com.apple.quarantine "Some Awesome Game.app"
 ```
 
+## Build it with Docker (no Rust needed)
+
+You only need [Docker Desktop](https://www.docker.com/products/docker-desktop/). Then, in
+this `native` folder:
+
+```bash
+./docker-build.sh
+```
+
+On a Mac this builds `dist/macos/Some Awesome Game.app`. It is a universal app that runs on
+both Apple silicon and Intel Macs. Double-click it to play, or drag it to Applications.
+
+The Mac build needs Apple's macOS SDK. Apple doesn't allow it to be put in a Docker image,
+so the script hands in the SDK from your Mac's Command Line Tools. If you don't have them,
+install them once with this command. It's free and doesn't install Rust:
+
+```bash
+xcode-select --install
+```
+
+On Linux, or with `./docker-build.sh linux`, the script builds a Linux executable in
+`dist/linux/`. The first build takes about 10 to 20 minutes. Later builds reuse Docker's
+cache and are much faster.
+
 ## Build it yourself
 
 Install Rust from https://rustup.rs. Then, in this `native` folder:
