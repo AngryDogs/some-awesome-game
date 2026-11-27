@@ -123,7 +123,7 @@ const polygonArea = (pts) => {
 // Every closed piece of the hull's line art extruded into a solid plate, its top face on
 // the game plane (where the 2D line art is drawn) and its sides going down into depth.
 // Later pieces (details) sit a hair higher so they never flicker against the plates.
-const buildHullGeometries = (THREE, hull) => {
+export const buildHullGeometries = (THREE, hull) => {
     const parts = [];
     const maxDepth = Math.max(2.5, hull.radius * 0.22);
     hull.art.forEach((part, index) => {

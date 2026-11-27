@@ -21,9 +21,9 @@ const FIGHTER_FIT = {
 };
 
 // Enemy weapons hit a little softer than the player's, so a fair fight is winnable.
-const ENEMY_DAMAGE = 0.75;
+export const ENEMY_DAMAGE = 0.75;
 
-const loadoutFor = (hull, level) => {
+export const enemyLoadout = (hull, level) => {
     const fit = FIGHTER_FIT[hull.id] || FACTION_FIT[hull.faction] || FACTION_FIT["Tau'ri"];
     const loadout = {};
     hull.slots.forEach((slot, i) => {
@@ -34,7 +34,7 @@ const loadoutFor = (hull, level) => {
 
 export const createEnemy = (hullId, level, x, y) => {
     const hull = HULLS[hullId];
-    const ship = new Ship(x, y, computeShipStats(hullId, loadoutFor(hull, level)));
+    const ship = new Ship(x, y, computeShipStats(hullId, enemyLoadout(hull, level)));
     ship.side = 'enemy';
     ship.damageScale = ENEMY_DAMAGE;
     ship.autoTarget = false;

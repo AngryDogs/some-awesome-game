@@ -11,7 +11,44 @@ NODE_OPTIONS=--openssl-legacy-provider yarn build
 
 Then open `index.html` through any static web server (e.g. `python3 -m http.server`).
 
-## 3D graphics
+## Full 3D game
+
+**Launch** starts the full 3D game (on computers with WebGL): free six-degrees-of-freedom
+flight with a chase camera through endless 3D asteroid fields. Your ship, its modules and
+upgrades, the shipyard and ore market, the star systems, the DHD, the starmap and hyperspace
+are the same as in the classic game.
+
+| Action | Control |
+| --- | --- |
+| Steer (pitch / yaw) | Move the mouse away from the centre (the centre circle only aims); arrow keys too |
+| Free aim (mouse aims without steering) | V |
+| Thrust / reverse | W / S |
+| Strafe left / right | A / D |
+| Up / down | R or Space / F or Ctrl |
+| Roll | Q / E |
+| Guns (aim with the crosshair) | Left click |
+| Missiles / drones | Right click or Shift |
+| Stabilizer (flight assist) on / off | X |
+| Shields, auto-targeting, targets, weapons | H, G, T, 1-5 |
+| Dock at Atlantis / use the DHD | B |
+| Starmap / hyperdrive | M |
+| Camera distance | Mouse wheel |
+| Pause | Esc |
+
+- **Mining**: shoot asteroids to chip ore off them; rocks wear down and big ones split apart.
+  Lower your shields to let the tractor pull ore in.
+- **Combat**: enemy ships fly in 3D (fighters make attack runs, capital ships circle at range),
+  with the same damage types and defences as before (guns and missile blasts stop missiles,
+  only drones stop drones).
+- **Atlantis**: fly within its docking ring and press B to dock. **Stargate**: dial at the DHD,
+  then fly through the event horizon. The radar (bottom right) shows contacts above
+  (solid stalks) and below (dashed) you.
+- **Classic 2D** (the original top-down game) is still in the menu, and is what phones use.
+
+Not in the 3D game yet: the cargo eject panel, the ore scanner pings, asteroid gravity and
+merging, and touch controls.
+
+## 3D graphics (classic game)
 
 The game is drawn in 3D on the graphics card with WebGL ([Three.js](https://threejs.org) r158,
 bundled in `assets/vendor/`, MIT licence, so it also works when `index.html` is opened from

@@ -1,4 +1,5 @@
 import constructGameBoard from './scripts/gameboard/gameboard';
+import { start3D, can3D } from './scripts/game3d/game3d';
 import { getShipyard } from './scripts/shipyard/shipyard';
 import { getProfile, onProfileChange, isDebug, setDebug } from './scripts/shipyard/profile';
 import './styles/main.css';
@@ -52,11 +53,23 @@ const goFullscreen = () => {
     } catch(e) { /* not allowed */ }
 };
 
+// The full 3D game on computers with WebGL; phones (touch controls) and browsers without
+// WebGL get the classic 2D game, which is always available from the menu too.
+const use3D = () => can3D() && !isTouchDevice();
+
 startGame.addEventListener('click', () => {
+    goFullscreen();
+    menu.style.visibility = 'hidden';
+    if(use3D()) start3D();
+    else constructGameBoard();
+});
+
+document.getElementById('classicGame').addEventListener('click', () => {
     goFullscreen();
     menu.style.visibility = 'hidden';
     constructGameBoard();
 });
+if(!use3D()) document.getElementById('classicGame').style.display = 'none';
 
 openShipyard.addEventListener('click', () => {
     menu.style.visibility = 'hidden';

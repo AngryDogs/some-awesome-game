@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 16);
+/******/ 	return __webpack_require__(__webpack_require__.s = 24);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -278,7 +278,7 @@ const rollMaterial = (rng, sectorDistance, bias) => {
     }
     return 'rock';
 };
-/* harmony export (immutable) */ __webpack_exports__["d"] = rollMaterial;
+/* harmony export (immutable) */ __webpack_exports__["e"] = rollMaterial;
 
 
 // Pick a material id from a composition like { rock: 0.4, gold: 0.6 }.
@@ -291,7 +291,7 @@ const pickFromComposition = (composition, random) => {
     }
     return keys[keys.length - 1];
 };
-/* unused harmony export pickFromComposition */
+/* harmony export (immutable) */ __webpack_exports__["d"] = pickFromComposition;
 
 
 const dominantMaterial = (composition) => {
@@ -315,68 +315,6 @@ const dominantMaterial = (composition) => {
 
 /***/ }),
 /* 2 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// Shared physics helpers for an open, endless zero-gravity world.
-// Units: pixels and seconds. World coordinates are unbounded; the camera follows the ship.
-
-// Gravitational constant, tuned for gameplay. Mass of an asteroid is its area (r^2),
-// so a large asteroid pulls noticeably harder than a small one.
-const G = 150;
-/* harmony export (immutable) */ __webpack_exports__["a"] = G;
-
-
-// Beyond this distance gravity is negligible and skipped for performance.
-const GRAVITY_CUTOFF_SQ = 1300 * 1300;
-
-// Viewport size (the camera's view of the world).
-const world = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-
-    resize(width, height) {
-        this.width = width;
-        this.height = height;
-    }
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = world;
-
-
-const delta = (from, to) => ({ x: to.x - from.x, y: to.y - from.y });
-/* harmony export (immutable) */ __webpack_exports__["b"] = delta;
-
-
-// Gravitational acceleration that `attractors` exert on `body`.
-// Softened by the attractor's radius so nothing gets flung to infinity.
-const gravityAt = (body, attractors) => {
-    let ax = 0;
-    let ay = 0;
-
-    for(let i = 0; i < attractors.length; i++) {
-        const other = attractors[i];
-        if(other === body || other.dead) continue;
-
-        const dx = other.x - body.x;
-        const dy = other.y - body.y;
-        const distSq = dx * dx + dy * dy;
-        if(distSq < 0.0001 || distSq > GRAVITY_CUTOFF_SQ) continue;
-
-        const dist = Math.sqrt(distSq);
-        const accel = G * other.mass / (distSq + other.radius * other.radius);
-
-        ax += dx / dist * accel;
-        ay += dy / dist * accel;
-    }
-
-    return { x: ax, y: ay };
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = gravityAt;
-
-
-
-/***/ }),
-/* 3 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -1088,7 +1026,7 @@ const shieldFor = (hull) => {
 
 
 /***/ }),
-/* 4 */
+/* 3 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2162,11 +2100,11 @@ Object.assign(sounds, gateSounds);
 
 
 /***/ }),
-/* 5 */
+/* 4 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__modules__ = __webpack_require__(8);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__world_materials__ = __webpack_require__(1);
 // Persistent player profile: credits, owned hulls and the module loadout of each hull.
@@ -2462,7 +2400,7 @@ const spendCredits = (amount) => {
 
 
 /***/ }),
-/* 6 */
+/* 5 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2654,745 +2592,18 @@ const distanceBetween = (a, b) => {
 
 
 /***/ }),
-/* 7 */
+/* 6 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-
-
-// Small glowing sparks, plus soft dust that can be drawn into an asteroid
-// (used when asteroids merge: the dust cloud spirals in and settles on the surface).
-
-// Colour strings are cached per colour and fade step, so drawing hundreds of particles
-// doesn't build (and garbage-collect) a new 'rgba(...)' string for each one every frame.
-const STEPS = 12;
-const styleCache = {};
-const style = (color, alpha) => {
-    let row = styleCache[color];
-    if(!row) {
-        row = styleCache[color] = [];
-        for(let i = 0; i <= STEPS; i++) row.push('rgba(' + color + ',' + (i / STEPS).toFixed(3) + ')');
-    }
-    return row[Math.max(0, Math.min(STEPS, Math.round(alpha * STEPS)))];
-};
-
-class Particle {
-
-    constructor(options) {
-        this.x = options.x;
-        this.y = options.y;
-        this.vx = options.vx || 0;
-        this.vy = options.vy || 0;
-        this.life = options.life;
-        this.maxLife = options.life;
-        this.size = options.size || 2;
-        this.color = options.color || '255,255,255';
-        this.shrink = options.shrink !== false;
-        this.dust = !!options.dust;
-        this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
-        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
-        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
-        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
-        this.alpha = options.alpha === undefined ? 1 : options.alpha;
-        this.attractor = options.attractor || null;
-        this.swirl = options.swirl || 0;
-        this.dead = false;
-    }
-
-    static burst(target, x, y, baseVx, baseVy, count, options) {
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
-            target.push(new Particle({
-                x: x,
-                y: y,
-                vx: baseVx + Math.cos(angle) * speed,
-                vy: baseVy + Math.sin(angle) * speed,
-                life: options.minLife + Math.random() * (options.maxLife - options.minLife),
-                size: options.size * (0.6 + Math.random() * 0.8),
-                color: options.color,
-                dust: options.dust,
-                solid: options.solid,
-                pixel: options.pixel,
-                glow: options.glow,
-                drag: options.drag,
-                alpha: options.alpha
-            }));
-        }
-    }
-
-    // A ring of dust around (x, y) that swirls inwards onto `attractor`.
-    static mergeCloud(target, x, y, attractor, count, spread, color) {
-        for(let i = 0; i < count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const distance = spread * (0.3 + Math.random() * 0.9);
-            const px = x + Math.cos(angle) * distance;
-            const py = y + Math.sin(angle) * distance;
-            const out = 15 + Math.random() * 35;
-            target.push(new Particle({
-                x: px,
-                y: py,
-                vx: attractor.vx + Math.cos(angle) * out,
-                vy: attractor.vy + Math.sin(angle) * out,
-                life: 1.6 + Math.random() * 1.4,
-                size: 5 + Math.random() * 9,
-                color: color,
-                dust: true,
-                alpha: 0.18 + Math.random() * 0.14,
-                attractor: attractor,
-                swirl: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
-            }));
-        }
-    }
-
-    update(dt) {
-        const a = this.attractor;
-        if(a && !a.dead) {
-            const dx = a.x - this.x;
-            const dy = a.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
-            // Fall inwards with a tangential swirl, matching the asteroid's drift.
-            const pull = 160 + 3000 / (distance + 20);
-            this.vx += (dx / distance * pull - dy / distance * pull * this.swirl) * dt;
-            this.vy += (dy / distance * pull + dx / distance * pull * this.swirl) * dt;
-            this.vx += (a.vx - this.vx) * Math.min(1, dt * 1.5);
-            this.vy += (a.vy - this.vy) * Math.min(1, dt * 1.5);
-            if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
-        }
-
-        if(this.drag) {
-            const keep = Math.max(0, 1 - this.drag * dt);
-            this.vx *= keep;
-            this.vy *= keep;
-        }
-        this.x += this.vx * dt;
-        this.y += this.vy * dt;
-        this.life -= dt;
-        if(this.life <= 0) this.dead = true;
-    }
-
-    draw(ctx) {
-        const t = Math.max(this.life / this.maxLife, 0);
-        if(this.dust) {
-            // Soft puff: fades in quickly, swells, then thins out.
-            const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
-            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
-            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
-            ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
-            ctx.globalAlpha = 1;
-            return;
-        }
-        if(this.pixel) {
-            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
-            if(t < 0.35 && Math.random() < 0.35) return;
-            const stepped = Math.ceil(t * 4) / 4;
-            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
-            ctx.fillStyle = style(this.color, stepped * this.alpha);
-            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
-            return;
-        }
-        if(this.solid) {
-            ctx.fillStyle = style(this.color, Math.min(1, t * 2));
-            ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
-            return;
-        }
-        const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
-        ctx.fillStyle = style(this.color, t * this.alpha);
-        ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
-    }
-}
-
-/* harmony default export */ __webpack_exports__["a"] = (Particle);
-
-
-/***/ }),
-/* 8 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-// Module definitions. Each stat array is indexed by module level - 1 (Mk I..III).
-
-const MAX_LEVEL = 3;
-/* harmony export (immutable) */ __webpack_exports__["a"] = MAX_LEVEL;
-
-
-const MODULES = {
-    minigun: {
-        id: 'minigun',
-        name: 'Minigun turret',
-        short: 'Minigun',
-        description: 'Rapid-fire turret. Aims at the cursor, or auto-targets with a targeting computer.',
-        cost: 250,
-        color: '255,200,120',
-        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7], heatShots: [60, 85, 120] },
-        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg, overheats after ' + s.heatShots + ' rounds'
-    },
-    staff: {
-        id: 'staff',
-        name: 'Staff cannon',
-        short: 'Staff',
-        description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
-        cost: 900,
-        color: '255,175,70',
-        stats: { fireRate: [1.5, 1.9, 2.4], damage: [8, 11, 15], splash: [28, 34, 42] },
-        describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
-    },
-    beam: {
-        id: 'beam',
-        name: 'Asgard ion beam',
-        short: 'Ion beam',
-        description: 'Instant-hit energy beam that carves through rock. Fires in bursts, then recharges.',
-        cost: 2200,
-        color: '140,215,255',
-        stats: { dps: [28, 40, 56], range: [600, 700, 820], burst: [1.2, 1.4, 1.7], cooldown: [2.6, 2.2, 1.8] },
-        describe: (s) => s.dps + ' dmg/s, ' + s.burst + 's burst, recharge ' + s.cooldown + 's'
-    },
-    drones: {
-        id: 'drones',
-        name: 'Drone launcher',
-        short: 'Drones',
-        description: 'Ancient drone weapons (F / right click). Fires a salvo of five self-guided drones in a row; each detonates in a big energy blast.',
-        cost: 2800,
-        color: '255,225,130',
-        stats: { count: [5, 5, 6], damage: [24, 32, 42], blast: [36, 44, 54], cooldown: [5, 4.2, 3.4] },
-        describe: (s) => s.count + '-drone salvo, ' + s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
-    },
-    hyperdrive: {
-        id: 'hyperdrive',
-        name: 'Hyperdrive',
-        short: 'Hyperdrive',
-        description: 'Opens a hyperspace window to travel between star systems (starmap, M). Needs a ship of at least cruiser size: fighters must use the Stargate.',
-        cost: 4000,
-        color: '150,190,255',
-        minHullMass: 3,
-        stats: { speed: [1, 1.6, 2.4] },
-        describe: (s) => 'hyperspace speed x' + s.speed
-    },
-    scanner: {
-        id: 'scanner',
-        name: 'Ore scanner',
-        short: 'Scanner',
-        description: 'Scans asteroids for metals: colours the scanner map by ore, pings the area and guides you to the richest asteroid nearby.',
-        cost: 800,
-        color: '190,255,140',
-        stats: { range: [2000, 2700, 3400], interval: [5, 4, 3] },
-        describe: (s) => s.range + 'px scan range, ping every ' + s.interval + 's'
-    },
-    missile: {
-        id: 'missile',
-        name: 'Missile pod',
-        short: 'Missiles',
-        description: 'Fires explosive missiles (F / right click). Home in on targets with a targeting computer.',
-        cost: 600,
-        color: '255,130,110',
-        stats: { cooldown: [1.6, 1.2, 0.85], damage: [14, 20, 28], blast: [45, 55, 68] },
-        describe: (s) => s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
-    },
-    engine: {
-        id: 'engine',
-        name: 'Sublight engine',
-        short: 'Engine',
-        description: 'Extra thrust and manoeuvring power.',
-        cost: 400,
-        color: '255,215,140',
-        stats: { thrust: [220, 320, 440], torque: [1.2, 1.8, 2.5] },
-        describe: (s) => '+' + s.thrust + ' thrust, +' + s.torque + ' turn'
-    },
-    shield: {
-        id: 'shield',
-        name: 'Shield emitter',
-        short: 'Shield',
-        description: 'Energy shield absorbs impacts and recharges when not hit.',
-        cost: 700,
-        color: '120,210,255',
-        stats: { capacity: [40, 65, 95], regen: [8, 12, 18] },
-        describe: (s) => '+' + s.capacity + ' shield, ' + s.regen + '/s recharge'
-    },
-    guidance: {
-        id: 'guidance',
-        name: 'Targeting computer',
-        short: 'Guidance',
-        description: 'Turrets lock on and fire automatically (toggle with G). Missiles become homing.',
-        cost: 900,
-        color: '140,255,160',
-        stats: { range: [350, 480, 620], homing: [3, 4.5, 6] },
-        describe: (s) => s.range + 'px lock range, homing ' + s.homing
-    },
-    cargo: {
-        id: 'cargo',
-        name: 'Cargo pod',
-        short: 'Cargo',
-        description: 'Extra hold space for ore.',
-        cost: 350,
-        color: '200,170,255',
-        stats: { capacity: [20, 35, 55] },
-        describe: (s) => '+' + s.capacity + ' cargo'
-    },
-    magnet: {
-        id: 'magnet',
-        name: 'Ore tractor',
-        short: 'Tractor',
-        description: 'Tractor beam that pulls in floating ore from further away.',
-        cost: 450,
-        color: '120,255,230',
-        stats: { range: [160, 230, 320] },
-        describe: (s) => s.range + 'px pickup range'
-    },
-    armor: {
-        id: 'armor',
-        name: 'Trinium armor',
-        short: 'Armor',
-        description: 'Reinforced plating. More hull, a little more mass.',
-        cost: 300,
-        color: '200,200,215',
-        stats: { hull: [30, 50, 75], mass: [0.3, 0.3, 0.3] },
-        describe: (s) => '+' + s.hull + ' hull'
-    }
-};
-
-const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'hyperdrive', 'scanner', 'cargo', 'magnet', 'armor'];
-/* harmony export (immutable) */ __webpack_exports__["b"] = MODULE_ORDER;
-
-
-const moduleStats = (type, level) => {
-    const def = MODULES[type];
-    const stats = {};
-    Object.keys(def.stats).forEach(key => { stats[key] = def.stats[key][level - 1]; });
-    return stats;
-};
-/* harmony export (immutable) */ __webpack_exports__["e"] = moduleStats;
-
-
-const upgradeCost = (type, level) => {
-    if(level >= MAX_LEVEL) return null;
-    return Math.round(MODULES[type].cost * (level === 1 ? 1 : 1.8));
-};
-/* harmony export (immutable) */ __webpack_exports__["g"] = upgradeCost;
-
-
-const totalSpent = (type, level) => {
-    let total = MODULES[type].cost;
-    for(let l = 1; l < level; l++) total += upgradeCost(type, l);
-    return total;
-};
-/* unused harmony export totalSpent */
-
-
-const sellValue = (type, level) => Math.round(totalSpent(type, level) * 0.5);
-/* harmony export (immutable) */ __webpack_exports__["f"] = sellValue;
-
-
-// Line-art icon for a module, centred on (0, 0) in the current transform.
-// `aim` is the local angle a turret barrel points at; `u` scales the drawing.
-const drawModule = (ctx, type, level, options) => {
-    const opts = options || {};
-    const u = opts.scale || 1;
-    const color = MODULES[type].color;
-    const aim = opts.aim || 0;
-
-    ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.lineWidth = opts.lineWidth || 1.2;
-    ctx.strokeStyle = 'rgb(' + color + ')';
-    ctx.fillStyle = 'rgba(5, 10, 20, 0.85)';
-    ctx.shadowBlur = opts.glow === undefined ? 5 : opts.glow;
-    ctx.shadowColor = 'rgb(' + color + ')';
-
-    const shape = (pts) => {
-        ctx.beginPath();
-        ctx.moveTo(pts[0][0] * u, pts[0][1] * u);
-        for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * u, pts[i][1] * u);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-    };
-    const line = (x1, y1, x2, y2) => {
-        ctx.beginPath();
-        ctx.moveTo(x1 * u, y1 * u);
-        ctx.lineTo(x2 * u, y2 * u);
-        ctx.stroke();
-    };
-    const circle = (r, fill) => {
-        ctx.beginPath();
-        ctx.arc(0, 0, r * u, 0, Math.PI * 2);
-        if(fill) ctx.fill();
-        ctx.stroke();
-    };
-
-    if(type === 'minigun') {
-        // One barrel per Mk level.
-        ctx.save();
-        ctx.rotate(aim);
-        const offsets = level === 1 ? [0] : level === 2 ? [-1.3, 1.3] : [-2, 0, 2];
-        if(opts.heat > 0.5) {
-            ctx.strokeStyle = 'rgb(255,' + Math.round(200 - (opts.heat - 0.5) * 300) + ',' + Math.round(120 - (opts.heat - 0.5) * 200) + ')';
-        }
-        offsets.forEach(o => line(0, o, 9, o));
-        ctx.strokeStyle = 'rgb(' + color + ')';
-        ctx.restore();
-        circle(3.6, true);
-        circle(1.2);
-    }
-
-    if(type === 'staff') {
-        // Long ribbed plasma cannon on a disc mount.
-        ctx.save();
-        ctx.rotate(aim);
-        shape([[0, -1.6], [10, -1], [10, 1], [0, 1.6]]);
-        for(let i = 0; i < level + 1; i++) line(3 + i * 2, -1.4, 3 + i * 2, 1.4);
-        ctx.restore();
-        shape([[0, -4], [3.5, -2], [3.5, 2], [0, 4], [-3.5, 2], [-3.5, -2]]);
-    }
-
-    if(type === 'beam') {
-        // Asgard emitter: crystal dish with a focusing prong.
-        ctx.save();
-        ctx.rotate(aim);
-        line(0, 0, 8, 0);
-        line(5, -2, 8, 0); line(5, 2, 8, 0);
-        ctx.restore();
-        circle(4, true);
-        ctx.beginPath();
-        ctx.arc(0, 0, 2.2 * u, 0, Math.PI * 2);
-        ctx.stroke();
-        for(let i = 1; i < level; i++) {
-            ctx.beginPath();
-            ctx.arc(0, 0, (4 + i * 1.4) * u, Math.PI * 0.6, Math.PI * 1.4);
-            ctx.stroke();
-        }
-    }
-
-    if(type === 'drones') {
-        // Hexagonal drone bay with glowing drone cells.
-        shape([[4.5, 0], [2.2, -4], [-2.2, -4], [-4.5, 0], [-2.2, 4], [2.2, 4]]);
-        const cells = level + 2;
-        for(let i = 0; i < cells; i++) {
-            const a = (i / cells) * Math.PI * 2;
-            ctx.beginPath();
-            ctx.arc(Math.cos(a) * 2.2 * u, Math.sin(a) * 2.2 * u, 0.7 * u, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-    }
-
-    if(type === 'missile') {
-        shape([[-4, -4], [4, -4], [5, 0], [4, 4], [-4, 4]]);
-        const tubes = level + 1;
-        for(let i = 0; i < tubes; i++) {
-            const y = -2.5 + (5 / (tubes - 1)) * i;
-            line(-2.5, y, 3, y);
-        }
-    }
-
-    if(type === 'engine') {
-        shape([[3, -3], [3, 3], [-4, 4.5], [-4, -4.5]]);
-        for(let i = 0; i < level; i++) line(1 - i * 2, -2.5, 1 - i * 2, 2.5);
-    }
-
-    if(type === 'shield') {
-        const hex = (r) => {
-            const pts = [];
-            for(let i = 0; i < 6; i++) pts.push([Math.cos(i * Math.PI / 3) * r, Math.sin(i * Math.PI / 3) * r]);
-            return pts;
-        };
-        shape(hex(4.5));
-        if(level >= 2) shape(hex(3));
-        if(level >= 3) shape(hex(1.5));
-    }
-
-    if(type === 'guidance') {
-        circle(3.8, true);
-        line(-5.5, 0, -2, 0); line(2, 0, 5.5, 0);
-        line(0, -5.5, 0, -2); line(0, 2, 0, 5.5);
-        for(let i = 1; i < level; i++) {
-            ctx.beginPath();
-            ctx.arc(0, 0, (3.8 + i * 1.6) * u, -Math.PI * 0.8, -Math.PI * 0.2);
-            ctx.stroke();
-        }
-    }
-
-    if(type === 'cargo') {
-        shape([[-4.5, -4], [4.5, -4], [4.5, 4], [-4.5, 4]]);
-        line(-4.5, 0, 4.5, 0);
-        for(let i = 0; i < level; i++) line(-2 + i * 2, -4, -2 + i * 2, 4);
-    }
-
-    if(type === 'magnet') {
-        // Horseshoe magnet, one field arc per level.
-        ctx.beginPath();
-        ctx.arc(-1 * u, 0, 3.5 * u, Math.PI / 2, Math.PI * 1.5);
-        ctx.lineTo(3 * u, -3.5 * u);
-        ctx.moveTo(-1 * u, 3.5 * u);
-        ctx.lineTo(3 * u, 3.5 * u);
-        ctx.stroke();
-        for(let i = 0; i < level; i++) {
-            ctx.beginPath();
-            ctx.arc(3 * u, 0, (2 + i * 1.6) * u, -Math.PI / 3, Math.PI / 3);
-            ctx.stroke();
-        }
-    }
-
-    if(type === 'hyperdrive') {
-        // Hyperdrive core: a ring with a swirl and chevron fins.
-        circle(4.2, true);
-        ctx.beginPath();
-        for(let i = 0; i <= 12; i++) {
-            const a = i / 12 * Math.PI * 2.2;
-            const r = (0.6 + i * 0.25) * u;
-            if(i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-            else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-        }
-        ctx.stroke();
-        for(let i = 0; i < level; i++) line(-6 + i * 1.6, -2.5, -4.5 + i * 1.6, 0);
-    }
-
-    if(type === 'scanner') {
-        // Radar dish with sweep arcs (one per level).
-        circle(3.4, true);
-        line(0, 0, 3, -3);
-        ctx.beginPath();
-        ctx.arc(0, 0, 1, 0, Math.PI * 2);
-        ctx.stroke();
-        for(let i = 0; i < level; i++) {
-            ctx.beginPath();
-            ctx.arc(0, 0, (4.8 + i * 1.5) * u, -Math.PI * 0.45, Math.PI * 0.05);
-            ctx.stroke();
-        }
-    }
-
-    if(type === 'armor') {
-        shape([[0, -4.5], [4.5, 0], [0, 4.5], [-4.5, 0]]);
-        for(let i = 0; i < level; i++) {
-            const o = -1.5 + i * 1.5;
-            line(-2 + o, -1, 1 + o, 2);
-        }
-    }
-
-    ctx.restore();
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = drawModule;
-
-
-/* harmony default export */ __webpack_exports__["c"] = (MODULES);
-
-
-/***/ }),
-/* 9 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
-// Stargate symbols, traced after the Milky Way glyph chart (glyphs 1-39). Each glyph is a
-// few polylines in a -1..1 box (y down); they're drawn as thick strokes, optionally with a
-// darker outline like the chart's embossed symbols.
-//
-// Glyph 1 (the pyramid with the sun above it) is Earth's point of origin; other gates get
-// variants of the same motif.
-//
-// The same shapes double as the constellations' star figures on the starmap: in the show
-// the glyphs are stylised constellations, so each polyline vertex becomes a star.
-
-
-
-// Shapes by constellation name, in chart order (glyph number in the comment).
-const SHAPES = {
-    'Crater':            [[[-0.6, -0.8], [-0.3, -0.45], [-0.3, 0.1], [0.3, 0.1], [0.3, -0.45], [0.6, -0.8]], [[0, 0.1], [0, 0.5]], [[-0.45, 0.82], [0, 0.5], [0.45, 0.82]]],        // 2
-    'Virgo':             [[[-0.45, -0.3], [-0.45, -0.8], [0.3, -0.8], [0.0, -0.2], [0.45, 0.1], [-0.1, 0.45], [0.15, 0.85]]],                                                   // 3
-    'Bootes':            [[[0.6, -0.8], [0.25, -0.8], [-0.15, -0.45], [0.3, -0.05], [-0.25, 0.35], [0.1, 0.85]]],                                                                // 4
-    'Centaurus':         [[[-0.65, -0.6], [-0.1, -0.1]], [[0.65, -0.65], [0.15, -0.15], [0.2, 0.25]], [[-0.55, 0.35], [-0.05, 0.25], [-0.25, 0.8]]],                            // 5
-    'Libra':             [[[-0.65, -0.65], [0.5, -0.65], [0.55, 0.15], [0.0, 0.45], [-0.25, 0.85]], [[-0.65, -0.65], [-0.5, -0.25]]],                                           // 6
-    'Serpens Caput':     [[[0.35, -0.85], [-0.2, -0.6], [-0.35, 0.35], [0.05, 0.65], [0.5, 0.45]], [[0.35, -0.85], [0.45, -0.55]]],                                             // 7
-    'Norma':             [[[-0.65, -0.5], [0.15, -0.55], [-0.3, 0.15], [-0.65, -0.5]], [[0.25, 0.15], [0.65, 0.55]]],                                                           // 8
-    'Scorpius':          [[[-0.75, 0.55], [0.35, 0.55], [0.7, 0.2], [0.55, -0.3]], [[-0.4, 0.55], [0.1, -0.15], [0.45, -0.6]]],                                                 // 9
-    'Corona Australis':  [[[0.55, -0.7], [-0.4, -0.7], [-0.65, 0.0], [-0.25, 0.65], [0.55, 0.6]], [[0.1, -0.25], [0.5, 0.15]]],                                                 // 10
-    'Scutum':            [[[-0.75, 0.6], [0.6, -0.6], [0.6, 0.55], [-0.2, 0.15]], [[0.6, -0.6], [0.8, -0.8]]],                                                                  // 11
-    'Sagittarius':       [[[-0.75, -0.35], [-0.25, -0.75], [0.15, -0.25], [0.7, -0.55]], [[0.15, -0.25], [-0.05, 0.4], [0.55, 0.75]], [[-0.5, 0.15], [-0.05, 0.4]], [[0.35, 0.1], [0.65, 0.2]]], // 12
-    'Aquila':            [[[-0.75, -0.5], [-0.15, 0.65], [0.2, -0.2], [0.75, -0.6]], [[0.2, -0.2], [0.55, 0.15]]],                                                              // 13
-    'Microscopium':      [[[-0.3, -0.75], [-0.6, 0.5], [0.75, 0.25]], [[-0.45, -0.1], [0.3, -0.45]]],                                                                           // 14
-    'Capricornus':       [[[-0.75, 0.6], [0.55, -0.6], [0.5, 0.6], [-0.75, 0.6]], [[0.55, -0.6], [0.8, -0.85]]],                                                                // 15
-    'Piscis Austrinus':  [[[0.3, -0.85], [-0.3, -0.5], [-0.35, 0.45], [0.25, 0.85]], [[-0.3, -0.5], [0.05, -0.35]]],                                                            // 16
-    'Equuleus':          [[[-0.75, -0.3], [0.3, -0.35], [0.55, 0.0], [0.3, 0.45]], [[-0.2, -0.32], [-0.45, 0.35]]],                                                             // 17
-    'Aquarius':          [[[-0.65, 0.55], [-0.5, -0.4], [0.45, -0.5], [0.65, 0.3]], [[-0.05, -0.45], [0.1, 0.15]]],                                                             // 18
-    'Pegasus':           [[[0.5, -0.85], [0.0, -0.2], [0.35, 0.1], [-0.4, 0.85]], [[0.0, -0.2], [-0.35, -0.45]]],                                                               // 19
-    'Sculptor':          [[[-0.5, -0.65], [0.05, -0.65], [-0.2, 0.0], [0.55, 0.65]], [[0.55, 0.65], [0.35, 0.2]]],                                                              // 20
-    'Pisces':            [[[-0.5, -0.75], [0.0, 0.1], [0.5, -0.45]], [[0.0, 0.1], [-0.2, 0.85]]],                                                                               // 21
-    'Andromeda':         [[[0.0, -0.85], [0.2, -0.35], [-0.12, 0.0], [0.12, 0.4], [0.0, 0.85]]],                                                                                // 22
-    'Triangulum':        [[[-0.75, -0.4], [0.75, -0.4], [-0.1, 0.4], [-0.75, -0.4]]],                                                                                           // 23
-    'Aries':             [[[0.5, -0.75], [0.1, -0.2], [-0.45, 0.75]]],                                                                                                          // 24
-    'Perseus':           [[[0.3, -0.85], [-0.2, -0.45], [-0.2, 0.2], [0.2, 0.6], [0.0, 0.85]]],                                                                                 // 25
-    'Cetus':             [[[-0.65, -0.4], [0.5, -0.4], [0.65, 0.1], [0.0, 0.45]], [[-0.65, -0.4], [-0.3, 0.35]]],                                                               // 26
-    'Taurus':            [[[-0.85, 0.05], [0.85, 0.0]], [[0.2, 0.02], [0.6, -0.4]], [[-0.45, 0.04], [-0.75, -0.3]]],                                                            // 27
-    'Auriga':            [[[-0.4, -0.75], [-0.5, 0.35], [0.0, 0.7], [0.5, 0.35], [0.4, -0.75]], [[-0.15, -0.35], [0.15, -0.35]]],                                               // 28
-    'Eridanus':          [[[0.45, -0.85], [0.1, -0.3], [0.45, 0.0], [-0.35, 0.85]]],                                                                                            // 29
-    'Orion':             [[[-0.5, -0.75], [0.5, -0.75], [-0.5, 0.75], [0.5, 0.75], [-0.5, -0.75]]],                                                                             // 30
-    'Canis Minor':       [[[-0.45, -0.75], [0.45, -0.05], [-0.45, 0.15], [0.45, 0.8]]],                                                                                         // 31
-    'Monoceros':         [[[-0.6, -0.2], [-0.6, -0.6], [0.2, -0.6], [0.2, 0.2], [0.65, 0.75]], [[0.2, -0.15], [-0.25, 0.25]]],                                                  // 32
-    'Gemini':            [[[-0.3, -0.85], [0.3, -0.85], [0.3, 0.85], [-0.3, 0.85], [-0.3, -0.85]], [[-0.3, 0.0], [0.3, 0.0]]],                                                  // 33
-    'Hydra':             [[[-0.2, -0.85], [0.2, -0.5], [-0.2, -0.1], [0.2, 0.3], [-0.1, 0.85]]],                                                                                // 34
-    'Lynx':              [[[-0.5, -0.75], [0.2, -0.2], [0.5, 0.75]]],                                                                                                           // 35
-    'Cancer':            [[[-0.65, -0.65], [0.05, 0.2]], [[0.45, 0.6]]],                                                                                                        // 36
-    'Sextans':           [[[-0.7, -0.55], [-0.3, -0.4]], [[-0.05, 0.0], [0.35, 0.2]], [[0.65, 0.6]]],                                                                           // 37
-    'Leo Minor':         [[[-0.6, -0.75], [0.1, 0.1], [0.5, 0.75]], [[0.1, 0.1], [0.45, -0.15]]],                                                                               // 38
-    'Leo':               [[[0.3, -0.85], [0.55, -0.5], [0.0, 0.2], [0.1, 0.85]], [[0.0, 0.2], [-0.45, -0.05]]]                                                                  // 39
-};
-
-// All chart glyphs 2-39 by name (the gate's ring shows every one), and the constellations
-// used for addresses in chart order (the DHD's tiles).
-const GLYPH_NAMES = Object.keys(SHAPES);
-/* harmony export (immutable) */ __webpack_exports__["a"] = GLYPH_NAMES;
-
-const GLYPH_ORDER = GLYPH_NAMES.map(name => __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */].indexOf(name)).filter(i => i !== -1);
-/* harmony export (immutable) */ __webpack_exports__["b"] = GLYPH_ORDER;
-
-
-// Glyph 1: the pyramid with the sun above it. Other gates' points of origin vary the crown.
-const origin = (index) => {
-    const shape = [
-        [[-0.75, 0.8], [-0.1, -0.35]],
-        [[0.75, 0.8], [0.1, -0.35]],
-        [[-0.3, 0.8], [0.0, 0.35], [0.3, 0.8]]
-    ];
-    const variant = index % 4;
-    if(variant === 1) shape.push([[-0.45, -0.75], [0.45, -0.75]]);
-    if(variant === 2) shape.push([[-0.4, -0.5], [0, -0.85], [0.4, -0.5]]);
-    if(variant === 3) shape.push([[-0.75, 0.8], [0.75, 0.8]]);
-    return { lines: shape, sun: variant === 0 || variant === 3 ? [0, -0.62, 0.2] : null };
-};
-
-const cache = {};
-const shapeOf = (id) => {
-    if(cache[id]) return cache[id];
-    let shape;
-    if(typeof id === 'string' && id.indexOf('origin:') === 0) shape = origin(parseInt(id.split(':')[1], 10) || 0);
-    else if(typeof id === 'string') shape = { lines: SHAPES[id] || [[[0, -0.8], [0, 0.8]]], sun: null };
-    else shape = { lines: SHAPES[__WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][id]] || [[[0, -0.8], [0, 0.8]]], sun: null };
-    cache[id] = shape;
-    return shape;
-};
-
-const tracePath = (ctx, shape, s) => {
-    ctx.beginPath();
-    shape.lines.forEach(line => {
-        if(line.length === 1) {
-            // A lone dot.
-            ctx.moveTo(line[0][0] * s + 0.01, line[0][1] * s);
-            ctx.lineTo(line[0][0] * s, line[0][1] * s);
-            return;
-        }
-        line.forEach((p, i) => {
-            if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
-            else ctx.lineTo(p[0] * s, p[1] * s);
-        });
-    });
-    if(shape.sun) {
-        ctx.moveTo(shape.sun[0] * s + shape.sun[2] * s, shape.sun[1] * s);
-        ctx.arc(shape.sun[0] * s, shape.sun[1] * s, shape.sun[2] * s, 0, Math.PI * 2);
-    }
-};
-
-// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y). With an
-// `outline` colour the stroke gets a darker rim, like the glyph chart.
-const drawGlyph = (ctx, id, x, y, size, color, lineWidth, outline) => {
-    const shape = shapeOf(id);
-    const s = size / 2;
-    const width = lineWidth || Math.max(1, size * 0.1);
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    tracePath(ctx, shape, s * 0.92);
-    if(outline) {
-        ctx.strokeStyle = outline;
-        ctx.lineWidth = width * 1.9;
-        ctx.stroke();
-    }
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.stroke();
-    ctx.restore();
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = drawGlyph;
-
-
-// Star figure of a constellation: the glyph's vertices are its main stars, plus a few
-// fainter stars branching off them (fixed per constellation), like a star chart.
-const figures = {};
-const figureOf = (id) => {
-    if(figures[id]) return figures[id];
-    const shape = shapeOf(id);
-    let seed = (typeof id === 'number' ? id + 1 : 99) * 2654435761 >>> 0;
-    const rand = () => {
-        seed = (seed + 0x6D2B79F5) >>> 0;
-        let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-    const stars = [];
-    const links = [];
-    shape.lines.forEach(line => {
-        line.forEach((p, i) => {
-            stars.push({ x: p[0], y: p[1], big: i === 0 || i === line.length - 1 });
-            if(i > 0) links.push([stars.length - 2, stars.length - 1]);
-        });
-    });
-    const main = stars.length;
-    const extra = 2 + Math.floor(rand() * 3);
-    for(let i = 0; i < extra; i++) {
-        const from = stars[Math.floor(rand() * main)];
-        const a = rand() * Math.PI * 2;
-        const d = 0.25 + rand() * 0.3;
-        const x = Math.max(-0.95, Math.min(0.95, from.x + Math.cos(a) * d));
-        const y = Math.max(-0.95, Math.min(0.95, from.y + Math.sin(a) * d));
-        stars.push({ x: x, y: y, big: false });
-        if(rand() < 0.75) links.push([stars.indexOf(from), stars.length - 1]);
-    }
-    figures[id] = { stars: stars, links: links };
-    return figures[id];
-};
-
-// The constellation as a star figure (dots joined by thin lines), centred at (x, y).
-const drawConstellation = (ctx, id, x, y, size, color, starColor, dotScale) => {
-    const figure = figureOf(id);
-    const s = size / 2;
-    const k = dotScale || 1;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(0.8, 0.8 * k);
-    ctx.beginPath();
-    figure.links.forEach(link => {
-        const a = figure.stars[link[0]];
-        const b = figure.stars[link[1]];
-        ctx.moveTo(a.x * s, a.y * s);
-        ctx.lineTo(b.x * s, b.y * s);
-    });
-    ctx.stroke();
-    ctx.fillStyle = starColor || color;
-    figure.stars.forEach(star => {
-        ctx.beginPath();
-        ctx.arc(star.x * s, star.y * s, (star.big ? 1.9 : 1.4) * k, 0, Math.PI * 2);
-        ctx.fill();
-    });
-    ctx.restore();
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = drawConstellation;
-
-
-
-/***/ }),
-/* 10 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__shipyard_modules__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(2);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__physics_physics__ = __webpack_require__(7);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__audio_audio__ = __webpack_require__(3);
 
 
 
@@ -3433,10 +2644,10 @@ const SHIP_DAMAGE = { bullet: 0.5, plasma: 1, beam: 0.35, missile: 1.15, drone: 
 
 // Auto-targeting modes (with a targeting computer), cycled with T.
 const TARGET_MODES = ['both', 'ships', 'asteroids'];
-/* unused harmony export TARGET_MODES */
+/* harmony export (immutable) */ __webpack_exports__["c"] = TARGET_MODES;
 
 const TARGET_MODE_LABEL = { both: 'Ships + asteroids', ships: 'Ships', asteroids: 'Asteroids' };
-/* harmony export (immutable) */ __webpack_exports__["c"] = TARGET_MODE_LABEL;
+/* harmony export (immutable) */ __webpack_exports__["d"] = TARGET_MODE_LABEL;
 
 
 const HIT_COOLDOWN = 0.25;
@@ -4627,7 +3838,914 @@ class Ship {
     }
 }
 
-/* harmony default export */ __webpack_exports__["d"] = (Ship);
+/* harmony default export */ __webpack_exports__["e"] = (Ship);
+
+
+/***/ }),
+/* 7 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Shared physics helpers for an open, endless zero-gravity world.
+// Units: pixels and seconds. World coordinates are unbounded; the camera follows the ship.
+
+// Gravitational constant, tuned for gameplay. Mass of an asteroid is its area (r^2),
+// so a large asteroid pulls noticeably harder than a small one.
+const G = 150;
+/* harmony export (immutable) */ __webpack_exports__["a"] = G;
+
+
+// Beyond this distance gravity is negligible and skipped for performance.
+const GRAVITY_CUTOFF_SQ = 1300 * 1300;
+
+// Viewport size (the camera's view of the world).
+const world = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+
+    resize(width, height) {
+        this.width = width;
+        this.height = height;
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = world;
+
+
+const delta = (from, to) => ({ x: to.x - from.x, y: to.y - from.y });
+/* harmony export (immutable) */ __webpack_exports__["b"] = delta;
+
+
+// Gravitational acceleration that `attractors` exert on `body`.
+// Softened by the attractor's radius so nothing gets flung to infinity.
+const gravityAt = (body, attractors) => {
+    let ax = 0;
+    let ay = 0;
+
+    for(let i = 0; i < attractors.length; i++) {
+        const other = attractors[i];
+        if(other === body || other.dead) continue;
+
+        const dx = other.x - body.x;
+        const dy = other.y - body.y;
+        const distSq = dx * dx + dy * dy;
+        if(distSq < 0.0001 || distSq > GRAVITY_CUTOFF_SQ) continue;
+
+        const dist = Math.sqrt(distSq);
+        const accel = G * other.mass / (distSq + other.radius * other.radius);
+
+        ax += dx / dist * accel;
+        ay += dy / dist * accel;
+    }
+
+    return { x: ax, y: ay };
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = gravityAt;
+
+
+
+/***/ }),
+/* 8 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Module definitions. Each stat array is indexed by module level - 1 (Mk I..III).
+
+const MAX_LEVEL = 3;
+/* harmony export (immutable) */ __webpack_exports__["a"] = MAX_LEVEL;
+
+
+const MODULES = {
+    minigun: {
+        id: 'minigun',
+        name: 'Minigun turret',
+        short: 'Minigun',
+        description: 'Rapid-fire turret. Aims at the cursor, or auto-targets with a targeting computer.',
+        cost: 250,
+        color: '255,200,120',
+        stats: { fireRate: [12, 16, 21], damage: [1, 1.3, 1.7], heatShots: [60, 85, 120] },
+        describe: (s) => s.fireRate + ' rounds/s, ' + s.damage + ' dmg, overheats after ' + s.heatShots + ' rounds'
+    },
+    staff: {
+        id: 'staff',
+        name: 'Staff cannon',
+        short: 'Staff',
+        description: "Goa'uld plasma cannon. Slow, heavy energy bolts that splash on impact.",
+        cost: 900,
+        color: '255,175,70',
+        stats: { fireRate: [1.5, 1.9, 2.4], damage: [8, 11, 15], splash: [28, 34, 42] },
+        describe: (s) => s.damage + ' dmg bolts, ' + s.fireRate + '/s, ' + s.splash + 'px splash'
+    },
+    beam: {
+        id: 'beam',
+        name: 'Asgard ion beam',
+        short: 'Ion beam',
+        description: 'Instant-hit energy beam that carves through rock. Fires in bursts, then recharges.',
+        cost: 2200,
+        color: '140,215,255',
+        stats: { dps: [28, 40, 56], range: [600, 700, 820], burst: [1.2, 1.4, 1.7], cooldown: [2.6, 2.2, 1.8] },
+        describe: (s) => s.dps + ' dmg/s, ' + s.burst + 's burst, recharge ' + s.cooldown + 's'
+    },
+    drones: {
+        id: 'drones',
+        name: 'Drone launcher',
+        short: 'Drones',
+        description: 'Ancient drone weapons (F / right click). Fires a salvo of five self-guided drones in a row; each detonates in a big energy blast.',
+        cost: 2800,
+        color: '255,225,130',
+        stats: { count: [5, 5, 6], damage: [24, 32, 42], blast: [36, 44, 54], cooldown: [5, 4.2, 3.4] },
+        describe: (s) => s.count + '-drone salvo, ' + s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
+    },
+    hyperdrive: {
+        id: 'hyperdrive',
+        name: 'Hyperdrive',
+        short: 'Hyperdrive',
+        description: 'Opens a hyperspace window to travel between star systems (starmap, M). Needs a ship of at least cruiser size: fighters must use the Stargate.',
+        cost: 4000,
+        color: '150,190,255',
+        minHullMass: 3,
+        stats: { speed: [1, 1.6, 2.4] },
+        describe: (s) => 'hyperspace speed x' + s.speed
+    },
+    scanner: {
+        id: 'scanner',
+        name: 'Ore scanner',
+        short: 'Scanner',
+        description: 'Scans asteroids for metals: colours the scanner map by ore, pings the area and guides you to the richest asteroid nearby.',
+        cost: 800,
+        color: '190,255,140',
+        stats: { range: [2000, 2700, 3400], interval: [5, 4, 3] },
+        describe: (s) => s.range + 'px scan range, ping every ' + s.interval + 's'
+    },
+    missile: {
+        id: 'missile',
+        name: 'Missile pod',
+        short: 'Missiles',
+        description: 'Fires explosive missiles (F / right click). Home in on targets with a targeting computer.',
+        cost: 600,
+        color: '255,130,110',
+        stats: { cooldown: [1.6, 1.2, 0.85], damage: [14, 20, 28], blast: [45, 55, 68] },
+        describe: (s) => s.damage + ' dmg, ' + s.blast + 'px blast, reload ' + s.cooldown + 's'
+    },
+    engine: {
+        id: 'engine',
+        name: 'Sublight engine',
+        short: 'Engine',
+        description: 'Extra thrust and manoeuvring power.',
+        cost: 400,
+        color: '255,215,140',
+        stats: { thrust: [220, 320, 440], torque: [1.2, 1.8, 2.5] },
+        describe: (s) => '+' + s.thrust + ' thrust, +' + s.torque + ' turn'
+    },
+    shield: {
+        id: 'shield',
+        name: 'Shield emitter',
+        short: 'Shield',
+        description: 'Energy shield absorbs impacts and recharges when not hit.',
+        cost: 700,
+        color: '120,210,255',
+        stats: { capacity: [40, 65, 95], regen: [8, 12, 18] },
+        describe: (s) => '+' + s.capacity + ' shield, ' + s.regen + '/s recharge'
+    },
+    guidance: {
+        id: 'guidance',
+        name: 'Targeting computer',
+        short: 'Guidance',
+        description: 'Turrets lock on and fire automatically (toggle with G). Missiles become homing.',
+        cost: 900,
+        color: '140,255,160',
+        stats: { range: [350, 480, 620], homing: [3, 4.5, 6] },
+        describe: (s) => s.range + 'px lock range, homing ' + s.homing
+    },
+    cargo: {
+        id: 'cargo',
+        name: 'Cargo pod',
+        short: 'Cargo',
+        description: 'Extra hold space for ore.',
+        cost: 350,
+        color: '200,170,255',
+        stats: { capacity: [20, 35, 55] },
+        describe: (s) => '+' + s.capacity + ' cargo'
+    },
+    magnet: {
+        id: 'magnet',
+        name: 'Ore tractor',
+        short: 'Tractor',
+        description: 'Tractor beam that pulls in floating ore from further away.',
+        cost: 450,
+        color: '120,255,230',
+        stats: { range: [160, 230, 320] },
+        describe: (s) => s.range + 'px pickup range'
+    },
+    armor: {
+        id: 'armor',
+        name: 'Trinium armor',
+        short: 'Armor',
+        description: 'Reinforced plating. More hull, a little more mass.',
+        cost: 300,
+        color: '200,200,215',
+        stats: { hull: [30, 50, 75], mass: [0.3, 0.3, 0.3] },
+        describe: (s) => '+' + s.hull + ' hull'
+    }
+};
+
+const MODULE_ORDER = ['minigun', 'staff', 'beam', 'missile', 'drones', 'engine', 'shield', 'guidance', 'hyperdrive', 'scanner', 'cargo', 'magnet', 'armor'];
+/* harmony export (immutable) */ __webpack_exports__["b"] = MODULE_ORDER;
+
+
+const moduleStats = (type, level) => {
+    const def = MODULES[type];
+    const stats = {};
+    Object.keys(def.stats).forEach(key => { stats[key] = def.stats[key][level - 1]; });
+    return stats;
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = moduleStats;
+
+
+const upgradeCost = (type, level) => {
+    if(level >= MAX_LEVEL) return null;
+    return Math.round(MODULES[type].cost * (level === 1 ? 1 : 1.8));
+};
+/* harmony export (immutable) */ __webpack_exports__["g"] = upgradeCost;
+
+
+const totalSpent = (type, level) => {
+    let total = MODULES[type].cost;
+    for(let l = 1; l < level; l++) total += upgradeCost(type, l);
+    return total;
+};
+/* unused harmony export totalSpent */
+
+
+const sellValue = (type, level) => Math.round(totalSpent(type, level) * 0.5);
+/* harmony export (immutable) */ __webpack_exports__["f"] = sellValue;
+
+
+// Line-art icon for a module, centred on (0, 0) in the current transform.
+// `aim` is the local angle a turret barrel points at; `u` scales the drawing.
+const drawModule = (ctx, type, level, options) => {
+    const opts = options || {};
+    const u = opts.scale || 1;
+    const color = MODULES[type].color;
+    const aim = opts.aim || 0;
+
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = opts.lineWidth || 1.2;
+    ctx.strokeStyle = 'rgb(' + color + ')';
+    ctx.fillStyle = 'rgba(5, 10, 20, 0.85)';
+    ctx.shadowBlur = opts.glow === undefined ? 5 : opts.glow;
+    ctx.shadowColor = 'rgb(' + color + ')';
+
+    const shape = (pts) => {
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0] * u, pts[0][1] * u);
+        for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * u, pts[i][1] * u);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    };
+    const line = (x1, y1, x2, y2) => {
+        ctx.beginPath();
+        ctx.moveTo(x1 * u, y1 * u);
+        ctx.lineTo(x2 * u, y2 * u);
+        ctx.stroke();
+    };
+    const circle = (r, fill) => {
+        ctx.beginPath();
+        ctx.arc(0, 0, r * u, 0, Math.PI * 2);
+        if(fill) ctx.fill();
+        ctx.stroke();
+    };
+
+    if(type === 'minigun') {
+        // One barrel per Mk level.
+        ctx.save();
+        ctx.rotate(aim);
+        const offsets = level === 1 ? [0] : level === 2 ? [-1.3, 1.3] : [-2, 0, 2];
+        if(opts.heat > 0.5) {
+            ctx.strokeStyle = 'rgb(255,' + Math.round(200 - (opts.heat - 0.5) * 300) + ',' + Math.round(120 - (opts.heat - 0.5) * 200) + ')';
+        }
+        offsets.forEach(o => line(0, o, 9, o));
+        ctx.strokeStyle = 'rgb(' + color + ')';
+        ctx.restore();
+        circle(3.6, true);
+        circle(1.2);
+    }
+
+    if(type === 'staff') {
+        // Long ribbed plasma cannon on a disc mount.
+        ctx.save();
+        ctx.rotate(aim);
+        shape([[0, -1.6], [10, -1], [10, 1], [0, 1.6]]);
+        for(let i = 0; i < level + 1; i++) line(3 + i * 2, -1.4, 3 + i * 2, 1.4);
+        ctx.restore();
+        shape([[0, -4], [3.5, -2], [3.5, 2], [0, 4], [-3.5, 2], [-3.5, -2]]);
+    }
+
+    if(type === 'beam') {
+        // Asgard emitter: crystal dish with a focusing prong.
+        ctx.save();
+        ctx.rotate(aim);
+        line(0, 0, 8, 0);
+        line(5, -2, 8, 0); line(5, 2, 8, 0);
+        ctx.restore();
+        circle(4, true);
+        ctx.beginPath();
+        ctx.arc(0, 0, 2.2 * u, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 1; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4 + i * 1.4) * u, Math.PI * 0.6, Math.PI * 1.4);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'drones') {
+        // Hexagonal drone bay with glowing drone cells.
+        shape([[4.5, 0], [2.2, -4], [-2.2, -4], [-4.5, 0], [-2.2, 4], [2.2, 4]]);
+        const cells = level + 2;
+        for(let i = 0; i < cells; i++) {
+            const a = (i / cells) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.arc(Math.cos(a) * 2.2 * u, Math.sin(a) * 2.2 * u, 0.7 * u, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'missile') {
+        shape([[-4, -4], [4, -4], [5, 0], [4, 4], [-4, 4]]);
+        const tubes = level + 1;
+        for(let i = 0; i < tubes; i++) {
+            const y = -2.5 + (5 / (tubes - 1)) * i;
+            line(-2.5, y, 3, y);
+        }
+    }
+
+    if(type === 'engine') {
+        shape([[3, -3], [3, 3], [-4, 4.5], [-4, -4.5]]);
+        for(let i = 0; i < level; i++) line(1 - i * 2, -2.5, 1 - i * 2, 2.5);
+    }
+
+    if(type === 'shield') {
+        const hex = (r) => {
+            const pts = [];
+            for(let i = 0; i < 6; i++) pts.push([Math.cos(i * Math.PI / 3) * r, Math.sin(i * Math.PI / 3) * r]);
+            return pts;
+        };
+        shape(hex(4.5));
+        if(level >= 2) shape(hex(3));
+        if(level >= 3) shape(hex(1.5));
+    }
+
+    if(type === 'guidance') {
+        circle(3.8, true);
+        line(-5.5, 0, -2, 0); line(2, 0, 5.5, 0);
+        line(0, -5.5, 0, -2); line(0, 2, 0, 5.5);
+        for(let i = 1; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (3.8 + i * 1.6) * u, -Math.PI * 0.8, -Math.PI * 0.2);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'cargo') {
+        shape([[-4.5, -4], [4.5, -4], [4.5, 4], [-4.5, 4]]);
+        line(-4.5, 0, 4.5, 0);
+        for(let i = 0; i < level; i++) line(-2 + i * 2, -4, -2 + i * 2, 4);
+    }
+
+    if(type === 'magnet') {
+        // Horseshoe magnet, one field arc per level.
+        ctx.beginPath();
+        ctx.arc(-1 * u, 0, 3.5 * u, Math.PI / 2, Math.PI * 1.5);
+        ctx.lineTo(3 * u, -3.5 * u);
+        ctx.moveTo(-1 * u, 3.5 * u);
+        ctx.lineTo(3 * u, 3.5 * u);
+        ctx.stroke();
+        for(let i = 0; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(3 * u, 0, (2 + i * 1.6) * u, -Math.PI / 3, Math.PI / 3);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'hyperdrive') {
+        // Hyperdrive core: a ring with a swirl and chevron fins.
+        circle(4.2, true);
+        ctx.beginPath();
+        for(let i = 0; i <= 12; i++) {
+            const a = i / 12 * Math.PI * 2.2;
+            const r = (0.6 + i * 0.25) * u;
+            if(i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+            else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.stroke();
+        for(let i = 0; i < level; i++) line(-6 + i * 1.6, -2.5, -4.5 + i * 1.6, 0);
+    }
+
+    if(type === 'scanner') {
+        // Radar dish with sweep arcs (one per level).
+        circle(3.4, true);
+        line(0, 0, 3, -3);
+        ctx.beginPath();
+        ctx.arc(0, 0, 1, 0, Math.PI * 2);
+        ctx.stroke();
+        for(let i = 0; i < level; i++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, (4.8 + i * 1.5) * u, -Math.PI * 0.45, Math.PI * 0.05);
+            ctx.stroke();
+        }
+    }
+
+    if(type === 'armor') {
+        shape([[0, -4.5], [4.5, 0], [0, 4.5], [-4.5, 0]]);
+        for(let i = 0; i < level; i++) {
+            const o = -1.5 + i * 1.5;
+            line(-2 + o, -1, 1 + o, 2);
+        }
+    }
+
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = drawModule;
+
+
+/* harmony default export */ __webpack_exports__["c"] = (MODULES);
+
+
+/***/ }),
+/* 9 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+
+
+// Small glowing sparks, plus soft dust that can be drawn into an asteroid
+// (used when asteroids merge: the dust cloud spirals in and settles on the surface).
+
+// Colour strings are cached per colour and fade step, so drawing hundreds of particles
+// doesn't build (and garbage-collect) a new 'rgba(...)' string for each one every frame.
+const STEPS = 12;
+const styleCache = {};
+const style = (color, alpha) => {
+    let row = styleCache[color];
+    if(!row) {
+        row = styleCache[color] = [];
+        for(let i = 0; i <= STEPS; i++) row.push('rgba(' + color + ',' + (i / STEPS).toFixed(3) + ')');
+    }
+    return row[Math.max(0, Math.min(STEPS, Math.round(alpha * STEPS)))];
+};
+
+class Particle {
+
+    constructor(options) {
+        this.x = options.x;
+        this.y = options.y;
+        this.vx = options.vx || 0;
+        this.vy = options.vy || 0;
+        this.life = options.life;
+        this.maxLife = options.life;
+        this.size = options.size || 2;
+        this.color = options.color || '255,255,255';
+        this.shrink = options.shrink !== false;
+        this.dust = !!options.dust;
+        this.solid = !!options.solid;      // rock debris: drawn as a small unlit chip
+        this.pixel = !!options.pixel;      // crisp square pixel with stepped fade and flicker
+        this.glow = !!options.glow;        // pixel drawn additively (sparks, embers)
+        this.drag = options.drag || 0;     // optional slow-down (dust settling, grit losing speed)
+        this.alpha = options.alpha === undefined ? 1 : options.alpha;
+        this.attractor = options.attractor || null;
+        this.swirl = options.swirl || 0;
+        this.dead = false;
+    }
+
+    static burst(target, x, y, baseVx, baseVy, count, options) {
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = options.minSpeed + Math.random() * (options.maxSpeed - options.minSpeed);
+            target.push(new Particle({
+                x: x,
+                y: y,
+                vx: baseVx + Math.cos(angle) * speed,
+                vy: baseVy + Math.sin(angle) * speed,
+                life: options.minLife + Math.random() * (options.maxLife - options.minLife),
+                size: options.size * (0.6 + Math.random() * 0.8),
+                color: options.color,
+                dust: options.dust,
+                solid: options.solid,
+                pixel: options.pixel,
+                glow: options.glow,
+                drag: options.drag,
+                alpha: options.alpha
+            }));
+        }
+    }
+
+    // A ring of dust around (x, y) that swirls inwards onto `attractor`.
+    static mergeCloud(target, x, y, attractor, count, spread, color) {
+        for(let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = spread * (0.3 + Math.random() * 0.9);
+            const px = x + Math.cos(angle) * distance;
+            const py = y + Math.sin(angle) * distance;
+            const out = 15 + Math.random() * 35;
+            target.push(new Particle({
+                x: px,
+                y: py,
+                vx: attractor.vx + Math.cos(angle) * out,
+                vy: attractor.vy + Math.sin(angle) * out,
+                life: 1.6 + Math.random() * 1.4,
+                size: 5 + Math.random() * 9,
+                color: color,
+                dust: true,
+                alpha: 0.18 + Math.random() * 0.14,
+                attractor: attractor,
+                swirl: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.6)
+            }));
+        }
+    }
+
+    update(dt) {
+        const a = this.attractor;
+        if(a && !a.dead) {
+            const dx = a.x - this.x;
+            const dy = a.y - this.y;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 0.001;
+            // Fall inwards with a tangential swirl, matching the asteroid's drift.
+            const pull = 160 + 3000 / (distance + 20);
+            this.vx += (dx / distance * pull - dy / distance * pull * this.swirl) * dt;
+            this.vy += (dy / distance * pull + dx / distance * pull * this.swirl) * dt;
+            this.vx += (a.vx - this.vx) * Math.min(1, dt * 1.5);
+            this.vy += (a.vy - this.vy) * Math.min(1, dt * 1.5);
+            if(distance < a.radius * 0.75) this.life = Math.min(this.life, 0.25);
+        }
+
+        if(this.drag) {
+            const keep = Math.max(0, 1 - this.drag * dt);
+            this.vx *= keep;
+            this.vy *= keep;
+        }
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.life -= dt;
+        if(this.life <= 0) this.dead = true;
+    }
+
+    draw(ctx) {
+        const t = Math.max(this.life / this.maxLife, 0);
+        if(this.dust) {
+            // Soft puff: fades in quickly, swells, then thins out.
+            const fade = Math.min(1, (1 - t) * 6) * Math.min(1, t * 3);
+            const size = this.size * 2.4 * (0.7 + 0.5 * (1 - t));
+            ctx.globalAlpha = Math.min(1, this.alpha * fade * 1.6);
+            ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["b" /* dustSprite */])(this.color).canvas, this.x - size / 2, this.y - size / 2, size, size);
+            ctx.globalAlpha = 1;
+            return;
+        }
+        if(this.pixel) {
+            // Pixel look: whole-pixel size and position, fading in steps, flickering out.
+            if(t < 0.35 && Math.random() < 0.35) return;
+            const stepped = Math.ceil(t * 4) / 4;
+            const s = Math.max(1, Math.round(this.size * (this.shrink ? 0.5 + 0.5 * t : 1)));
+            ctx.fillStyle = style(this.color, stepped * this.alpha);
+            ctx.fillRect(Math.round(this.x - s / 2), Math.round(this.y - s / 2), s, s);
+            return;
+        }
+        if(this.solid) {
+            ctx.fillStyle = style(this.color, Math.min(1, t * 2));
+            ctx.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+            return;
+        }
+        const size = this.shrink ? this.size * (0.3 + 0.7 * t) : this.size;
+        ctx.fillStyle = style(this.color, t * this.alpha);
+        ctx.fillRect(this.x - size / 2, this.y - size / 2, size, size);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (Particle);
+
+
+/***/ }),
+/* 10 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__ship__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__shipyard_profile__ = __webpack_require__(4);
+// Enemy ships: the same hulls the player can fly, fitted out at mid level (Mk II) or fully
+// upgraded (Mk III), flown by a simple AI pilot that feeds the ship the same kind of input
+// the player's keyboard and mouse do.
+
+
+
+
+
+// Weapons and systems each faction fits, in order; slots are filled cycling through it.
+const FACTION_FIT = {
+    "Goa'uld": ['staff', 'staff', 'missile', 'shield', 'staff', 'engine', 'armor', 'staff', 'shield'],
+    "Tau'ri": ['minigun', 'missile', 'shield', 'guidance', 'minigun', 'missile', 'engine', 'armor', 'shield', 'minigun'],
+    Asgard: ['beam', 'shield', 'beam', 'missile', 'engine', 'shield', 'beam', 'armor', 'shield'],
+    Ancient: ['drones', 'shield', 'minigun', 'drones', 'engine', 'shield', 'beam', 'armor', 'drones']
+};
+// Small craft keep a mount free for an engine instead of a second heavy system.
+const FIGHTER_FIT = {
+    glider: ['staff', 'staff', 'engine'],
+    x302: ['minigun', 'missile', 'missile'],
+    jumper: ['drones', 'shield', 'engine', 'minigun']
+};
+
+// Enemy weapons hit a little softer than the player's, so a fair fight is winnable.
+const ENEMY_DAMAGE = 0.75;
+/* harmony export (immutable) */ __webpack_exports__["a"] = ENEMY_DAMAGE;
+
+
+const enemyLoadout = (hull, level) => {
+    const fit = FIGHTER_FIT[hull.id] || FACTION_FIT[hull.faction] || FACTION_FIT["Tau'ri"];
+    const loadout = {};
+    hull.slots.forEach((slot, i) => {
+        loadout[slot.id] = { type: fit[i % fit.length], level: level };
+    });
+    return loadout;
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = enemyLoadout;
+
+
+const createEnemy = (hullId, level, x, y) => {
+    const hull = __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["b" /* default */][hullId];
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship__["e" /* default */](x, y, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, enemyLoadout(hull, level)));
+    ship.side = 'enemy';
+    ship.damageScale = ENEMY_DAMAGE;
+    ship.autoTarget = false;
+    ship.stabilizer = true;   // keeps the AI's flying under control in zero-g
+    ship.immunity = 0.6;
+    ship.level = level;
+    ship.angle = Math.random() * Math.PI * 2;
+    ship.ai = {
+        input: {
+            forward: false, backward: false, rotateLeft: false, rotateRight: false,
+            strafeLeft: false, strafeRight: false, firing: false, firingMissiles: false,
+            aimX: x, aimY: y, lockTarget: null
+        },
+        orbit: Math.random() < 0.5 ? 1 : -1,
+        orbitTimer: 2 + Math.random() * 3,
+        missileTimer: 1.5 + Math.random() * 2,
+        aimError: 0
+    };
+    // Preferred fighting distance from its weapons.
+    const kinds = ship.turrets.map(t => t.kind).concat(ship.launchers.map(l => l.kind));
+    ship.ai.range = kinds.indexOf('beam') !== -1 ? 380 : kinds.indexOf('staff') !== -1 || kinds.indexOf('minigun') !== -1 ? 430 : 650;
+    ship.ai.range += hull.radius * 1.2;
+    // How far its guns are worth firing (bolts and rounds lose accuracy beyond this).
+    ship.ai.gunReach = kinds.indexOf('beam') !== -1 ? 650 : kinds.indexOf('staff') !== -1 ? 700 : 750;
+    ship.ai.gunReach += hull.radius * 0.5;
+    // Bounty paid when destroyed.
+    ship.bounty = Math.round((150 + hull.cost * 0.12) * (level === 3 ? 1.5 : 1));
+    return ship;
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = createEnemy;
+
+
+const angleDifference = (a, b) => {
+    let d = b - a;
+    while(d > Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    return d;
+};
+
+// Turn towards `desired` without overshooting (zero-g: counter the spin in time).
+const steer = (ship, input, desired) => {
+    const error = angleDifference(ship.angle, desired);
+    const wanted = Math.max(-ship.stats.maxTurn, Math.min(ship.stats.maxTurn, error * 2.5));
+    input.rotateRight = ship.angularVelocity < wanted - 0.05;
+    input.rotateLeft = ship.angularVelocity > wanted + 0.05;
+    return error;
+};
+
+// One AI tick: decide how to fly and when to shoot.
+//   target:   the player ship (or null)
+//   rocks:    asteroids to steer around
+//   incoming: the player's missiles and drones (to dodge or shoot down)
+//   friends:  the other enemy ships (to keep formation spacing)
+//   avoid:    optional { x, y, radius } to stay out of (the Atlantis city shield)
+//
+// Fighters make attack runs: charge in firing, break away past the target, swing round and
+// come again, jinking away from missiles. Capital ships hold a standoff distance, circle
+// slowly and let their turrets work. Anyone badly hurt withdraws to recharge shields and
+// comes back.
+const updateEnemyAI = (ship, dt, target, rocks, incoming, friends, avoid) => {
+    const ai = ship.ai;
+    const input = ai.input;
+    input.forward = input.backward = input.strafeLeft = input.strafeRight = false;
+    input.firing = input.firingMissiles = false;
+    input.lockTarget = null;
+    if(!ship.alive) return;
+
+    const fighter = ship.radius < 45;
+    ai.mode = ai.mode || 'attack';
+    ai.modeTimer = (ai.modeTimer || 0) - dt;
+    ai.evadeTimer = (ai.evadeTimer || 0) - dt;
+    ai.orbitTimer -= dt;
+    if(ai.orbitTimer <= 0) {
+        ai.orbit = -ai.orbit;
+        ai.orbitTimer = 3 + Math.random() * 4;
+        ai.aimError = (Math.random() - 0.5) * 0.06;
+    }
+
+    // Keep clear of the city shield.
+    if(avoid) {
+        const ax = ship.x - avoid.x;
+        const ay = ship.y - avoid.y;
+        const ad = Math.sqrt(ax * ax + ay * ay) || 1;
+        if(ad < avoid.radius + ship.radius) {
+            steer(ship, input, Math.atan2(ay, ax));
+            input.forward = true;
+            return;
+        }
+    }
+
+    if(!target) {
+        ai.mode = 'attack';
+        input.forward = Math.random() < 0.02;
+        return;
+    }
+
+    const dx = target.x - ship.x;
+    const dy = target.y - ship.y;
+    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+    const toTarget = Math.atan2(dy, dx);
+    const range = ai.range;
+
+    // Badly damaged: withdraw until the shields are back up (or a while has passed).
+    const health = ship.hp / ship.maxHull;
+    if(ai.mode !== 'retreat' && health < 0.3 && ship.maxShield > 0 && !ai.retreated) {
+        ai.mode = 'retreat';
+        ai.modeTimer = 8 + Math.random() * 4;
+        ai.retreated = true;
+    }
+    if(ai.mode === 'retreat') {
+        if(ai.modeTimer <= 0 || (ship.shield > ship.maxShield * 0.8 && distance > 1600)) {
+            ai.mode = 'attack';
+        } else {
+            steer(ship, input, toTarget + Math.PI + ai.orbit * 0.4);
+            input.forward = true;
+            input.firing = distance < range * 1.5;
+            aimAt(ship, ai, input, target);
+            return;
+        }
+    }
+
+    // Dodge: a hostile missile or drone closing in fast makes fighters jink sideways.
+    let threat = null;
+    let threatDistance = Infinity;
+    for(let i = 0; i < incoming.length; i++) {
+        const m = incoming[i];
+        if(m.dead) continue;
+        const mx = ship.x - m.x;
+        const my = ship.y - m.y;
+        const d = Math.sqrt(mx * mx + my * my);
+        if(d > 420 + ship.radius) continue;
+        const closing = (m.vx * mx + m.vy * my) / (d || 1);
+        if(closing > 120 && d < threatDistance) {
+            threat = m;
+            threatDistance = d;
+        }
+    }
+    if(threat && fighter && ai.evadeTimer <= 0) {
+        ai.evadeTimer = 0.7;
+        ai.evadeSide = (threat.vx * (ship.y - threat.y) - threat.vy * (ship.x - threat.x)) > 0 ? 1 : -1;
+    }
+
+    // Aim: gun ships shoot close missiles down, otherwise lead the target.
+    const shootDown = threat && threat.kind === 'missile' && threatDistance < 320 && ship.turrets.some(t => t.kind === 'minigun');
+    aimAt(ship, ai, input, shootDown ? threat : target);
+
+    if(fighter) {
+        // Attack run: charge, break off past the target, swing back round.
+        if(ai.mode === 'attack') {
+            const facing = steer(ship, input, toTarget);
+            input.forward = Math.abs(facing) < 0.8;
+            if(distance < Math.max(160, range * 0.45)) {
+                ai.mode = 'break';
+                ai.modeTimer = 1.1 + Math.random() * 0.8;
+                ai.breakAngle = toTarget + ai.orbit * (0.9 + Math.random() * 0.5);
+            }
+        } else if(ai.mode === 'break') {
+            steer(ship, input, ai.breakAngle);
+            input.forward = true;
+            if(ai.modeTimer <= 0 && distance > range * 0.9) ai.mode = 'attack';
+            if(ai.modeTimer < -3) ai.mode = 'attack';
+        }
+    } else {
+        // Capital ship: hold the standoff distance and circle slowly.
+        ai.mode = 'attack';
+        const far = distance > range * 1.25;
+        const facing = steer(ship, input, toTarget + (far ? 0 : ai.orbit * 0.35));
+        if(distance > range * 1.05 && Math.abs(facing) < 1.2) input.forward = true;
+        if(distance < range * 0.7) input.backward = true;
+        if(distance < range * 1.2) {
+            if(ai.orbit > 0) input.strafeRight = true;
+            else input.strafeLeft = true;
+        }
+    }
+
+    if(ai.evadeTimer > 0) {
+        input.strafeLeft = ai.evadeSide < 0;
+        input.strafeRight = ai.evadeSide > 0;
+    }
+
+    // Spacing: don't pile into other enemy ships.
+    for(let i = 0; i < friends.length; i++) {
+        const other = friends[i];
+        if(other === ship || !other.alive) continue;
+        const ox = other.x - ship.x;
+        const oy = other.y - ship.y;
+        const reach = other.radius + ship.radius + 70;
+        if(ox * ox + oy * oy > reach * reach) continue;
+        const side = Math.cos(ship.angle) * oy - Math.sin(ship.angle) * ox;
+        input.strafeLeft = side > 0;
+        input.strafeRight = side <= 0;
+        break;
+    }
+
+    // Dodge asteroids in the way.
+    for(let i = 0; i < rocks.length; i++) {
+        const rock = rocks[i];
+        if(rock.dead) continue;
+        const rx = rock.x - ship.x;
+        const ry = rock.y - ship.y;
+        const reach = rock.radius + ship.radius + 60;
+        if(rx * rx + ry * ry > reach * reach) continue;
+        const side = Math.cos(ship.angle) * ry - Math.sin(ship.angle) * rx;
+        input.strafeLeft = side > 0;
+        input.strafeRight = side <= 0;
+        if(fighter) input.forward = false;
+        break;
+    }
+
+    // Guns only within their real reach (turrets swing to the aim point by themselves).
+    input.firing = !!shootDown || distance - target.radius * 0.8 < ai.gunReach;
+
+    // Missiles and drones in volleys, locked onto the target. Drones are held back for
+    // the player's drones when those are in the air.
+    ai.missileTimer -= dt;
+    const playerDrones = incoming.some(m => m.kind === 'drone' && !m.dead);
+    if(ship.launchers.length && (ai.missileTimer <= 0 || playerDrones) && distance < 1400 && distance > 140) {
+        input.firingMissiles = true;
+        input.lockTarget = target;
+        if(ship.launchers.every(l => l.cooldown > 0) || Math.random() < 0.02) {
+            ai.missileTimer = 2 + Math.random() * 3;
+        }
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = updateEnemyAI;
+
+
+// Aim with lead for the travel time of its shots, plus a little error.
+const aimAt = (ship, ai, input, target) => {
+    const projectileSpeed = ship.turrets.some(t => t.kind === 'staff') ? 520 : 1100;
+    const ex = target.x - ship.x;
+    const ey = target.y - ship.y;
+    const t = Math.sqrt(ex * ex + ey * ey) / projectileSpeed;
+    // Shots don't inherit the shooter's sideways drift, so lead by the target's own motion.
+    const lx = target.x + (target.vx || 0) * t;
+    const ly = target.y + (target.vy || 0) * t;
+    const aimAngle = Math.atan2(ly - ship.y, lx - ship.x) + ai.aimError;
+    const aimDist = Math.sqrt((lx - ship.x) * (lx - ship.x) + (ly - ship.y) * (ly - ship.y));
+    input.aimX = ship.x + Math.cos(aimAngle) * aimDist;
+    input.aimY = ship.y + Math.sin(aimAngle) * aimDist;
+};
+
+// Which hulls turn up in each star system (weights), and how many at most at once.
+const SYSTEM_ENEMIES = {
+    lantea: { max: 2, hulls: { glider: 4, jumper: 2, alkesh: 1 } },
+    earth: { max: 2, hulls: { glider: 3, alkesh: 2, x303: 1, jumper: 1 } },
+    abydos: { max: 3, hulls: { glider: 5, alkesh: 2, hatak: 1 } },
+    chulak: { max: 3, hulls: { glider: 5, alkesh: 3, hatak: 1 } },
+    dakara: { max: 3, hulls: { glider: 4, alkesh: 3, hatak: 1, x302: 1 } },
+    langara: { max: 2, hulls: { x302: 3, x303: 2, alkesh: 1 } },
+    othala: { max: 3, hulls: { alkesh: 2, x304: 1, hatak: 1, aurora: 1, asgard: 1 } }
+};
+
+const enemyConfig = (systemId) => SYSTEM_ENEMIES[systemId] || SYSTEM_ENEMIES.lantea;
+/* harmony export (immutable) */ __webpack_exports__["c"] = enemyConfig;
+
+
+const pickEnemyHull = (systemId) => {
+    const hulls = enemyConfig(systemId).hulls;
+    const total = Object.keys(hulls).reduce((sum, id) => sum + hulls[id], 0);
+    let roll = Math.random() * total;
+    const ids = Object.keys(hulls);
+    for(let i = 0; i < ids.length; i++) {
+        roll -= hulls[ids[i]];
+        if(roll <= 0) return ids[i];
+    }
+    return ids[0];
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = pickEnemyHull;
+
 
 
 /***/ }),
@@ -4635,8 +4753,2685 @@ class Ship {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(4);
+// Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
+
+
+
+
+
+
+const SLOT_HIT_RADIUS = 16;
+
+const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if(className) node.className = className;
+    if(text !== undefined) node.textContent = text;
+    return node;
+};
+
+const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
+// Prices read "FREE" in debug mode.
+const formatPrice = (value) => (Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'FREE' : formatCredits(value));
+
+const setupCanvas = (canvas, width, height) => {
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    return ctx;
+};
+
+const drawHullPreview = (ctx, hull, width, height, padding, maxScale) => {
+    const b = Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["d" /* hullBounds */])(hull);
+    const scale = Math.min((width - padding * 2) / (b.maxX - b.minX), (height - padding * 2) / (b.maxY - b.minY),
+        maxScale || Infinity);
+    const offsetX = width / 2 - ((b.minX + b.maxX) / 2) * scale;
+    const offsetY = height / 2 - ((b.minY + b.maxY) / 2) * scale;
+    return { scale: scale, offsetX: offsetX, offsetY: offsetY };
+};
+
+class Shipyard {
+
+    constructor() {
+        this.isOpen = false;
+        this.selectedSlot = null;
+        this.armedModule = null;
+        this.hoverSlot = null;
+        this.drag = null;
+        this.frameId = null;
+        this.messageTimer = null;
+        this.build();
+    }
+
+    build() {
+        const root = el('div', 'shipyard');
+        root.id = 'shipyard';
+
+        const header = el('div', 'shipyard-header');
+        header.appendChild(el('h1', '', 'Shipyard'));
+        const tabs = el('div', 'shipyard-tabs');
+        this.tabButtons = {};
+        [['ship', 'Ship'], ['market', 'Market']].forEach(tab => {
+            const button = el('button', 'sy-tab', tab[1]);
+            button.addEventListener('click', () => this.showTab(tab[0]));
+            tabs.appendChild(button);
+            this.tabButtons[tab[0]] = button;
+        });
+        header.appendChild(tabs);
+        this.debugButton = el('button', 'sy-tab debug-toggle', 'Debug');
+        this.debugButton.title = 'Debug mode: unlock everything and make it free';
+        this.debugButton.addEventListener('click', () => {
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
+            this.flash(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
+            this.refresh();
+        });
+        header.appendChild(this.debugButton);
+        this.creditsLabel = el('div', 'shipyard-credits');
+        header.appendChild(this.creditsLabel);
+        this.closeButton = el('button', 'sy-button primary', 'Launch');
+        this.closeButton.addEventListener('click', () => this.close());
+        header.appendChild(this.closeButton);
+        root.appendChild(header);
+
+        const body = el('div', 'shipyard-body');
+
+        const hullColumn = el('div', 'shipyard-panel hull-list');
+        hullColumn.appendChild(el('h3', '', 'Hulls'));
+        this.hullList = el('div', 'hull-cards');
+        hullColumn.appendChild(this.hullList);
+        body.appendChild(hullColumn);
+
+        const center = el('div', 'shipyard-panel hull-view');
+        this.hullTitle = el('div', 'hull-title');
+        center.appendChild(this.hullTitle);
+        this.canvasWrap = el('div', 'hull-canvas-wrap');
+        this.canvas = el('canvas', 'hull-canvas');
+        this.canvasWrap.appendChild(this.canvas);
+        this.buildPopover();
+        center.appendChild(this.canvasWrap);
+        this.hint = el('div', 'shipyard-hint');
+        center.appendChild(this.hint);
+        this.statsBox = el('div', 'ship-stats');
+        center.appendChild(this.statsBox);
+        body.appendChild(center);
+
+        const moduleColumn = el('div', 'shipyard-panel module-panel');
+        moduleColumn.appendChild(el('h3', '', 'Modules'));
+        this.palette = el('div', 'module-palette');
+        moduleColumn.appendChild(this.palette);
+        moduleColumn.appendChild(el('h3', '', 'Selected mount'));
+        this.inspector = el('div', 'inspector');
+        moduleColumn.appendChild(this.inspector);
+        body.appendChild(moduleColumn);
+
+        root.appendChild(body);
+        this.shipBody = body;
+
+        this.marketBody = el('div', 'shipyard-market');
+        root.appendChild(this.marketBody);
+
+        this.message = el('div', 'shipyard-message');
+        root.appendChild(this.message);
+
+        this.root = root;
+        document.body.appendChild(root);
+
+        this.buildPalette();
+        this.bindCanvas();
+
+        window.addEventListener('keydown', (event) => {
+            if(!this.isOpen) return;
+            if(event.code === 'Escape') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if(this.armedModule) {
+                    this.armedModule = null;
+                    this.refresh();
+                } else {
+                    this.close();
+                }
+            }
+        }, true);
+
+        window.addEventListener('resize', () => { if(this.isOpen) this.resizeCanvas(); });
+    }
+
+    get hull() {
+        return __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().hull];
+    }
+
+    open(options) {
+        this.options = options || {};
+        this.isOpen = true;
+        this.selectedSlot = null;
+        this.armedModule = null;
+        this.closeButton.textContent = this.options.closeLabel || 'Launch';
+        this.root.classList.add('open');
+        this.tab = this.options.tab || 'ship';
+        this.refresh();
+        this.resizeCanvas();
+        const loop = () => {
+            this.renderCanvas();
+            this.frameId = requestAnimationFrame(loop);
+        };
+        loop();
+    }
+
+    close() {
+        if(!this.isOpen) return;
+        this.isOpen = false;
+        this.root.classList.remove('open');
+        cancelAnimationFrame(this.frameId);
+        this.endDrag();
+        if(this.options.onClose) this.options.onClose();
+    }
+
+    flash(text) {
+        this.message.textContent = text;
+        this.message.classList.add('visible');
+        clearTimeout(this.messageTimer);
+        this.messageTimer = setTimeout(() => this.message.classList.remove('visible'), 2200);
+    }
+
+    // ------------------------------------------------------------ panels
+
+    showTab(tab) {
+        this.tab = tab;
+        this.armedModule = null;
+        this.refresh();
+    }
+
+    refresh() {
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
+        this.creditsLabel.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'DEBUG · everything free' : formatCredits(profile.credits);
+        this.debugButton.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug: ON' : 'Debug: OFF';
+        this.debugButton.classList.toggle('active', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
+        Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
+        this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
+        this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
+        this.renderMarket();
+        this.renderHullList();
+        this.renderTitle();
+        this.renderStats();
+        this.renderPalette();
+        this.renderInspector();
+        this.renderPopover();
+        this.renderHint();
+    }
+
+    renderMarket() {
+        const box = this.marketBody;
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
+        const capacity = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id).cargo;
+        box.innerHTML = '';
+
+        const panel = el('div', 'shipyard-panel market-panel');
+        panel.appendChild(el('h3', '', 'Ore exchange'));
+        const canTrade = !!(this.options && this.options.canTrade);
+        if(!canTrade) panel.appendChild(el('p', 'market-warning', 'Fly to the shipyard station and dock (B) to sell ore.'));
+        panel.appendChild(el('p', 'muted', 'Cargo hold: ' + Object(__WEBPACK_IMPORTED_MODULE_3__profile__["d" /* cargoUsed */])() + ' / ' + capacity +
+            ' units. Prices are per unit; metals found further from base are worth more.'));
+
+        const table = el('table', 'market-table');
+        const head = el('tr');
+        ['Material', 'Price', 'In hold', 'Value', ''].forEach(h => head.appendChild(el('th', '', h)));
+        table.appendChild(head);
+
+        __WEBPACK_IMPORTED_MODULE_1__world_materials__["a" /* MATERIAL_ORDER */].forEach(id => {
+            const material = __WEBPACK_IMPORTED_MODULE_1__world_materials__["b" /* default */][id];
+            const amount = profile.cargo[id] || 0;
+            const tr = el('tr', amount ? '' : 'empty');
+            const name = el('td', 'material-name');
+            const swatch = el('span', 'swatch');
+            swatch.style.background = 'rgb(' + material.color + ')';
+            swatch.style.boxShadow = '0 0 6px rgb(' + material.color + ')';
+            name.appendChild(swatch);
+            name.appendChild(document.createTextNode(material.name));
+            tr.appendChild(name);
+            tr.appendChild(el('td', '', formatCredits(material.price)));
+            tr.appendChild(el('td', '', String(amount)));
+            tr.appendChild(el('td', '', formatCredits(amount * material.price)));
+            const cell = el('td');
+            const sell = el('button', 'sy-button small', 'Sell');
+            sell.disabled = amount === 0 || !canTrade;
+            sell.addEventListener('click', () => {
+                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])(id);
+                this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
+                this.refresh();
+            });
+            cell.appendChild(sell);
+            tr.appendChild(cell);
+            table.appendChild(tr);
+        });
+        panel.appendChild(table);
+
+        const total = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["e" /* cargoValue */])();
+        const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
+        sellAll.disabled = total === 0 || !canTrade;
+        sellAll.addEventListener('click', () => {
+            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])();
+            this.flash('Cargo sold for ' + formatCredits(earned));
+            this.refresh();
+        });
+        panel.appendChild(sellAll);
+
+        // Repairs are only offered when docked with a damaged ship.
+        const status = this.options && this.options.hullStatus ? this.options.hullStatus() : null;
+        if(status) {
+            panel.appendChild(el('h3', 'market-section', 'Repairs'));
+            const missing = Math.ceil(status.max - status.hp);
+            if(missing <= 0) {
+                panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
+            } else {
+                const cost = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]);
+                const affordable = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? missing : Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
+                panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
+                    ' · ' + __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */] + ' cr per point'));
+                const repair = el('button', 'sy-button', affordable < missing
+                    ? 'Repair ' + affordable + ' points  ' + formatPrice(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])
+                    : 'Full repair  ' + formatPrice(cost));
+                repair.disabled = affordable <= 0;
+                repair.addEventListener('click', () => {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["t" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
+                        this.options.repair(affordable);
+                        this.flash('Hull repaired.');
+                    }
+                    this.refresh();
+                });
+                panel.appendChild(repair);
+            }
+        }
+
+        box.appendChild(panel);
+    }
+
+    renderHullList() {
+        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
+        this.hullList.innerHTML = '';
+
+        __WEBPACK_IMPORTED_MODULE_0__hulls__["a" /* HULL_ORDER */].forEach(id => {
+            const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][id];
+            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* ownsHull */])(id);
+            const active = profile.hull === id;
+            const card = el('div', 'hull-card' + (active ? ' active' : '') + (owned ? ' owned' : ''));
+
+            const thumb = el('canvas', 'hull-thumb');
+            const ctx = setupCanvas(thumb, 120, 64);
+            const fit = drawHullPreview(ctx, hull, 120, 64, 8);
+            ctx.translate(fit.offsetX, fit.offsetY);
+            ctx.scale(fit.scale, fit.scale);
+            Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["c" /* drawHullArt */])(ctx, hull, { lineWidth: 1.2 / fit.scale, glow: 4 });
+            card.appendChild(thumb);
+
+            const info = el('div', 'hull-info');
+            info.appendChild(el('div', 'hull-name', hull.name));
+            info.appendChild(el('div', 'hull-class', hull.className + ' · ' + hull.faction));
+            info.appendChild(el('div', 'hull-meta', hull.slots.length + ' mounts · ' + hull.cargo + ' cargo · ' + hull.hull + ' hull' +
+                (hull.baseShield ? ' · ' + hull.baseShield + ' shield' : '')));
+
+            let action;
+            if(active) {
+                action = el('div', 'hull-state', 'Active');
+            } else if(owned) {
+                action = el('button', 'sy-button small', 'Fly this');
+                action.addEventListener('click', () => {
+                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* selectHull */])(id);
+                    this.selectedSlot = null;
+                    this.refresh();
+                });
+            } else {
+                action = el('button', 'sy-button small buy', 'Buy ' + formatPrice(hull.cost));
+                action.disabled = profile.credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(hull.cost);
+                action.addEventListener('click', () => {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["c" /* buyHull */])(id)) {
+                        this.selectedSlot = null;
+                        this.flash(hull.name + ' purchased!');
+                    }
+                    this.refresh();
+                });
+            }
+            info.appendChild(action);
+            card.appendChild(info);
+            card.title = hull.description;
+            this.hullList.appendChild(card);
+        });
+    }
+
+    renderTitle() {
+        const hull = this.hull;
+        this.hullTitle.innerHTML = '';
+        this.hullTitle.appendChild(el('span', 'title-name', hull.name + ' ' + hull.className));
+        this.hullTitle.appendChild(el('span', 'title-desc', hull.description));
+    }
+
+    renderStats() {
+        const stats = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id);
+        const rows = [
+            ['Hull', Math.round(stats.maxHull)],
+            ['Shield', stats.maxShield ? Math.round(stats.maxShield) + ' (+' + Math.round(stats.shieldRegen) + '/s)' : 'none'],
+            ['Acceleration', Math.round(stats.acceleration)],
+            ['Turn rate', stats.maxTurn.toFixed(1)],
+
+            ['Weapons', stats.weapons],
+            ['Guidance', stats.guidance ? stats.guidance.range + 'px' : 'none'],
+            ['Cargo hold', stats.cargo],
+            ['Tractor', stats.magnetRange + 'px'],
+            ['Scanner', stats.scanner ? stats.scanner.range + 'px' : 'none'],
+            ['Hyperdrive', stats.hyperdrive ? 'x' + stats.hyperdrive.speed : 'none'],
+            ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
+        ];
+        this.statsBox.innerHTML = '';
+        rows.forEach(row => {
+            const item = el('div', 'stat');
+            item.appendChild(el('span', 'stat-label', row[0]));
+            item.appendChild(el('span', 'stat-value', String(row[1])));
+            this.statsBox.appendChild(item);
+        });
+    }
+
+    buildPalette() {
+        this.paletteItems = {};
+        __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
+            const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type];
+            const item = el('div', 'module-item');
+            item.dataset.type = type;
+
+            const icon = el('canvas', 'module-icon');
+            const ctx = setupCanvas(icon, 40, 40);
+            ctx.translate(20, 20);
+            Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, type, 1, { scale: 2.6, lineWidth: 1.4 });
+            item.appendChild(icon);
+
+            const info = el('div', 'module-info');
+            info.appendChild(el('div', 'module-name', def.name));
+            info.appendChild(el('div', 'module-desc', def.description));
+            const price = el('div', 'module-price', formatCredits(def.cost));
+            info.appendChild(price);
+            item.appendChild(info);
+
+            item.addEventListener('pointerdown', (event) => this.startDrag(event, type));
+            this.palette.appendChild(item);
+            this.paletteItems[type] = { item: item, price: price };
+        });
+    }
+
+    renderPalette() {
+        const credits = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits;
+        __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
+            const entry = this.paletteItems[type];
+            entry.item.classList.toggle('armed', this.armedModule === type);
+            entry.item.classList.toggle('unaffordable', credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost));
+            entry.price.textContent = formatPrice(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost);
+        });
+    }
+
+    renderInspector() {
+        const hull = this.hull;
+        const box = this.inspector;
+        box.innerHTML = '';
+
+        if(!this.selectedSlot) {
+            box.appendChild(el('p', 'muted', 'Click a mount on the ship to inspect it.'));
+            return;
+        }
+
+        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[this.selectedSlot];
+        if(!module) {
+            box.appendChild(el('p', '', 'Empty mount'));
+            box.appendChild(el('p', 'muted', this.armedModule
+                ? 'Click the mount again to install the ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][this.armedModule].short + '.'
+                : 'Drag a module here, or pick one from the list and click the mount.'));
+            return;
+        }
+
+        const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type];
+        const stats = Object(__WEBPACK_IMPORTED_MODULE_2__modules__["e" /* moduleStats */])(module.type, module.level);
+        box.appendChild(el('div', 'inspector-name', def.name + ' Mk ' + ['I', 'II', 'III'][module.level - 1]));
+        box.appendChild(el('div', 'inspector-stats', def.describe(stats)));
+
+        if(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["g" /* upgradeCost */])(module.type, module.level) !== null) {
+            box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["e" /* moduleStats */])(module.type, module.level + 1))));
+        } else {
+            box.appendChild(el('div', 'inspector-next', 'Max level (Mk ' + ['I', 'II', 'III'][__WEBPACK_IMPORTED_MODULE_2__modules__["a" /* MAX_LEVEL */] - 1] + ')'));
+        }
+        box.appendChild(el('p', 'muted', 'Upgrade or remove it with the buttons next to the module on the ship.'));
+    }
+
+    // ------------------------------------------------------------ module popover
+    //
+    // Clicking a fitted module on the ship opens a small popover right next to it with
+    // icon buttons to upgrade it and to sell / remove it.
+
+    buildPopover() {
+        const pop = el('div', 'module-popover');
+        this.popName = el('div', 'popover-name');
+        pop.appendChild(this.popName);
+        const row = el('div', 'popover-actions');
+        const iconButton = (className, svg) => {
+            const wrap = el('div', 'popover-action');
+            const button = el('button', 'icon-button ' + className);
+            button.innerHTML = svg;
+            const caption = el('span', 'popover-caption');
+            wrap.appendChild(button);
+            wrap.appendChild(caption);
+            row.appendChild(wrap);
+            return { button: button, caption: caption };
+        };
+        this.popUpgrade = iconButton('upgrade',
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 11h-5v9H9v-9H4z"/></svg>');
+        this.popSell = iconButton('danger',
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6l1 2h5v2H3V4h5zM5 8h14l-1.2 14H6.2zm4 3v8h2v-8zm4 0v8h2v-8z"/></svg>');
+        pop.appendChild(row);
+        this.popUpgrade.button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
+            if(!module) return;
+            if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["v" /* upgradeModule */])(this.hull.id, this.selectedSlot)) this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type].short + ' upgraded!');
+            this.refresh();
+        });
+        this.popSell.button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            if(!this.selectedSlot || !Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot]) return;
+            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* sellModule */])(this.hull.id, this.selectedSlot);
+            this.refresh();
+        });
+        pop.addEventListener('pointerdown', (event) => event.stopPropagation());
+        this.canvasWrap.appendChild(pop);
+        this.popover = pop;
+        this.popover.style.display = 'none';
+    }
+
+    renderPopover() {
+        const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
+        if(!module) {
+            this.popover.style.display = 'none';
+            return;
+        }
+        const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type];
+        this.popover.style.display = '';
+        this.popName.textContent = def.short + ' Mk ' + ['I', 'II', 'III'][module.level - 1];
+
+        // Upgrade: always shown; disabled at max level or when unaffordable.
+        const cost = Object(__WEBPACK_IMPORTED_MODULE_2__modules__["g" /* upgradeCost */])(module.type, module.level);
+        const up = this.popUpgrade;
+        if(cost === null) {
+            up.button.disabled = true;
+            up.button.title = 'Max level';
+            up.caption.textContent = 'MAX';
+        } else {
+            up.button.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(cost);
+            up.button.title = 'Upgrade to Mk ' + ['I', 'II', 'III'][module.level] + ' (' + formatPrice(cost) + ')';
+            up.caption.textContent = formatPrice(cost);
+        }
+        const sellLabel = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
+        this.popSell.button.title = sellLabel;
+        this.popSell.caption.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : '+' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
+        this.positionPopover();
+    }
+
+    // Keep the popover beside the selected mount (and inside the view).
+    positionPopover() {
+        if(!this.popover || this.popover.style.display === 'none' || !this.ctx) return;
+        const spot = this.layout().slots.filter(sl => sl.slot.id === this.selectedSlot)[0];
+        if(!spot) return;
+        const w = this.popover.offsetWidth;
+        const h = this.popover.offsetHeight;
+        let x = spot.x + 22;
+        let y = spot.y - h / 2;
+        if(x + w > this.canvasWidth - 4) x = spot.x - 22 - w;
+        x = Math.max(4, Math.min(this.canvasWidth - w - 4, x));
+        y = Math.max(4, Math.min(this.canvasHeight - h - 4, y));
+        const key = Math.round(x) + ',' + Math.round(y);
+        if(key !== this.popoverKey) {
+            this.popoverKey = key;
+            this.popover.style.left = Math.round(x) + 'px';
+            this.popover.style.top = Math.round(y) + 'px';
+        }
+    }
+
+    renderHint() {
+        this.hint.textContent = this.armedModule
+            ? 'Placing ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][this.armedModule].name + ': click an empty mount (Esc to cancel)'
+            : 'Drag modules from the right onto the ship\'s mounts. Mine ore and sell it in the Market tab.';
+    }
+
+    // ------------------------------------------------------------ hull canvas
+
+    resizeCanvas() {
+        const rect = this.canvasWrap.getBoundingClientRect();
+        this.canvasWidth = Math.max(200, Math.floor(rect.width));
+        this.canvasHeight = Math.max(160, Math.floor(rect.height));
+        this.ctx = setupCanvas(this.canvas, this.canvasWidth, this.canvasHeight);
+    }
+
+    layout() {
+        const hull = this.hull;
+        const fit = drawHullPreview(this.ctx, hull, this.canvasWidth, this.canvasHeight, 40, 14);
+        const slots = hull.slots.map(slot => ({
+            slot: slot,
+            x: fit.offsetX + slot.x * fit.scale,
+            y: fit.offsetY + slot.y * fit.scale
+        }));
+        return { fit: fit, slots: slots };
+    }
+
+    slotAt(clientX, clientY) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const layout = this.layout();
+        let best = null;
+        let bestDist = SLOT_HIT_RADIUS * SLOT_HIT_RADIUS * 2.5;
+        layout.slots.forEach(s => {
+            const d = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
+            if(d < bestDist) {
+                bestDist = d;
+                best = s.slot.id;
+            }
+        });
+        return best;
+    }
+
+    bindCanvas() {
+        this.canvas.addEventListener('pointermove', (event) => {
+            if(this.drag) return;
+            this.hoverSlot = this.slotAt(event.clientX, event.clientY);
+            this.canvas.style.cursor = this.hoverSlot ? 'pointer' : 'default';
+        });
+        this.canvas.addEventListener('pointerleave', () => { if(!this.drag) this.hoverSlot = null; });
+        this.canvas.addEventListener('click', (event) => {
+            const slotId = this.slotAt(event.clientX, event.clientY);
+            if(!slotId) {
+                this.selectedSlot = null;
+                this.refresh();
+                return;
+            }
+            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[slotId];
+            if(this.armedModule && !occupied) {
+                this.install(slotId, this.armedModule);
+            } else {
+                this.selectedSlot = slotId;
+                this.refresh();
+            }
+        });
+    }
+
+    install(slotId, type) {
+        const hull = this.hull;
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[slotId]) {
+            this.flash('That mount is taken. Sell its module first.');
+            return;
+        }
+        if(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].minHullMass && hull.mass < __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].minHullMass) {
+            this.flash('The ' + hull.name + ' is too small for a ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '. Use the Stargate instead.');
+            return;
+        }
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) {
+            this.flash('Not enough credits for ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '.');
+            return;
+        }
+        Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* installModule */])(hull.id, slotId, type);
+        this.selectedSlot = slotId;
+        this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + ' installed.');
+        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) this.armedModule = null;
+        this.refresh();
+    }
+
+    // Pointer drag from palette onto a mount. A press without movement arms the module instead.
+    startDrag(event, type) {
+        event.preventDefault();
+        this.drag = { type: type, startX: event.clientX, startY: event.clientY, moved: false, ghost: null };
+
+        this.onDragMove = (e) => {
+            const drag = this.drag;
+            if(!drag) return;
+            if(!drag.moved && Math.abs(e.clientX - drag.startX) + Math.abs(e.clientY - drag.startY) > 6) {
+                drag.moved = true;
+                drag.ghost = el('canvas', 'drag-ghost');
+                const ctx = setupCanvas(drag.ghost, 48, 48);
+                ctx.translate(24, 24);
+                Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, type, 1, { scale: 3, lineWidth: 1.5 });
+                document.body.appendChild(drag.ghost);
+            }
+            if(drag.ghost) {
+                drag.ghost.style.left = (e.clientX - 24) + 'px';
+                drag.ghost.style.top = (e.clientY - 24) + 'px';
+                this.hoverSlot = this.slotAt(e.clientX, e.clientY);
+            }
+        };
+
+        this.onDragEnd = (e) => {
+            const drag = this.drag;
+            this.endDrag();
+            if(!drag) return;
+            if(drag.moved) {
+                const slotId = this.slotAt(e.clientX, e.clientY);
+                if(slotId) this.install(slotId, drag.type);
+            } else {
+                this.armedModule = this.armedModule === drag.type ? null : drag.type;
+                this.refresh();
+            }
+        };
+
+        window.addEventListener('pointermove', this.onDragMove);
+        window.addEventListener('pointerup', this.onDragEnd);
+    }
+
+    endDrag() {
+        if(this.drag && this.drag.ghost) this.drag.ghost.remove();
+        this.drag = null;
+        if(this.onDragMove) window.removeEventListener('pointermove', this.onDragMove);
+        if(this.onDragEnd) window.removeEventListener('pointerup', this.onDragEnd);
+        this.onDragMove = null;
+        this.onDragEnd = null;
+    }
+
+    renderCanvas() {
+        const rect = this.canvasWrap.getBoundingClientRect();
+        if(Math.abs(rect.width - this.canvasWidth) > 1 || Math.abs(rect.height - this.canvasHeight) > 1) {
+            this.resizeCanvas();
+        }
+        const ctx = this.ctx;
+        if(!ctx) return;
+        this.positionPopover();
+        const hull = this.hull;
+        const layout = this.layout();
+        const fit = layout.fit;
+        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id);
+        const time = performance.now() / 1000;
+        const placing = !!(this.armedModule || (this.drag && this.drag.moved));
+
+        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+        // Blueprint grid.
+        ctx.save();
+        ctx.strokeStyle = 'rgba(120, 170, 255, 0.07)';
+        ctx.lineWidth = 1;
+        for(let x = 0; x < this.canvasWidth; x += 24) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.canvasHeight); ctx.stroke();
+        }
+        for(let y = 0; y < this.canvasHeight; y += 24) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.canvasWidth, y); ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(fit.offsetX, fit.offsetY);
+        ctx.scale(fit.scale, fit.scale);
+        Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["c" /* drawHullArt */])(ctx, hull, { lineWidth: 1.6 / fit.scale, glow: 8 });
+        ctx.restore();
+
+        layout.slots.forEach(s => {
+            const module = loadout[s.slot.id];
+            const hovered = this.hoverSlot === s.slot.id;
+            const selected = this.selectedSlot === s.slot.id;
+            const iconScale = Math.max(1.6, Math.min(4, hull.moduleScale * fit.scale * 0.9));
+            const radius = iconScale * 5.5;
+
+            ctx.save();
+            ctx.translate(s.x, s.y);
+
+            if(module) {
+                Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: iconScale, lineWidth: 1.5 });
+            } else {
+                const pulse = placing ? 0.5 + 0.5 * Math.sin(time * 6) : 0;
+                ctx.setLineDash([3, 3]);
+                ctx.strokeStyle = placing
+                    ? 'rgba(140, 255, 160, ' + (0.5 + pulse * 0.5) + ')'
+                    : 'rgba(200, 220, 255, 0.55)';
+                ctx.lineWidth = 1.3;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.75, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.moveTo(-3, 0); ctx.lineTo(3, 0);
+                ctx.moveTo(0, -3); ctx.lineTo(0, 3);
+                ctx.stroke();
+            }
+
+            if(hovered || selected) {
+                ctx.strokeStyle = selected ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = selected ? 2 : 1.2;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = '#fff';
+                ctx.beginPath();
+                ctx.arc(0, 0, radius + 3, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+        });
+    }
+}
+
+let instance = null;
+
+const getShipyard = () => {
+    if(!instance) instance = new Shipyard();
+    return instance;
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = getShipyard;
+
+
+const isShipyardOpen = () => !!(instance && instance.isOpen);
+/* harmony export (immutable) */ __webpack_exports__["b"] = isShipyardOpen;
+
+
+
+/***/ }),
+/* 12 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CHEVRON_ANGLES; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
+// The Stargate in each system, and the DHD (dial-home device) next to it.
+//
+// Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
+// sounds line up exactly: the ring starts rolling, chevrons 1-6 encode at slightly random
+// intervals while it turns, the ring stops, chevron 7 locks, and 1.2 s later the gate opens
+// with the kawoosh (7 s from pressing the dome), settling into a rippling event horizon.
+// Small ships can fly through an outgoing wormhole; it closes after a while.
+
+
+
+
+
+const GATE_RADIUS = 78;
+/* harmony export (immutable) */ __webpack_exports__["d"] = GATE_RADIUS;
+        // outer ring
+const GATE_INNER = 58;
+/* harmony export (immutable) */ __webpack_exports__["c"] = GATE_INNER;
+         // event horizon radius (ships bigger than this can't pass)
+const DHD_OFFSET = { x: 0, y: 220 };
+/* unused harmony export DHD_OFFSET */
+
+const DHD_RANGE = 170;
+/* harmony export (immutable) */ __webpack_exports__["b"] = DHD_RANGE;
+         // how close to the DHD you need to be to use it
+
+// DHD dial timeline (seconds after the dome is pressed), from CAP's stargate_sg1 sequence.
+const RING_START = 0.1;               // ring starts rolling
+const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
+const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
+const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
+const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
+const FORM_TIME = 0.8;                // horizon water rushing in from the rim before the burst
+
+// Churning foam blobs for the horizon forming (fixed layout, animated).
+const FOAM = [];
+for(let i = 0; i < 46; i++) {
+    FOAM.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), size: 0.5 + Math.random(),
+        spin: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6), phase: Math.random() * 10 });
+}
+const KAWOOSH_TIME = 1.3;
+const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
+const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
+const CLOSE_TIME = 0.9;
+const SYMBOLS = 39;
+
+const CHEVRON_ANGLES = [];
+for(let i = 0; i < 9; i++) CHEVRON_ANGLES.push(-Math.PI / 2 + i * Math.PI * 2 / 9);
+// Order in which chevrons light: chevrons 1-6 around the gate, then the top one (7).
+const LOCK_ORDER = [1, 2, 3, 6, 7, 8, 0];
+
+let ringSprite = null;
+let symbolSprite = null;
+
+// Outer ring body (cached).
+const buildRing = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2 + 20, GATE_RADIUS * 2 + 20, ctx => {
+    const c = GATE_RADIUS + 10;
+    ctx.translate(c, c);
+    ctx.beginPath();
+    ctx.arc(0, 0, GATE_RADIUS, 0, Math.PI * 2);
+    ctx.arc(0, 0, GATE_INNER, 0, Math.PI * 2, true);
+    const metal = ctx.createRadialGradient(-20, -25, GATE_INNER * 0.6, 0, 0, GATE_RADIUS);
+    metal.addColorStop(0, 'rgb(150, 150, 158)');
+    metal.addColorStop(0.6, 'rgb(95, 96, 104)');
+    metal.addColorStop(1, 'rgb(55, 56, 64)');
+    ctx.fillStyle = metal;
+    ctx.fill('evenodd');
+    ctx.strokeStyle = 'rgba(20, 20, 26, 0.9)';
+    ctx.lineWidth = 1.5;
+    [GATE_RADIUS, GATE_INNER, GATE_RADIUS - 6, GATE_INNER + 5].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    // Segment seams.
+    for(let i = 0; i < 36; i++) {
+        const a = i * Math.PI * 2 / 36;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (GATE_RADIUS - 6), Math.sin(a) * (GATE_RADIUS - 6));
+        ctx.lineTo(Math.cos(a) * GATE_RADIUS, Math.sin(a) * GATE_RADIUS);
+        ctx.stroke();
+    }
+}, 2);
+
+// Inner symbol ring with all 39 glyphs (cached; rotated when spinning).
+const buildSymbols = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx => {
+    ctx.translate(GATE_RADIUS, GATE_RADIUS);
+    const mid = (GATE_INNER + 5 + GATE_RADIUS - 6) / 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, GATE_RADIUS - 6, 0, Math.PI * 2);
+    ctx.arc(0, 0, GATE_INNER + 5, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgb(70, 72, 80)';
+    ctx.fill('evenodd');
+    for(let i = 0; i < SYMBOLS; i++) {
+        const a = i * Math.PI * 2 / SYMBOLS;
+        ctx.save();
+        ctx.rotate(a);
+        // Slot 38 holds the point of origin (where the ring comes to rest after a dial).
+        if(i < __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */].length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */][i], 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        else if(i === SYMBOLS - 1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        ctx.restore();
+    }
+}, 2);
+
+
+
+// The inner symbol ring image (also used as the 3D ring's texture).
+const gateSymbolSprite = () => {
+    if(!symbolSprite) symbolSprite = buildSymbols();
+    return symbolSprite;
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = gateSymbolSprite;
+
+
+class Stargate {
+
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.state = 'idle';
+        this.timer = 0;
+        this.locked = 0;
+        this.spin = 0;
+        this.spinFrom = 0;
+        this.spinTo = 0;
+        this.phase = 'spin';
+        this.outgoing = false;
+        this.target = null;
+        this.kawoosh = 0;
+        this.time = 0;
+    }
+
+    get dhd() {
+        return { x: this.x + DHD_OFFSET.x, y: this.y + DHD_OFFSET.y };
+    }
+
+    get isOpen() {
+        return this.state === 'open';
+    }
+
+    get busy() {
+        return this.state !== 'idle';
+    }
+
+    // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
+    dial(targetId, symbols) {
+        // A gate that is still shutting down can be dialled again straight away.
+        if(this.busy && this.state !== 'closing') return false;
+        if(this.state === 'closing') __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
+        this.wasOpen = false;
+        this.state = 'dialing';
+        this.outgoing = true;
+        this.target = targetId;
+        this.symbols = symbols;
+        this.locked = 0;
+        this.phase = 'spin';
+        this.clock = 0;
+        this.ringOn = false;
+        // Chevrons 1-6 at random-ish intervals (CAP: 0.3-1.0 s each plus an even share, the
+        // last gap always the longest) that together span CHEVRONS_SPAN.
+        const gaps = [];
+        for(let i = 0; i < 5; i++) gaps.push(0.3 + Math.random() * 0.7);
+        gaps.push(1);
+        const total = gaps.reduce((a, b) => a + b, 0);
+        const delta = (CHEVRONS_SPAN - total) / 6;
+        this.chevronTimes = [];
+        let t = FIRST_CHEVRON;
+        for(let i = 0; i < 6; i++) {
+            this.chevronTimes.push(t);
+            t += gaps[i] + delta;
+        }
+        this.ringStop = t;
+        this.lockTime = t + RING_STOP_TO_LOCK;
+        this.openTime = this.lockTime + LOCK_TO_OPEN;
+        // The ring turns one way for the whole dial and comes to rest with the point of
+        // origin under the top chevron.
+        this.spinFrom = this.spin;
+        const finalAngle = -Math.PI / 2 + Math.PI / 2 - 38 * Math.PI * 2 / SYMBOLS;
+        let to = finalAngle;
+        while(to < this.spin + Math.PI * 4) to += Math.PI * 2;
+        this.spinTo = to;
+        return true;
+    }
+
+    // A wormhole arriving here (after travelling through it).
+    incoming() {
+        this.state = 'open';
+        this.outgoing = false;
+        this.locked = 7;
+        this.timer = INCOMING_OPEN_TIME;
+        this.kawoosh = 0;
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
+    }
+
+    // `silent`: shut down without the closing sound (the ship has just gone through).
+    close(silent) {
+        if(this.state === 'idle' || this.state === 'closing') return;
+        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
+        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
+        this.ringOn = false;
+        this.state = 'closing';
+        this.timer = CLOSE_TIME;
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateClose(silent);
+    }
+
+    update(dt) {
+        this.time += dt;
+        if(this.state === 'idle') return;
+        this.timer -= dt;
+
+        if(this.state === 'dialing') {
+            const t = (this.clock += dt);
+            if(!this.ringOn && t >= RING_START && t < this.ringStop) {
+                this.ringOn = true;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(true);
+            }
+            // Ring: ease in, roll, ease out to a stop at ringStop.
+            const span = this.ringStop - RING_START;
+            const u = Math.max(0, Math.min(1, (t - RING_START) / span));
+            const ease = u < 0.12 ? (u * u) / (2 * 0.12 * 0.88) :
+                u > 0.88 ? 1 - ((1 - u) * (1 - u)) / (2 * 0.12 * 0.88) :
+                (u - 0.06) / 0.88;
+            this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
+            // Chevrons 1-6 encode while the ring turns.
+            while(this.locked < 6 && t >= this.chevronTimes[this.locked]) {
+                this.locked++;
+                this.phase = 'encode';
+                this.lockFlash = 0.3;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(false);
+            }
+            // Ring stopped: its sound stops as chevron 7 locks.
+            if(this.locked === 6 && t >= this.lockTime) {
+                this.locked = 7;
+                this.phase = 'lock';
+                this.lockFlash = 0.6;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
+                this.ringOn = false;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(true);
+            }
+            if(this.lockFlash > 0) this.lockFlash -= dt;
+            if(t >= this.openTime) {
+                this.state = 'opening';
+                this.timer = FORM_TIME;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].kawoosh();
+            }
+        } else if(this.state === 'opening') {
+            if(this.timer <= 0) {
+                this.state = 'kawoosh';
+                this.timer = KAWOOSH_TIME;
+            }
+        } else if(this.state === 'kawoosh') {
+            this.kawoosh = 1 - Math.max(0, this.timer) / KAWOOSH_TIME;
+            if(this.timer <= 0) {
+                this.state = 'open';
+                this.timer = OPEN_TIME;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
+            }
+        } else if(this.state === 'open') {
+            if(this.timer <= 0) this.close();
+        } else if(this.state === 'closing') {
+            if(this.timer <= 0) {
+                this.state = 'idle';
+                this.locked = 0;
+                this.target = null;
+            }
+        }
+    }
+
+    // `effectsOnly`: the 3D view draws the ring, symbols and chevrons; only the event
+    // horizon, kawoosh and chevron glow are drawn here.
+    draw(ctx, time, effectsOnly) {
+        if(!ringSprite) ringSprite = buildRing();
+        if(!symbolSprite) symbolSprite = buildSymbols();
+        const R = GATE_RADIUS;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // The horizon forming: water rushing in from the rim (and still there under the
+        // first moments of the kawoosh).
+        if(this.state === 'opening') this.drawForming(ctx, time, 1 - Math.max(0, this.timer) / FORM_TIME);
+        if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
+
+        // Event horizon behind the ring.
+        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
+            const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
+            this.drawHorizon(ctx, time, fade);
+        }
+
+        if(!effectsOnly) {
+            ctx.save();
+            ctx.rotate(this.spin);
+            ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
+            ctx.restore();
+            ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
+        }
+
+        // Chevrons: locked ones glow.
+        CHEVRON_ANGLES.forEach((a, i) => {
+            const order = LOCK_ORDER.indexOf(i);
+            const lit = order !== -1 && order < this.locked;
+            const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
+            if(effectsOnly && !lit) return;
+            ctx.save();
+            ctx.rotate(a + Math.PI / 2);
+            ctx.translate(0, -R + 2);
+            if(effectsOnly) {
+                ctx.globalCompositeOperation = 'lighter';
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
+                ctx.restore();
+                return;
+            }
+            ctx.fillStyle = 'rgb(120, 118, 125)';
+            ctx.strokeStyle = 'rgb(35, 35, 42)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-8, -4); ctx.lineTo(8, -4); ctx.lineTo(4, 7); ctx.lineTo(0, 9); ctx.lineTo(-4, 7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = lit ? 'rgb(255, 140, 60)' : 'rgb(80, 40, 30)';
+            ctx.beginPath();
+            ctx.moveTo(-4, -1); ctx.lineTo(4, -1); ctx.lineTo(0, 6 + (engaging ? 2 : 0));
+            ctx.closePath();
+            ctx.fill();
+            if(lit) {
+                ctx.globalCompositeOperation = 'lighter';
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
+            }
+            ctx.restore();
+        });
+
+        // The kawoosh: the unstable vortex bursting out and collapsing back.
+        if(this.state === 'kawoosh') {
+            const k = this.kawoosh;
+            const burst = Math.sin(Math.min(1, k / 0.75) * Math.PI);
+            const radius = GATE_INNER * (0.6 + 1.9 * burst);
+            ctx.globalCompositeOperation = 'lighter';
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+            g.addColorStop(0, 'rgba(240, 250, 255, ' + (0.9 * burst) + ')');
+            g.addColorStop(0.5, 'rgba(110, 170, 255, ' + (0.75 * burst) + ')');
+            g.addColorStop(1, 'rgba(60, 110, 255, 0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.fill();
+            // Spiralling vortex streaks.
+            ctx.strokeStyle = 'rgba(220, 240, 255, ' + (0.6 * burst) + ')';
+            ctx.lineWidth = 2;
+            for(let i = 0; i < 6; i++) {
+                const a0 = i * Math.PI / 3 + time * 6;
+                ctx.beginPath();
+                for(let s = 0; s <= 10; s++) {
+                    const rr = radius * s / 10;
+                    const aa = a0 + s * 0.35;
+                    if(s === 0) ctx.moveTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
+                    else ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
+                }
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
+    // The event horizon forming, as seen in the show: churning icy white-blue water rushes in
+    // from the rim while the middle is still see-through. `f` 0..1 is how far it has closed.
+    drawForming(ctx, time, f) {
+        const r = GATE_INNER;
+        const e = f * f * (3 - 2 * f);
+        const inner = r * (1 - e) * 0.95;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+        // Translucent watery band, brightest and thickest at the rim.
+        const g = ctx.createRadialGradient(0, 0, Math.max(0, inner * 0.85), 0, 0, r);
+        g.addColorStop(0, 'rgba(150, 190, 240, 0)');
+        g.addColorStop(0.2, 'rgba(170, 205, 250, ' + (0.35 + 0.3 * e) + ')');
+        g.addColorStop(0.65, 'rgba(215, 235, 255, ' + (0.7 + 0.2 * e) + ')');
+        g.addColorStop(1, 'rgba(150, 195, 250, 0.95)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        // Churning foam swirling around in the band.
+        ctx.globalCompositeOperation = 'lighter';
+        FOAM.forEach(blob => {
+            const a = blob.angle + time * blob.spin;
+            const d = inner + (r - inner) * (0.15 + 0.85 * blob.depth) + Math.sin(time * 6 + blob.phase) * 2;
+            const size = (6 + 12 * blob.size) * (0.6 + 0.4 * Math.sin(time * 7 + blob.phase));
+            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(time * 9 + blob.phase);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(blob.spin > 0 ? '230,242,255' : '185,215,255'), Math.cos(a) * d, Math.sin(a) * d, size * 1.6, size);
+        });
+        // Ripple lines racing round the band.
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = 'rgb(235, 245, 255)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 7; i++) {
+            const rr = inner + (r - inner) * ((i + 0.5) / 7);
+            const a0 = time * (i % 2 ? 3 : -2.4) + i;
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, a0, a0 + 0.8 + 0.5 * Math.sin(time * 4 + i));
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Rippling, shimmering pool of the event horizon.
+    drawHorizon(ctx, time, fade) {
+        const r = GATE_INNER;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+        const pool = ctx.createRadialGradient(-r * 0.2, -r * 0.25, r * 0.1, 0, 0, r);
+        pool.addColorStop(0, 'rgba(200, 230, 255, ' + (0.95 * fade) + ')');
+        pool.addColorStop(0.5, 'rgba(70, 140, 240, ' + (0.9 * fade) + ')');
+        pool.addColorStop(1, 'rgba(25, 60, 170, ' + (0.95 * fade) + ')');
+        ctx.fillStyle = pool;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineWidth = 1.5;
+        for(let i = 0; i < 6; i++) {
+            const t = (time * 0.45 + i / 6) % 1;
+            ctx.strokeStyle = 'rgba(210, 235, 255, ' + (0.35 * (1 - t) * fade) + ')';
+            ctx.beginPath();
+            ctx.arc(Math.sin(time * 0.7 + i) * 4, Math.cos(time * 0.6 + i) * 4, r * t, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Caustic shimmer.
+        for(let i = 0; i < 10; i++) {
+            const a = time * 0.8 + i * 0.63;
+            const d = (0.2 + 0.7 * ((i * 0.37 + time * 0.1) % 1)) * r;
+            ctx.globalAlpha = 0.25 * fade;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('170,210,255'), Math.cos(a) * d, Math.sin(a * 1.3) * d, 22, 10);
+        }
+        ctx.restore();
+    }
+
+    // DHD pedestal: octagonal base, two rings of keys, red dome. Glows when you're in range.
+    // `effectsOnly`: the 3D view draws the pedestal; only the glow and label are drawn here.
+    drawDHD(ctx, time, inRange, effectsOnly) {
+        const d = this.dhd;
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        if(effectsOnly) {
+            if(this.busy || inRange) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = this.busy ? 1 : (0.6 + 0.4 * Math.sin(time * 3)) * 0.6;
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
+            }
+            ctx.restore();
+            this.drawDHDLabel(ctx, inRange);
+            return;
+        }
+        ctx.fillStyle = 'rgb(70, 68, 66)';
+        ctx.strokeStyle = 'rgb(30, 28, 26)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for(let i = 0; i < 8; i++) {
+            const a = i * Math.PI / 4 + Math.PI / 8;
+            if(i === 0) ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
+            else ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 30);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        [[24, 19], [16, 20]].forEach(ring => {
+            for(let i = 0; i < ring[1]; i++) {
+                const a = i * Math.PI * 2 / ring[1];
+                ctx.fillStyle = 'rgb(150, 145, 135)';
+                ctx.fillRect(Math.cos(a) * ring[0] - 2, Math.sin(a) * ring[0] - 2, 4, 4);
+            }
+        });
+        const pulse = 0.6 + 0.4 * Math.sin(time * 3);
+        ctx.fillStyle = this.busy ? 'rgb(255, 90, 50)' : 'rgb(150, 40, 30)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 9, 0, Math.PI * 2);
+        ctx.fill();
+        if(this.busy || inRange) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = this.busy ? 1 : pulse * 0.6;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
+        }
+        ctx.restore();
+        this.drawDHDLabel(ctx, inRange);
+    }
+
+    drawDHDLabel(ctx, inRange) {
+        const d = this.dhd;
+        ctx.save();
+        ctx.font = '11px Bungee, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = inRange ? 'rgba(140, 255, 160, 0.95)' : 'rgba(200, 210, 230, 0.6)';
+        ctx.fillText(inRange ? 'DHD · press B' : 'DHD', d.x, d.y + 46);
+        ctx.restore();
+    }
+
+    // Which chevrons are lit (for the 3D view), by chevron index 0-8.
+    chevronLit(index) {
+        const order = LOCK_ORDER.indexOf(index);
+        return order !== -1 && order < this.locked;
+    }
+}
+
+/* harmony default export */ __webpack_exports__["e"] = (Stargate);
+
+
+/***/ }),
+/* 13 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(5);
+// Stargate symbols, traced after the Milky Way glyph chart (glyphs 1-39). Each glyph is a
+// few polylines in a -1..1 box (y down); they're drawn as thick strokes, optionally with a
+// darker outline like the chart's embossed symbols.
+//
+// Glyph 1 (the pyramid with the sun above it) is Earth's point of origin; other gates get
+// variants of the same motif.
+//
+// The same shapes double as the constellations' star figures on the starmap: in the show
+// the glyphs are stylised constellations, so each polyline vertex becomes a star.
+
+
+
+// Shapes by constellation name, in chart order (glyph number in the comment).
+const SHAPES = {
+    'Crater':            [[[-0.6, -0.8], [-0.3, -0.45], [-0.3, 0.1], [0.3, 0.1], [0.3, -0.45], [0.6, -0.8]], [[0, 0.1], [0, 0.5]], [[-0.45, 0.82], [0, 0.5], [0.45, 0.82]]],        // 2
+    'Virgo':             [[[-0.45, -0.3], [-0.45, -0.8], [0.3, -0.8], [0.0, -0.2], [0.45, 0.1], [-0.1, 0.45], [0.15, 0.85]]],                                                   // 3
+    'Bootes':            [[[0.6, -0.8], [0.25, -0.8], [-0.15, -0.45], [0.3, -0.05], [-0.25, 0.35], [0.1, 0.85]]],                                                                // 4
+    'Centaurus':         [[[-0.65, -0.6], [-0.1, -0.1]], [[0.65, -0.65], [0.15, -0.15], [0.2, 0.25]], [[-0.55, 0.35], [-0.05, 0.25], [-0.25, 0.8]]],                            // 5
+    'Libra':             [[[-0.65, -0.65], [0.5, -0.65], [0.55, 0.15], [0.0, 0.45], [-0.25, 0.85]], [[-0.65, -0.65], [-0.5, -0.25]]],                                           // 6
+    'Serpens Caput':     [[[0.35, -0.85], [-0.2, -0.6], [-0.35, 0.35], [0.05, 0.65], [0.5, 0.45]], [[0.35, -0.85], [0.45, -0.55]]],                                             // 7
+    'Norma':             [[[-0.65, -0.5], [0.15, -0.55], [-0.3, 0.15], [-0.65, -0.5]], [[0.25, 0.15], [0.65, 0.55]]],                                                           // 8
+    'Scorpius':          [[[-0.75, 0.55], [0.35, 0.55], [0.7, 0.2], [0.55, -0.3]], [[-0.4, 0.55], [0.1, -0.15], [0.45, -0.6]]],                                                 // 9
+    'Corona Australis':  [[[0.55, -0.7], [-0.4, -0.7], [-0.65, 0.0], [-0.25, 0.65], [0.55, 0.6]], [[0.1, -0.25], [0.5, 0.15]]],                                                 // 10
+    'Scutum':            [[[-0.75, 0.6], [0.6, -0.6], [0.6, 0.55], [-0.2, 0.15]], [[0.6, -0.6], [0.8, -0.8]]],                                                                  // 11
+    'Sagittarius':       [[[-0.75, -0.35], [-0.25, -0.75], [0.15, -0.25], [0.7, -0.55]], [[0.15, -0.25], [-0.05, 0.4], [0.55, 0.75]], [[-0.5, 0.15], [-0.05, 0.4]], [[0.35, 0.1], [0.65, 0.2]]], // 12
+    'Aquila':            [[[-0.75, -0.5], [-0.15, 0.65], [0.2, -0.2], [0.75, -0.6]], [[0.2, -0.2], [0.55, 0.15]]],                                                              // 13
+    'Microscopium':      [[[-0.3, -0.75], [-0.6, 0.5], [0.75, 0.25]], [[-0.45, -0.1], [0.3, -0.45]]],                                                                           // 14
+    'Capricornus':       [[[-0.75, 0.6], [0.55, -0.6], [0.5, 0.6], [-0.75, 0.6]], [[0.55, -0.6], [0.8, -0.85]]],                                                                // 15
+    'Piscis Austrinus':  [[[0.3, -0.85], [-0.3, -0.5], [-0.35, 0.45], [0.25, 0.85]], [[-0.3, -0.5], [0.05, -0.35]]],                                                            // 16
+    'Equuleus':          [[[-0.75, -0.3], [0.3, -0.35], [0.55, 0.0], [0.3, 0.45]], [[-0.2, -0.32], [-0.45, 0.35]]],                                                             // 17
+    'Aquarius':          [[[-0.65, 0.55], [-0.5, -0.4], [0.45, -0.5], [0.65, 0.3]], [[-0.05, -0.45], [0.1, 0.15]]],                                                             // 18
+    'Pegasus':           [[[0.5, -0.85], [0.0, -0.2], [0.35, 0.1], [-0.4, 0.85]], [[0.0, -0.2], [-0.35, -0.45]]],                                                               // 19
+    'Sculptor':          [[[-0.5, -0.65], [0.05, -0.65], [-0.2, 0.0], [0.55, 0.65]], [[0.55, 0.65], [0.35, 0.2]]],                                                              // 20
+    'Pisces':            [[[-0.5, -0.75], [0.0, 0.1], [0.5, -0.45]], [[0.0, 0.1], [-0.2, 0.85]]],                                                                               // 21
+    'Andromeda':         [[[0.0, -0.85], [0.2, -0.35], [-0.12, 0.0], [0.12, 0.4], [0.0, 0.85]]],                                                                                // 22
+    'Triangulum':        [[[-0.75, -0.4], [0.75, -0.4], [-0.1, 0.4], [-0.75, -0.4]]],                                                                                           // 23
+    'Aries':             [[[0.5, -0.75], [0.1, -0.2], [-0.45, 0.75]]],                                                                                                          // 24
+    'Perseus':           [[[0.3, -0.85], [-0.2, -0.45], [-0.2, 0.2], [0.2, 0.6], [0.0, 0.85]]],                                                                                 // 25
+    'Cetus':             [[[-0.65, -0.4], [0.5, -0.4], [0.65, 0.1], [0.0, 0.45]], [[-0.65, -0.4], [-0.3, 0.35]]],                                                               // 26
+    'Taurus':            [[[-0.85, 0.05], [0.85, 0.0]], [[0.2, 0.02], [0.6, -0.4]], [[-0.45, 0.04], [-0.75, -0.3]]],                                                            // 27
+    'Auriga':            [[[-0.4, -0.75], [-0.5, 0.35], [0.0, 0.7], [0.5, 0.35], [0.4, -0.75]], [[-0.15, -0.35], [0.15, -0.35]]],                                               // 28
+    'Eridanus':          [[[0.45, -0.85], [0.1, -0.3], [0.45, 0.0], [-0.35, 0.85]]],                                                                                            // 29
+    'Orion':             [[[-0.5, -0.75], [0.5, -0.75], [-0.5, 0.75], [0.5, 0.75], [-0.5, -0.75]]],                                                                             // 30
+    'Canis Minor':       [[[-0.45, -0.75], [0.45, -0.05], [-0.45, 0.15], [0.45, 0.8]]],                                                                                         // 31
+    'Monoceros':         [[[-0.6, -0.2], [-0.6, -0.6], [0.2, -0.6], [0.2, 0.2], [0.65, 0.75]], [[0.2, -0.15], [-0.25, 0.25]]],                                                  // 32
+    'Gemini':            [[[-0.3, -0.85], [0.3, -0.85], [0.3, 0.85], [-0.3, 0.85], [-0.3, -0.85]], [[-0.3, 0.0], [0.3, 0.0]]],                                                  // 33
+    'Hydra':             [[[-0.2, -0.85], [0.2, -0.5], [-0.2, -0.1], [0.2, 0.3], [-0.1, 0.85]]],                                                                                // 34
+    'Lynx':              [[[-0.5, -0.75], [0.2, -0.2], [0.5, 0.75]]],                                                                                                           // 35
+    'Cancer':            [[[-0.65, -0.65], [0.05, 0.2]], [[0.45, 0.6]]],                                                                                                        // 36
+    'Sextans':           [[[-0.7, -0.55], [-0.3, -0.4]], [[-0.05, 0.0], [0.35, 0.2]], [[0.65, 0.6]]],                                                                           // 37
+    'Leo Minor':         [[[-0.6, -0.75], [0.1, 0.1], [0.5, 0.75]], [[0.1, 0.1], [0.45, -0.15]]],                                                                               // 38
+    'Leo':               [[[0.3, -0.85], [0.55, -0.5], [0.0, 0.2], [0.1, 0.85]], [[0.0, 0.2], [-0.45, -0.05]]]                                                                  // 39
+};
+
+// All chart glyphs 2-39 by name (the gate's ring shows every one), and the constellations
+// used for addresses in chart order (the DHD's tiles).
+const GLYPH_NAMES = Object.keys(SHAPES);
+/* harmony export (immutable) */ __webpack_exports__["a"] = GLYPH_NAMES;
+
+const GLYPH_ORDER = GLYPH_NAMES.map(name => __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */].indexOf(name)).filter(i => i !== -1);
+/* harmony export (immutable) */ __webpack_exports__["b"] = GLYPH_ORDER;
+
+
+// Glyph 1: the pyramid with the sun above it. Other gates' points of origin vary the crown.
+const origin = (index) => {
+    const shape = [
+        [[-0.75, 0.8], [-0.1, -0.35]],
+        [[0.75, 0.8], [0.1, -0.35]],
+        [[-0.3, 0.8], [0.0, 0.35], [0.3, 0.8]]
+    ];
+    const variant = index % 4;
+    if(variant === 1) shape.push([[-0.45, -0.75], [0.45, -0.75]]);
+    if(variant === 2) shape.push([[-0.4, -0.5], [0, -0.85], [0.4, -0.5]]);
+    if(variant === 3) shape.push([[-0.75, 0.8], [0.75, 0.8]]);
+    return { lines: shape, sun: variant === 0 || variant === 3 ? [0, -0.62, 0.2] : null };
+};
+
+const cache = {};
+const shapeOf = (id) => {
+    if(cache[id]) return cache[id];
+    let shape;
+    if(typeof id === 'string' && id.indexOf('origin:') === 0) shape = origin(parseInt(id.split(':')[1], 10) || 0);
+    else if(typeof id === 'string') shape = { lines: SHAPES[id] || [[[0, -0.8], [0, 0.8]]], sun: null };
+    else shape = { lines: SHAPES[__WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][id]] || [[[0, -0.8], [0, 0.8]]], sun: null };
+    cache[id] = shape;
+    return shape;
+};
+
+const tracePath = (ctx, shape, s) => {
+    ctx.beginPath();
+    shape.lines.forEach(line => {
+        if(line.length === 1) {
+            // A lone dot.
+            ctx.moveTo(line[0][0] * s + 0.01, line[0][1] * s);
+            ctx.lineTo(line[0][0] * s, line[0][1] * s);
+            return;
+        }
+        line.forEach((p, i) => {
+            if(i === 0) ctx.moveTo(p[0] * s, p[1] * s);
+            else ctx.lineTo(p[0] * s, p[1] * s);
+        });
+    });
+    if(shape.sun) {
+        ctx.moveTo(shape.sun[0] * s + shape.sun[2] * s, shape.sun[1] * s);
+        ctx.arc(shape.sun[0] * s, shape.sun[1] * s, shape.sun[2] * s, 0, Math.PI * 2);
+    }
+};
+
+// Draw glyph `id` (a constellation index, or 'origin:<n>') centred at (x, y). With an
+// `outline` colour the stroke gets a darker rim, like the glyph chart.
+const drawGlyph = (ctx, id, x, y, size, color, lineWidth, outline) => {
+    const shape = shapeOf(id);
+    const s = size / 2;
+    const width = lineWidth || Math.max(1, size * 0.1);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    tracePath(ctx, shape, s * 0.92);
+    if(outline) {
+        ctx.strokeStyle = outline;
+        ctx.lineWidth = width * 1.9;
+        ctx.stroke();
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.stroke();
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = drawGlyph;
+
+
+// Star figure of a constellation: the glyph's vertices are its main stars, plus a few
+// fainter stars branching off them (fixed per constellation), like a star chart.
+const figures = {};
+const figureOf = (id) => {
+    if(figures[id]) return figures[id];
+    const shape = shapeOf(id);
+    let seed = (typeof id === 'number' ? id + 1 : 99) * 2654435761 >>> 0;
+    const rand = () => {
+        seed = (seed + 0x6D2B79F5) >>> 0;
+        let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const stars = [];
+    const links = [];
+    shape.lines.forEach(line => {
+        line.forEach((p, i) => {
+            stars.push({ x: p[0], y: p[1], big: i === 0 || i === line.length - 1 });
+            if(i > 0) links.push([stars.length - 2, stars.length - 1]);
+        });
+    });
+    const main = stars.length;
+    const extra = 2 + Math.floor(rand() * 3);
+    for(let i = 0; i < extra; i++) {
+        const from = stars[Math.floor(rand() * main)];
+        const a = rand() * Math.PI * 2;
+        const d = 0.25 + rand() * 0.3;
+        const x = Math.max(-0.95, Math.min(0.95, from.x + Math.cos(a) * d));
+        const y = Math.max(-0.95, Math.min(0.95, from.y + Math.sin(a) * d));
+        stars.push({ x: x, y: y, big: false });
+        if(rand() < 0.75) links.push([stars.indexOf(from), stars.length - 1]);
+    }
+    figures[id] = { stars: stars, links: links };
+    return figures[id];
+};
+
+// The constellation as a star figure (dots joined by thin lines), centred at (x, y).
+const drawConstellation = (ctx, id, x, y, size, color, starColor, dotScale) => {
+    const figure = figureOf(id);
+    const s = size / 2;
+    const k = dotScale || 1;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.8, 0.8 * k);
+    ctx.beginPath();
+    figure.links.forEach(link => {
+        const a = figure.stars[link[0]];
+        const b = figure.stars[link[1]];
+        ctx.moveTo(a.x * s, a.y * s);
+        ctx.lineTo(b.x * s, b.y * s);
+    });
+    ctx.stroke();
+    ctx.fillStyle = starColor || color;
+    figure.stars.forEach(star => {
+        ctx.beginPath();
+        ctx.arc(star.x * s, star.y * s, (star.big ? 1.9 : 1.4) * k, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = drawConstellation;
+
+
+
+/***/ }),
+/* 14 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__sprites__ = __webpack_require__(0);
+// Background planets and nebula tint for each star system, rendered once into sprites.
+
+
+
+const cache = {};
+
+const PALETTES = {
+    ocean: { base: [40, 90, 170], dark: [10, 30, 70], land: [70, 140, 120], cloud: [235, 245, 255], atmosphere: '120,180,255' },
+    earth: { base: [40, 80, 160], dark: [10, 25, 60], land: [70, 130, 70], cloud: [245, 248, 255], atmosphere: '130,180,255' },
+    desert: { base: [200, 160, 100], dark: [90, 60, 30], land: [170, 120, 70], cloud: [240, 225, 200], atmosphere: '240,200,140' },
+    jungle: { base: [60, 120, 70], dark: [15, 40, 20], land: [110, 100, 60], cloud: [235, 245, 235], atmosphere: '150,220,170' },
+    rocky: { base: [150, 80, 60], dark: [50, 20, 15], land: [110, 60, 45], cloud: [220, 190, 170], atmosphere: '230,150,120' },
+    industrial: { base: [110, 100, 110], dark: [30, 25, 35], land: [80, 70, 80], cloud: [200, 195, 210], atmosphere: '190,170,220' },
+    ice: { base: [180, 220, 235], dark: [50, 80, 110], land: [140, 190, 215], cloud: [250, 252, 255], atmosphere: '170,230,255' }
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = PALETTES;
+
+
+const rgb = (c, a) => 'rgba(' + c.map(v => Math.round(v)).join(',') + ',' + (a === undefined ? 1 : a) + ')';
+
+const rnd = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+// A lit sphere with surface patches, cloud bands, a terminator and an atmosphere glow.
+const planetSprite = (system) => {
+    if(cache[system.id]) return cache[system.id];
+    const p = system.planet;
+    const pal = PALETTES[p.type];
+    const R = 220;
+    const size = R * 2 + 80;
+    const r = rnd(system.id.length * 977 + p.radius);
+
+    cache[system.id] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(size, size, ctx => {
+        ctx.translate(size / 2, size / 2);
+
+        // Atmosphere halo.
+        const halo = ctx.createRadialGradient(0, 0, R * 0.95, 0, 0, R + 38);
+        halo.addColorStop(0, 'rgba(' + pal.atmosphere + ', 0.35)');
+        halo.addColorStop(1, 'rgba(' + pal.atmosphere + ', 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 38, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, R, 0, Math.PI * 2);
+        ctx.fillStyle = rgb(pal.base);
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+
+        // Land / surface patches.
+        for(let i = 0; i < 26; i++) {
+            const a = r() * Math.PI * 2;
+            const d = Math.sqrt(r()) * R;
+            ctx.fillStyle = rgb(pal.land, 0.5 + r() * 0.4);
+            ctx.beginPath();
+            ctx.ellipse(Math.cos(a) * d, Math.sin(a) * d, 20 + r() * 70, 12 + r() * 40, r() * Math.PI, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Dune / band texture for desert and gas-like worlds.
+        if(p.type === 'desert' || p.type === 'industrial') {
+            ctx.strokeStyle = rgb(pal.dark, 0.15);
+            ctx.lineWidth = 3;
+            for(let y = -R; y < R; y += 14) {
+                ctx.beginPath();
+                ctx.moveTo(-R, y);
+                ctx.quadraticCurveTo(0, y + (r() - 0.5) * 30, R, y + (r() - 0.5) * 20);
+                ctx.stroke();
+            }
+        }
+        // City lights on industrial worlds.
+        if(p.type === 'industrial') {
+            for(let i = 0; i < 80; i++) {
+                ctx.fillStyle = 'rgba(255, 190, 110, ' + (0.4 + r() * 0.5) + ')';
+                ctx.fillRect(-R * 0.2 + r() * R * 1.1, (r() - 0.5) * R * 1.6, 2, 2);
+            }
+        }
+        // Clouds.
+        for(let i = 0; i < 18; i++) {
+            const y = (r() - 0.5) * R * 1.8;
+            ctx.fillStyle = rgb(pal.cloud, 0.12 + r() * 0.25);
+            ctx.beginPath();
+            ctx.ellipse((r() - 0.5) * R, y, 60 + r() * 120, 6 + r() * 14, (r() - 0.5) * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Terminator: night side towards the bottom right.
+        const night = ctx.createLinearGradient(-R * 0.6, -R * 0.7, R * 0.8, R * 0.9);
+        night.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+        night.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
+        night.addColorStop(0.75, 'rgba(0, 0, 10, 0.7)');
+        night.addColorStop(1, 'rgba(0, 0, 10, 0.92)');
+        ctx.fillStyle = night;
+        ctx.fillRect(-R, -R, R * 2, R * 2);
+        ctx.restore();
+
+        // Thin bright rim on the lit side.
+        ctx.strokeStyle = 'rgba(' + pal.atmosphere + ', 0.6)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, R - 1, Math.PI * 0.85, Math.PI * 1.75);
+        ctx.stroke();
+
+        // Moon.
+        if(p.moon) {
+            const mx = -R * 1.05;
+            const my = R * 0.85;
+            const mr = 26;
+            ctx.fillStyle = 'rgb(170, 168, 160)';
+            ctx.beginPath();
+            ctx.arc(mx, my, mr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(0, 0, 10, 0.6)';
+            ctx.beginPath();
+            ctx.arc(mx + 9, my + 8, mr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }, 1);
+    cache[system.id].R = R;
+    return cache[system.id];
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = planetSprite;
+
+
+// Very soft coloured nebula wash for the system's background.
+const nebulaSprite = (system) => {
+    const key = 'nebula:' + system.id;
+    if(cache[key]) return cache[key];
+    const r = rnd(system.id.length * 131 + 7);
+    cache[key] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(512, 512, ctx => {
+        for(let i = 0; i < 7; i++) {
+            const x = 80 + r() * 352;
+            const y = 80 + r() * 352;
+            const rad = 90 + r() * 160;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+            g.addColorStop(0, 'rgba(' + system.tint + ', ' + (0.12 + r() * 0.1) + ')');
+            g.addColorStop(1, 'rgba(' + system.tint + ', 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 512, 512);
+        }
+    }, 1);
+    return cache[key];
+};
+/* unused harmony export nebulaSprite */
+
+
+
+/***/ }),
+/* 15 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world3d__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_stargate__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_planets__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__world_materials__ = __webpack_require__(1);
+// WebGL (Three.js) layer that draws the world in 3D on the graphics card.
+//
+// The game itself stays on a flat plane: physics, collisions and aiming are unchanged. A
+// perspective camera looks straight down at that plane, so a point on the plane lands on
+// exactly the same pixel as in the 2D view. That lets the 2D canvas above keep drawing
+// effects (particles, shots, beams, shields, line art, HUD) perfectly lined up, while
+// asteroids, ship hulls and the starfield underneath are real lit 3D geometry with depth
+// and parallax.
+//
+// Coordinates: game (x, y) with y pointing down the screen becomes Three.js (x, -y, z) with
+// z towards the camera. A game angle `a` becomes a rotation of -a about z.
+
+
+
+
+
+
+const FOV = 35;
+const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
+
+// Same light direction the asteroid surface art is painted with (upper left), lifted up.
+const LIGHT = { x: -0.55, y: 0.65, z: 0.85 };
+
+const webglAvailable = () => {
+    if(!window.THREE) return false;
+    try {
+        const canvas = document.createElement('canvas');
+        return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+    } catch(e) {
+        return false;
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = webglAvailable;
+
+
+const parseRgb = (text) => text.split(',').map(v => parseFloat(v) / 255);
+
+// Small deterministic noise for lumps on the asteroid surfaces.
+const hash = (a, b, seed) => {
+    let h = (a * 374761393 + b * 668265263 + seed * 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+// ------------------------------------------------------------ asteroids
+
+// Rings of latitude for the rock body, from the bottom pole to the top pole.
+const LATITUDES = [-0.82, -0.55, -0.27, 0, 0.27, 0.55, 0.82];
+
+// A lumpy rock body built from the asteroid's own outline (so chipping, carving and splits
+// show in 3D), unit radius. UVs map the asteroid's painted surface straight down onto it.
+const buildRockGeometry = (THREE, rock) => {
+    const shape = rock.shape;
+    const n = shape.length;
+    const thickness = 0.5 + hash(rock.id, 1, 7) * 0.25;
+    const k = rock.spriteRadius / (2 * rock.spriteExtent);   // unit radius -> sprite UV
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    const push = (x, y, z) => {
+        positions.push(x, -y, z);
+        uvs.push(0.5 + x * k, 0.5 - y * k);
+    };
+
+    LATITUDES.forEach((lat, j) => {
+        const phi = lat * Math.PI / 2;
+        const ring = Math.cos(phi);
+        const z = Math.sin(phi) * thickness;
+        for(let i = 0; i < n; i++) {
+            const a = i * Math.PI * 2 / n;
+            const lump = 1 + (hash(rock.id, i * 16 + j, 3) - 0.5) * 0.12 * (j === 3 ? 0.3 : 1);
+            const r = shape[i] * ring * lump;
+            push(Math.cos(a) * r, Math.sin(a) * r, z * (0.9 + hash(rock.id, i + j * 64, 11) * 0.2));
+        }
+    });
+    const bottom = positions.length / 3;
+    push(0, 0, -thickness);
+    const top = positions.length / 3;
+    push(0, 0, thickness * (0.95 + hash(rock.id, 5, 5) * 0.1));
+
+    for(let j = 0; j < LATITUDES.length - 1; j++) {
+        for(let i = 0; i < n; i++) {
+            const a = j * n + i;
+            const b = j * n + (i + 1) % n;
+            const c = (j + 1) * n + i;
+            const d = (j + 1) * n + (i + 1) % n;
+            indices.push(a, c, b, b, c, d);
+        }
+    }
+    const last = (LATITUDES.length - 1) * n;
+    for(let i = 0; i < n; i++) {
+        indices.push(bottom, i, (i + 1) % n);
+        indices.push(top, last + (i + 1) % n, last + i);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+};
+
+// ------------------------------------------------------------ ship hulls
+
+const partPoints = (part) => {
+    if(part.rect) {
+        const r = part.rect;
+        return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+    }
+    return part.pts;
+};
+
+const polygonArea = (pts) => {
+    let area = 0;
+    for(let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        area += a[0] * b[1] - b[0] * a[1];
+    }
+    return Math.abs(area) / 2;
+};
+
+// Every closed piece of the hull's line art extruded into a solid plate, its top face on
+// the game plane (where the 2D line art is drawn) and its sides going down into depth.
+// Later pieces (details) sit a hair higher so they never flicker against the plates.
+const buildHullGeometries = (THREE, hull) => {
+    const parts = [];
+    const maxDepth = Math.max(2.5, hull.radius * 0.22);
+    hull.art.forEach((part, index) => {
+        const lift = index * 0.02 * Math.max(1, hull.radius / 40);
+        if(part.circle) {
+            const c = part.circle;
+            const depth = Math.min(maxDepth, Math.max(0.8, c[2] * 0.6));
+            const geometry = new THREE.CylinderGeometry(c[2], c[2], depth, 18);
+            geometry.rotateX(Math.PI / 2);
+            geometry.translate(c[0], -c[1], lift - depth / 2);
+            parts.push(geometry);
+            return;
+        }
+        if(!(part.closed || part.rect)) return;
+        const pts = partPoints(part);
+        if(pts.length < 3) return;
+        const shape = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1])));
+        const area = polygonArea(pts);
+        let perimeter = 0;
+        for(let i = 0; i < pts.length; i++) {
+            const a = pts[i];
+            const b = pts[(i + 1) % pts.length];
+            perimeter += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+        }
+        const inradius = perimeter > 0 ? 2 * area / perimeter : 1;
+        const depth = Math.min(maxDepth, Math.max(0.8, Math.sqrt(area) * 0.3));
+        // A rounded, inward bevel so plate edges catch the light (the outline stays exactly
+        // on the line art; the bevel slopes in from it).
+        const bevelSize = Math.max(0.2, Math.min(inradius * 0.45, depth * 1.1));
+        const bevelThickness = depth * 0.7;
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: depth * 0.3, steps: 1, bevelEnabled: true, bevelThickness: bevelThickness,
+            bevelSize: bevelSize, bevelOffset: -bevelSize, bevelSegments: 3
+        });
+        geometry.translate(0, 0, lift - depth * 0.3 - bevelThickness);
+        parts.push(geometry);
+    });
+    return parts;
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = buildHullGeometries;
+
+
+// ------------------------------------------------------------ stars
+
+// Star layers at increasing depth below the play plane. The vertex shader wraps each star
+// into a tile around the camera, so the field is endless; perspective gives the parallax.
+const STAR_LAYERS = [
+    { count: 900, minDepth: 400, maxDepth: 1600, tile: 5000, size: [1.2, 2.4] },
+    { count: 1200, minDepth: 1600, maxDepth: 5000, tile: 11000, size: [1, 2] },
+    { count: 1800, minDepth: 5000, maxDepth: 14000, tile: 24000, size: [0.8, 1.6] }
+];
+
+const STAR_VERTEX = [
+    'attribute float size;',
+    'attribute vec3 tint;',
+    'uniform vec2 uCamera;',
+    'uniform float uTile;',
+    'uniform float uPixelRatio;',
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec3 p = position;',
+    '    vec2 origin = uCamera - vec2(uTile * 0.5);',
+    '    p.xy = origin + mod(p.xy - origin, uTile);',
+    '    vTint = tint;',
+    '    gl_PointSize = size * uPixelRatio;',
+    '    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'
+].join('\n');
+
+const STAR_FRAGMENT = [
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec2 d = gl_PointCoord - vec2(0.5);',
+    '    float falloff = 1.0 - smoothstep(0.15, 0.5, length(d));',
+    '    gl_FragColor = vec4(vTint * falloff, falloff);',
+    '}'
+].join('\n');
+
+// ------------------------------------------------------------ scene
+
+class Scene3D {
+
+    // `requireHardware`: refuse to start (throw) when the browser would only give us slow
+    // software rendering, so the game uses its 2D view instead of crawling.
+    constructor(container, requireHardware) {
+        const THREE = window.THREE;
+        this.THREE = THREE;
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true, alpha: true, powerPreference: 'high-performance',
+            failIfMajorPerformanceCaveat: !!requireHardware
+        });
+        this.renderer.setClearColor(0x000000, 0);
+        this.canvas = this.renderer.domElement;
+        this.canvas.className = 'gl-layer';
+        container.appendChild(this.canvas);
+
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(FOV, 1, 10, 40000);
+
+        this.scene.add(new THREE.AmbientLight(0x8a96b0, 0.45));
+        this.scene.add(new THREE.HemisphereLight(0xb8c8e8, 0x1a1c24, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff0dc, 3.4);
+        sun.position.set(LIGHT.x, LIGHT.y, LIGHT.z);
+        this.scene.add(sun);
+        this.scene.add(sun.target);
+        // A faint cool rim light from the opposite side so dark faces keep some shape.
+        const rim = new THREE.DirectionalLight(0x6f8cff, 0.6);
+        rim.position.set(-LIGHT.x, -LIGHT.y, 0.3);
+        this.scene.add(rim);
+
+        this.rockEntries = new Map();
+        this.shipEntries = new Map();
+        this.hullCache = {};
+        this.buildStars();
+        this.ores = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["e" /* buildOreCrystals */])(THREE);
+        this.scene.add(this.ores);
+        this.oreMatrix = new THREE.Matrix4();
+        this.oreQuat = new THREE.Quaternion();
+        this.oreEuler = new THREE.Euler();
+        this.oreColor = new THREE.Color();
+        this.oreScale = new THREE.Vector3();
+        this.orePos = new THREE.Vector3();
+        this.visible = true;
+    }
+
+    // ------------------------------------------------------------ scenery
+
+    // Atlantis, the gate, the DHD and the planet belong to the current star system.
+    syncSystem(view) {
+        const THREE = this.THREE;
+        if(this.systemId === view.system.id && this.gateRef === view.gate) return;
+        this.systemId = view.system.id;
+        this.gateRef = view.gate;
+        ['stationGroup', 'gateGroup', 'dhdGroup', 'planetHolder'].forEach(key => {
+            if(this[key]) {
+                this.scene.remove(this[key]);
+                this[key] = null;
+            }
+        });
+        if(this.planet) {
+            this.planet.textures.map.dispose();
+            this.planet.textures.clouds.dispose();
+            this.planet = null;
+        }
+        if(view.station) {
+            if(!this.atlantis) this.atlantis = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["b" /* buildAtlantis */])(THREE, view.station);
+            this.stationGroup = this.atlantis;
+            this.scene.add(this.stationGroup);
+        }
+        if(!this.gateModel) {
+            this.gateModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["d" /* buildGate */])(THREE, __WEBPACK_IMPORTED_MODULE_1__world_stargate__["d" /* GATE_RADIUS */], __WEBPACK_IMPORTED_MODULE_1__world_stargate__["c" /* GATE_INNER */], Object(__WEBPACK_IMPORTED_MODULE_1__world_stargate__["f" /* gateSymbolSprite */])(), __WEBPACK_IMPORTED_MODULE_1__world_stargate__["a" /* CHEVRON_ANGLES */]);
+            this.dhdModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["c" /* buildDHD */])(THREE);
+        }
+        this.gateGroup = this.gateModel.group;
+        this.gateGroup.position.set(view.gate.x, -view.gate.y, 0);
+        this.scene.add(this.gateGroup);
+        const dhd = view.gate.dhd;
+        this.dhdGroup = this.dhdModel.group;
+        this.dhdGroup.position.set(dhd.x, -dhd.y, 0);
+        this.scene.add(this.dhdGroup);
+        const palette = __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */][view.system.planet.type] || __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */].rocky;
+        this.planet = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["f" /* buildPlanet */])(THREE, view.system, palette);
+        this.planetHolder = this.planet.holder;
+        this.scene.add(this.planetHolder);
+    }
+
+    syncScenery(view) {
+        this.syncSystem(view);
+        const gate = view.gate;
+        if(this.stationGroup) this.stationGroup.visible = view.isVisible(view.station.x, view.station.y, 520);
+        const gateOn = view.isVisible(gate.x, gate.y, 320);
+        this.gateGroup.visible = gateOn;
+        this.dhdGroup.visible = gateOn;
+        if(gateOn) {
+            this.gateModel.symbolRing.rotation.z = -gate.spin;
+            this.gateModel.chevrons.forEach((material, i) => {
+                const lit = gate.chevronLit(i);
+                material.emissive.setRGB(lit ? 1 : 0, lit ? 0.45 : 0, lit ? 0.12 : 0);
+                material.color.setRGB(lit ? 1 : 0.31, lit ? 0.55 : 0.16, lit ? 0.25 : 0.12);
+            });
+            const glow = gate.busy ? 1 : view.nearDHD ? 0.55 + 0.25 * Math.sin(view.time * 3) : 0.3;
+            this.dhdModel.dome.emissive.setRGB(glow, glow * 0.25, glow * 0.12);
+        }
+        // Slow planet spin and drifting clouds.
+        if(this.planet) {
+            this.planet.body.rotation.y = view.time * 0.01;
+            this.planet.clouds.rotation.y = view.time * 0.016;
+        }
+    }
+
+    // ------------------------------------------------------------ ore
+
+    syncOres(ores, isVisible) {
+        const mesh = this.ores;
+        let count = 0;
+        for(let i = 0; i < ores.length && count < __WEBPACK_IMPORTED_MODULE_0__world3d__["a" /* ORE_LIMIT */]; i++) {
+            const ore = ores[i];
+            if(ore.dead || !isVisible(ore.x, ore.y, 10)) continue;
+            const size = ore.radius * 1.35;
+            this.orePos.set(ore.x, -ore.y, 1);
+            this.oreEuler.set(ore.angle * 0.7 + ore.phase, ore.phase, -ore.angle);
+            this.oreQuat.setFromEuler(this.oreEuler);
+            this.oreScale.set(size, size, size);
+            this.oreMatrix.compose(this.orePos, this.oreQuat, this.oreScale);
+            mesh.setMatrixAt(count, this.oreMatrix);
+            const color = (__WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */][ore.material] || __WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */].rock).color.split(',');
+            this.oreColor.setRGB(color[0] / 255, color[1] / 255, color[2] / 255, this.THREE.SRGBColorSpace);
+            mesh.setColorAt(count, this.oreColor);
+            count++;
+        }
+        mesh.count = count;
+        mesh.instanceMatrix.needsUpdate = true;
+        if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+
+    buildStars() {
+        const THREE = this.THREE;
+        this.starMaterials = [];
+        STAR_LAYERS.forEach(layer => {
+            const positions = new Float32Array(layer.count * 3);
+            const sizes = new Float32Array(layer.count);
+            const tints = new Float32Array(layer.count * 3);
+            for(let i = 0; i < layer.count; i++) {
+                positions[i * 3] = Math.random() * layer.tile;
+                positions[i * 3 + 1] = Math.random() * layer.tile;
+                positions[i * 3 + 2] = -(layer.minDepth + Math.random() * (layer.maxDepth - layer.minDepth));
+                sizes[i] = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
+                const warm = Math.random();
+                const b = 0.5 + Math.random() * 0.5;
+                tints[i * 3] = b * (warm < 0.2 ? 1 : 0.85);
+                tints[i * 3 + 1] = b * 0.9;
+                tints[i * 3 + 2] = b * (warm > 0.7 ? 1 : 0.9);
+            }
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('tint', new THREE.BufferAttribute(tints, 3));
+            const material = new THREE.ShaderMaterial({
+                uniforms: { uCamera: { value: new THREE.Vector2() }, uTile: { value: layer.tile }, uPixelRatio: { value: 1 } },
+                vertexShader: STAR_VERTEX,
+                fragmentShader: STAR_FRAGMENT,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            const points = new THREE.Points(geometry, material);
+            points.frustumCulled = false;
+            this.scene.add(points);
+            this.starMaterials.push(material);
+        });
+    }
+
+    resize(width, height, pixelRatio) {
+        this.renderer.setPixelRatio(pixelRatio);
+        this.renderer.setSize(width, height, false);
+        this.canvas.style.width = width + 'px';
+        this.canvas.style.height = height + 'px';
+        this.width = width;
+        this.height = height;
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.starMaterials.forEach(m => { m.uniforms.uPixelRatio.value = pixelRatio; });
+    }
+
+    setVisible(visible) {
+        if(this.visible === visible) return;
+        this.visible = visible;
+        this.canvas.style.display = visible ? '' : 'none';
+    }
+
+    // Camera straight above (cx, cy) at the height where the game plane appears at `zoom`
+    // screen pixels per world unit.
+    placeCamera(cx, cy, zoom) {
+        const height = (this.height / 2) / (zoom * TAN_HALF_FOV);
+        const camera = this.camera;
+        camera.position.set(cx, -cy, height);
+        camera.lookAt(cx, -cy, 0);
+        camera.near = Math.max(5, height * 0.3);
+        camera.far = height + 16000;
+        camera.updateProjectionMatrix();
+        this.starMaterials.forEach(m => { m.uniforms.uCamera.value.set(cx, -cy); });
+    }
+
+    // ------------------------------------------------------------ asteroids
+
+    syncRocks(rocks, isVisible) {
+        const THREE = this.THREE;
+        const seen = new Set();
+        rocks.forEach(rock => {
+            if(rock.dead) return;
+            seen.add(rock);
+            let entry = this.rockEntries.get(rock);
+            const visible = isVisible(rock.x, rock.y, rock.radius * 1.6);
+            if(!visible) {
+                if(entry) {
+                    entry.mesh.visible = false;
+                    // Well off screen: let go of the texture and its canvas (Safari caps
+                    // total canvas memory); it is rebuilt when the rock comes back.
+                    if(entry.texture && !isVisible(rock.x, rock.y, 900)) {
+                        entry.texture.dispose();
+                        entry.texture = null;
+                        entry.canvas = null;
+                        entry.material.map = null;
+                        entry.material.needsUpdate = true;
+                        entry.version = -1;
+                    }
+                }
+                return;
+            }
+            rock.ensureSprite(true);
+            if(!rock.sprite) return;
+            if(!entry) {
+                const material = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.06 });
+                const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+                this.scene.add(mesh);
+                entry = { mesh: mesh, material: material, texture: null, version: -1, canvas: null };
+                this.rockEntries.set(rock, entry);
+            }
+            // The painted surface (craters, ore, scars) is the texture; rebuild the body
+            // whenever that art is redrawn (after chipping, carving or merging).
+            if(entry.version !== rock.spriteVersion) {
+                entry.version = rock.spriteVersion;
+                entry.mesh.geometry.dispose();
+                entry.mesh.geometry = buildRockGeometry(THREE, rock);
+                if(entry.canvas !== rock.sprite.canvas) {
+                    if(entry.texture) entry.texture.dispose();
+                    entry.texture = new THREE.CanvasTexture(rock.sprite.canvas);
+                    entry.texture.colorSpace = THREE.SRGBColorSpace;
+                    entry.texture.anisotropy = 2;
+                    entry.material.map = entry.texture;
+                    entry.material.needsUpdate = true;
+                    entry.canvas = rock.sprite.canvas;
+                } else {
+                    entry.texture.needsUpdate = true;
+                }
+            }
+            const mesh = entry.mesh;
+            const scale = rock.radius * rock.renderScale;
+            mesh.visible = scale > 0.5;
+            mesh.position.set(rock.x, -rock.y, 0);
+            mesh.rotation.z = -rock.angle;
+            mesh.scale.set(scale, scale, scale);
+            const fading = rock.renderAlpha < 0.999;
+            if(entry.material.transparent !== fading) {
+                entry.material.transparent = fading;
+                entry.material.needsUpdate = true;
+            }
+            entry.material.opacity = rock.renderAlpha;
+            entry.material.emissive.setScalar(rock.flash > 0 ? 0.22 : 0);
+        });
+        // Forget asteroids that were destroyed or streamed out.
+        this.rockEntries.forEach((entry, rock) => {
+            if(seen.has(rock)) return;
+            this.scene.remove(entry.mesh);
+            entry.mesh.geometry.dispose();
+            entry.material.dispose();
+            if(entry.texture) entry.texture.dispose();
+            this.rockEntries.delete(rock);
+        });
+    }
+
+    // ------------------------------------------------------------ ships
+
+    hullParts(hull) {
+        const key = hull.id;
+        if(!this.hullCache[key]) this.hullCache[key] = buildHullGeometries(this.THREE, hull);
+        return this.hullCache[key];
+    }
+
+    syncShips(ships, isVisible) {
+        const THREE = this.THREE;
+        const seen = new Set();
+        ships.forEach(ship => {
+            seen.add(ship);
+            let entry = this.shipEntries.get(ship);
+            if(entry && entry.hull !== ship.hullDef) {
+                this.removeShip(ship, entry);
+                entry = null;
+            }
+            if(!entry) {
+                const color = parseRgb(ship.hullDef.color);
+                const material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(0.08 + color[0] * 0.3, 0.09 + color[1] * 0.3, 0.11 + color[2] * 0.32),
+                    metalness: 0.35,
+                    roughness: 0.42,
+                    emissive: new THREE.Color(color[0] * 0.03, color[1] * 0.03, color[2] * 0.035)
+                });
+                const group = new THREE.Group();
+                this.hullParts(ship.hullDef).forEach(geometry => group.add(new THREE.Mesh(geometry, material)));
+                this.scene.add(group);
+                entry = { group: group, material: material, hull: ship.hullDef, baseEmissive: material.emissive.clone() };
+                this.shipEntries.set(ship, entry);
+            }
+            const blink = ship.immunity > 0 && Math.floor(ship.immunity * 10) % 2 === 0;
+            const visible = ship.alive && !ship.hidden && !blink && isVisible(ship.x, ship.y, ship.radius * 2);
+            entry.group.visible = visible;
+            if(!visible) return;
+            entry.group.position.set(ship.x, -ship.y, 0);
+            entry.group.rotation.z = -ship.angle;
+            if(ship.hullFlash > 0) entry.material.emissive.setRGB(0.5, 0.08, 0.06);
+            else entry.material.emissive.copy(entry.baseEmissive);
+        });
+        this.shipEntries.forEach((entry, ship) => {
+            if(!seen.has(ship)) this.removeShip(ship, entry);
+        });
+    }
+
+    removeShip(ship, entry) {
+        this.scene.remove(entry.group);
+        entry.material.dispose();
+        this.shipEntries.delete(ship);
+    }
+
+    // ------------------------------------------------------------ frame
+
+    render(view) {
+        if(!this.visible) return;
+        this.placeCamera(view.cameraX, view.cameraY, view.zoom);
+        this.syncScenery(view);
+        this.syncOres(view.ores, view.isVisible);
+        this.syncRocks(view.rocks, view.isVisible);
+        this.syncShips(view.ships, view.isVisible);
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    // Drop everything (new game / new star system).
+    clear() {
+        this.syncRocks([], () => false);
+        this.syncShips([], () => false);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["b"] = (Scene3D);
+
+
+/***/ }),
+/* 16 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// 3D models for the fixed scenery: Atlantis with its city shield, the Stargate and DHD,
+// the system's planet (and moon), and the ore crystals.
+//
+// Everything sits at or below the play plane (z <= 0), so ships, which fly on the plane,
+// always pass over the city and the gate. Game (x, y) -> Three.js (x, -y, z).
+
+const v2 = (THREE, p) => new THREE.Vector2(p[0], -p[1]);
+
+// A flat-topped prism from a polygon in game coordinates, top face at `top`.
+const prism = (THREE, pts, top, depth, bevel) => {
+    const shape = new THREE.Shape(pts.map(p => v2(THREE, p)));
+    const b = bevel === undefined ? Math.min(2, depth * 0.25) : bevel;
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: Math.max(0.5, depth - b), steps: 1, bevelEnabled: b > 0, bevelThickness: b,
+        bevelSize: b, bevelOffset: -b, bevelSegments: 2
+    });
+    geometry.translate(0, 0, top - depth);
+    return geometry;
+};
+
+// A box standing on the deck: footprint centre (x, y), size w x d, from `bottom` up to `top`.
+const tower = (THREE, x, y, w, d, bottom, top, angle) => {
+    const geometry = new THREE.BoxGeometry(w, d, top - bottom);
+    if(angle) geometry.rotateZ(-angle);
+    geometry.translate(x, -y, (top + bottom) / 2);
+    return geometry;
+};
+
+const rotatePts = (pts, angle) => {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return pts.map(p => [p[0] * c - p[1] * s, p[0] * s + p[1] * c]);
+};
+
+const hexagon = (r, offset) => {
+    const pts = [];
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + (offset || 0);
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return pts;
+};
+
+// Lit windows: a dark facade with rows of warm and cool lights (shared by all towers).
+const windowTexture = (THREE) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#1a2230';
+    ctx.fillRect(0, 0, 64, 128);
+    for(let y = 4; y < 128; y += 8) {
+        for(let x = 3; x < 64; x += 7) {
+            const r = Math.random();
+            if(r < 0.45) continue;
+            ctx.fillStyle = r < 0.8 ? 'rgba(255, 225, 160, 0.95)' : 'rgba(170, 215, 255, 0.95)';
+            ctx.fillRect(x, y, 4, 4);
+        }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+};
+
+// Fresnel glow: bright where the surface turns away from the camera (shield domes, atmospheres).
+const glowMaterial = (THREE, color, strength, power, backSide) => new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color[0] / 255, color[1] / 255, color[2] / 255) }, uStrength: { value: strength } },
+    vertexShader: [
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'void main() {',
+        '    vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '    vNormal = normalize(normalMatrix * normal);',
+        '    vView = normalize(-mv.xyz);',
+        '    gl_Position = projectionMatrix * mv;',
+        '}'
+    ].join('\n'),
+    fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uStrength;',
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'void main() {',
+        '    float rim = pow(1.0 - abs(dot(vNormal, vView)), ' + power.toFixed(1) + ');',
+        '    gl_FragColor = vec4(uColor * rim * uStrength, rim * uStrength);',
+        '}'
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: backSide ? THREE.BackSide : THREE.FrontSide
+});
+
+// ------------------------------------------------------------ Atlantis
+
+// The city sits below the flight plane: deck at DECK, the central spire reaching up to
+// just under the plane.
+const DECK = -70;
+
+const buildAtlantis = (THREE, station) => {
+    const group = new THREE.Group();
+    const metal = new THREE.MeshStandardMaterial({ color: 0x9fb0c8, metalness: 0.55, roughness: 0.4 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x4a5a70, metalness: 0.6, roughness: 0.5 });
+    const windows = windowTexture(THREE);
+    const buildings = new THREE.MeshStandardMaterial({
+        color: 0xb8c6da, metalness: 0.4, roughness: 0.45, map: windows,
+        emissive: 0xffffff, emissiveMap: windows, emissiveIntensity: 0.85
+    });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x6fa8ff, metalness: 0.3, roughness: 0.15, emissive: 0x2a5cff, emissiveIntensity: 0.6 });
+    const add = (geometry, material) => group.add(new THREE.Mesh(geometry, material));
+
+    // Central hub: stepped hexagonal tiers.
+    add(prism(THREE, hexagon(92, Math.PI / 6), DECK + 8, 22), metal);
+    add(prism(THREE, hexagon(70, 0), DECK + 20, 12), dark);
+    add(prism(THREE, hexagon(48, Math.PI / 6), DECK + 32, 12), metal);
+    // The central tower: a tall tapering spire with a glowing crown.
+    const spire = new THREE.CylinderGeometry(7, 18, 62, 12);
+    spire.rotateX(Math.PI / 2);
+    spire.translate(0, 0, DECK + 32 + 31);
+    add(spire, buildings);
+    const crown = new THREE.ConeGeometry(7, 16, 12);
+    crown.rotateX(Math.PI / 2);
+    crown.translate(0, 0, DECK + 32 + 62 + 7);
+    add(crown, glass);
+    // Ring of secondary towers around the spire.
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const h = 22 + (i % 2) * 14;
+        add(tower(THREE, Math.cos(a) * 62, Math.sin(a) * 62, 11, 11, DECK + 8, DECK + 8 + h, a), buildings);
+    }
+
+    // Six piers: three long main piers with big platforms, three shorter ones.
+    for(let i = 0; i < 6; i++) {
+        const angle = i * Math.PI / 3 - Math.PI / 2;
+        const main = i % 2 === 0;
+        const length = main ? 270 : 215;
+        const half = main ? 22 : 18;
+        const P = (pts) => rotatePts(pts, angle);
+        const at = (x, y) => rotatePts([[x, y]], angle)[0];
+
+        add(prism(THREE, P([[70, -half], [length, -half], [length, half], [70, half]]), DECK + 4, 10), metal);
+        // Raised spine along the pier.
+        add(prism(THREE, P([[80, -half * 0.35], [length - 10, -half * 0.35], [length - 10, half * 0.35], [80, half * 0.35]]), DECK + 9, 5), dark);
+        if(main) {
+            add(prism(THREE, P([[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
+                [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]), DECK + 6, 14), metal);
+            add(prism(THREE, P([[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]), DECK + 12, 6), dark);
+            [[36, -18, 34], [56, 14, 48], [44, 26, 26], [62, -26, 40], [30, 30, 20], [70, 0, 30]].forEach((t, k) => {
+                const p = at(length + t[0], t[1]);
+                add(tower(THREE, p[0], p[1], 12, 12, DECK + 12, DECK + 12 + t[2], angle + k * 0.3), buildings);
+            });
+            add(prism(THREE, P([[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]), DECK + 2, 6), metal);
+        } else {
+            add(prism(THREE, P([[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
+                [length + 52, 30], [length + 20, 38], [length, half]]), DECK + 6, 12), metal);
+            const p = at(length + 28, 0);
+            add(tower(THREE, p[0], p[1], 24, 24, DECK + 6, DECK + 30, angle), buildings);
+            const mast = new THREE.CylinderGeometry(4, 5, 18, 10);
+            mast.rotateX(Math.PI / 2);
+            mast.translate(p[0], -p[1], DECK + 30 + 9);
+            add(mast, glass);
+        }
+    }
+
+    // City shield: a shallow dome glowing at its rim.
+    const R = station.shieldRadius;
+    const domeGeometry = new THREE.SphereGeometry(R, 64, 20, 0, Math.PI * 2, 0, Math.PI / 2);
+    domeGeometry.rotateX(Math.PI / 2);
+    const dome = new THREE.Mesh(domeGeometry, glowMaterial(THREE, [140, 205, 255], 0.75, 2.5, false));
+    dome.scale.set(1, 1, 0.4);
+    dome.position.z = DECK;
+    dome.renderOrder = 2;
+    group.add(dome);
+
+    group.position.set(station.x, -station.y, 0);
+    return group;
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = buildAtlantis;
+
+
+// ------------------------------------------------------------ Stargate and DHD
+
+const GATE_TOP = -4;
+
+const buildGate = (THREE, gateRadius, gateInner, symbolSprite, chevronAngles) => {
+    const group = new THREE.Group();
+    const stone = new THREE.MeshStandardMaterial({ color: 0x8c8e98, metalness: 0.65, roughness: 0.45 });
+
+    // Outer ring.
+    const ring = new THREE.Shape();
+    ring.absarc(0, 0, gateRadius, 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, gateInner, 0, Math.PI * 2, true);
+    ring.holes.push(hole);
+    const ringGeometry = new THREE.ExtrudeGeometry(ring, {
+        depth: 8, steps: 1, bevelEnabled: true, bevelThickness: 3, bevelSize: 2.5, bevelOffset: -2.5, bevelSegments: 3, curveSegments: 72
+    });
+    ringGeometry.translate(0, 0, GATE_TOP - 11);
+    group.add(new THREE.Mesh(ringGeometry, stone));
+
+    // The rotating inner ring of symbols, set slightly into the outer ring.
+    const inner = new THREE.RingGeometry(gateInner + 5, gateRadius - 6, 96, 1);
+    const uv = inner.attributes.uv;
+    const pos = inner.attributes.position;
+    for(let i = 0; i < pos.count; i++) {
+        uv.setXY(i, 0.5 + pos.getX(i) / (2 * gateRadius), 0.5 + pos.getY(i) / (2 * gateRadius));
+    }
+    const symbols = new THREE.CanvasTexture(symbolSprite.canvas);
+    symbols.colorSpace = THREE.SRGBColorSpace;
+    const symbolRing = new THREE.Mesh(inner, new THREE.MeshStandardMaterial({ map: symbols, metalness: 0.5, roughness: 0.5 }));
+    symbolRing.position.z = GATE_TOP + 0.6;
+    group.add(symbolRing);
+
+    // Nine chevrons; their lamps light up as they lock.
+    const chevrons = [];
+    const chevronShape = [[-8, -4], [8, -4], [4, 7], [0, 9], [-4, 7]];
+    const lampShape = [[-4, -1], [4, -1], [0, 6]];
+    chevronAngles.forEach(a => {
+        const place = (pts) => pts.map(p => {
+            // Same placement as the 2D drawing: rotate(a + PI/2), then translate(0, -R + 2).
+            const x = p[0];
+            const y = p[1] - gateRadius + 2;
+            const r = a + Math.PI / 2;
+            return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
+        });
+        group.add(new THREE.Mesh(prism(THREE, place(chevronShape), GATE_TOP + 2, 6, 1), stone));
+        const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x502820, emissive: 0x000000, metalness: 0.2, roughness: 0.4 });
+        group.add(new THREE.Mesh(prism(THREE, place(lampShape), GATE_TOP + 3, 2, 0.4), lampMaterial));
+        chevrons.push(lampMaterial);
+    });
+
+    return { group: group, symbolRing: symbolRing, chevrons: chevrons };
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = buildGate;
+
+
+const buildDHD = (THREE) => {
+    const group = new THREE.Group();
+    const base = new THREE.MeshStandardMaterial({ color: 0x5a5753, metalness: 0.45, roughness: 0.6 });
+    const keys = new THREE.MeshStandardMaterial({ color: 0x9a948a, metalness: 0.3, roughness: 0.5 });
+    const octagon = [];
+    for(let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4 + Math.PI / 8;
+        octagon.push([Math.cos(a) * 30, Math.sin(a) * 30]);
+    }
+    group.add(new THREE.Mesh(prism(THREE, octagon, -6, 18, 3), base));
+    [[24, 19], [16, 20]].forEach(ring => {
+        for(let i = 0; i < ring[1]; i++) {
+            const a = i * Math.PI * 2 / ring[1];
+            group.add(new THREE.Mesh(tower(THREE, Math.cos(a) * ring[0], Math.sin(a) * ring[0], 4, 4, -6, -3.5, a), keys));
+        }
+    });
+    const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x8a1a12, emissive: 0x501008, metalness: 0.1, roughness: 0.2 });
+    const domeGeometry = new THREE.SphereGeometry(9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    domeGeometry.rotateX(Math.PI / 2);
+    domeGeometry.translate(0, 0, -6);
+    group.add(new THREE.Mesh(domeGeometry, domeMaterial));
+    return { group: group, dome: domeMaterial };
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = buildDHD;
+
+
+// ------------------------------------------------------------ planets
+
+// Seamless 3D value noise sampled on the sphere, for procedural planet surfaces.
+const makeNoise = (seed) => {
+    const perm = new Uint8Array(512);
+    let s = seed >>> 0;
+    for(let i = 0; i < 256; i++) perm[i] = i;
+    for(let i = 255; i > 0; i--) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        const j = s % (i + 1);
+        const t = perm[i];
+        perm[i] = perm[j];
+        perm[j] = t;
+    }
+    for(let i = 0; i < 256; i++) perm[256 + i] = perm[i];
+    const values = new Float32Array(256);
+    for(let i = 0; i < 256; i++) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        values[i] = s / 4294967296;
+    }
+    const fade = t => t * t * (3 - 2 * t);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const at = (x, y, z) => values[perm[perm[perm[x & 255] + (y & 255)] + (z & 255)]];
+    const noise = (x, y, z) => {
+        const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+        const xf = fade(x - xi), yf = fade(y - yi), zf = fade(z - zi);
+        return lerp(
+            lerp(lerp(at(xi, yi, zi), at(xi + 1, yi, zi), xf), lerp(at(xi, yi + 1, zi), at(xi + 1, yi + 1, zi), xf), yf),
+            lerp(lerp(at(xi, yi, zi + 1), at(xi + 1, yi, zi + 1), xf), lerp(at(xi, yi + 1, zi + 1), at(xi + 1, yi + 1, zi + 1), xf), yf),
+            zf);
+    };
+    return (x, y, z, octaves) => {
+        let total = 0;
+        let amp = 0.5;
+        let freq = 1;
+        for(let o = 0; o < octaves; o++) {
+            total += noise(x * freq, y * freq, z * freq) * amp;
+            amp *= 0.5;
+            freq *= 2.1;
+        }
+        return total;
+    };
+};
+/* harmony export (immutable) */ __webpack_exports__["g"] = makeNoise;
+
+
+// How much of the surface is "land" (vs. the base colour) for each planet type.
+const LAND_LEVEL = { ocean: 0.62, earth: 0.52, desert: 0.47, jungle: 0.4, rocky: 0.5, industrial: 0.5, ice: 0.55 };
+const CLOUDS = { ocean: 0.55, earth: 0.55, jungle: 0.5, ice: 0.6, industrial: 0.62, desert: 0.72, rocky: 0.75 };
+
+const planetTextures = (THREE, type, palette, seed) => {
+    const w = 512;
+    const h = 256;
+    const noise = makeNoise(seed);
+    const surface = document.createElement('canvas');
+    surface.width = w;
+    surface.height = h;
+    const clouds = document.createElement('canvas');
+    clouds.width = w;
+    clouds.height = h;
+    const sctx = surface.getContext('2d');
+    const cctx = clouds.getContext('2d');
+    const simg = sctx.createImageData(w, h);
+    const cimg = cctx.createImageData(w, h);
+    const land = LAND_LEVEL[type] || 0.5;
+    const cloudLevel = CLOUDS[type] || 0.6;
+    for(let y = 0; y < h; y++) {
+        const lat = (y / (h - 1) - 0.5) * Math.PI;
+        const cl = Math.cos(lat);
+        const sl = Math.sin(lat);
+        for(let x = 0; x < w; x++) {
+            const lon = (x / w) * Math.PI * 2;
+            const px = Math.cos(lon) * cl * 2.2 + 10;
+            const py = sl * 2.2 + 10;
+            const pz = Math.sin(lon) * cl * 2.2 + 10;
+            const n = noise(px, py, pz, 5);
+            const detail = noise(px * 4, py * 4, pz * 4, 3);
+            let c;
+            if(n > land) {
+                const k = Math.min(1, (n - land) * 3);
+                c = palette.land.map((v, i) => v * (0.85 + detail * 0.3) * (1 - k * 0.25) + palette.dark[i] * k * 0.25);
+            } else {
+                const k = Math.min(1, (land - n) * 2.5);
+                c = palette.base.map((v, i) => v * (1 - k * 0.45) + palette.dark[i] * k * 0.45);
+            }
+            // Ice caps near the poles for most worlds.
+            // Ice caps near the poles for most worlds, with a soft, ragged edge.
+            if(type !== 'desert' && type !== 'industrial') {
+                const cap = Math.max(0, Math.min(1, (Math.abs(sl) - 0.84 + (n - 0.5) * 0.25) * 12));
+                if(cap > 0) c = c.map((v, i) => v * (1 - cap) + [235, 242, 250][i] * cap);
+            }
+            const o = (y * w + x) * 4;
+            simg.data[o] = c[0];
+            simg.data[o + 1] = c[1];
+            simg.data[o + 2] = c[2];
+            simg.data[o + 3] = 255;
+            const cn = noise(px * 1.7 + 30, py * 3 + 30, pz * 1.7 + 30, 5);
+            const a = Math.max(0, Math.min(1, (cn - cloudLevel) * 5));
+            cimg.data[o] = palette.cloud[0];
+            cimg.data[o + 1] = palette.cloud[1];
+            cimg.data[o + 2] = palette.cloud[2];
+            cimg.data[o + 3] = Math.round(a * 230);
+        }
+    }
+    sctx.putImageData(simg, 0, 0);
+    cctx.putImageData(cimg, 0, 0);
+    const map = new THREE.CanvasTexture(surface);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const cloudMap = new THREE.CanvasTexture(clouds);
+    cloudMap.colorSpace = THREE.SRGBColorSpace;
+    return { map: map, clouds: cloudMap };
+};
+
+// Planet far below the play plane (so it drifts past slowly with real parallax), with a
+// cloud layer, an atmosphere glow and sometimes a moon.
+const PLANET_DEPTH = 9000;
+/* unused harmony export PLANET_DEPTH */
+
+
+const buildPlanet = (THREE, system, palette) => {
+    const p = system.planet;
+    const group = new THREE.Group();
+    const radius = p.radius * 2.2;
+    let seed = 0;
+    for(let i = 0; i < system.id.length; i++) seed = (seed * 31 + system.id.charCodeAt(i)) >>> 0;
+    const textures = planetTextures(THREE, p.type, palette, seed);
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 32),
+        new THREE.MeshStandardMaterial({ map: textures.map, roughness: 0.85, metalness: 0 }));
+    group.add(body);
+    const clouds = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.012, 64, 32),
+        new THREE.MeshStandardMaterial({ map: textures.clouds, transparent: true, depthWrite: false, roughness: 1 }));
+    group.add(clouds);
+    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.1, 48, 24),
+        glowMaterial(THREE, palette.atmosphere.split(',').map(Number), 1.4, 3.0, true));
+    group.add(atmosphere);
+    // Tilt the axis a little so the cloud bands and caps read as a globe.
+    group.rotation.z = 0.25;
+    group.rotation.x = 0.35;
+
+    let moon = null;
+    if(p.moon) {
+        const moonTextures = planetTextures(THREE, 'rocky', { base: [150, 150, 155], dark: [60, 60, 70], land: [120, 120, 128], cloud: [0, 0, 0] }, seed + 7);
+        moon = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.24, 32, 16),
+            new THREE.MeshStandardMaterial({ map: moonTextures.map, roughness: 0.95 }));
+        moonTextures.clouds.dispose();
+    }
+
+    const holder = new THREE.Group();
+    holder.add(group);
+    if(moon) {
+        moon.position.set(radius * 1.9, radius * 0.7, radius * 0.3);
+        holder.add(moon);
+    }
+    holder.position.set(p.x, -p.y, -PLANET_DEPTH);
+    return { holder: holder, body: body, clouds: clouds, textures: textures };
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = buildPlanet;
+
+
+// ------------------------------------------------------------ ore crystals
+
+const ORE_LIMIT = 800;
+/* harmony export (immutable) */ __webpack_exports__["a"] = ORE_LIMIT;
+
+
+const buildOreCrystals = (THREE) => {
+    const geometry = new THREE.OctahedronGeometry(1, 0);
+    geometry.scale(1, 1, 0.7);
+    const material = new THREE.MeshStandardMaterial({ metalness: 0.55, roughness: 0.3, flatShading: true, emissive: 0x111111 });
+    const mesh = new THREE.InstancedMesh(geometry, material, ORE_LIMIT);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    return mesh;
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = buildOreCrystals;
+
+
+
+/***/ }),
+/* 17 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
@@ -5492,22 +8287,296 @@ class Rock {
 
 
 /***/ }),
-/* 12 */
+/* 18 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__hulls__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__modules__ = __webpack_require__(8);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__profile__ = __webpack_require__(5);
-// Shipyard overlay: buy hulls, drag modules onto mounts, upgrade and sell them.
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+// Home base at the centre of the map: an Atlantis-style six-armed city-ship.
+// Fly inside the docking ring and press B to dock with the shipyard.
+//
+// Performance: the city's line art (hundreds of glowing strokes) and the shield dome
+// gradient are rendered once into sprites; each frame just stamps them.
+
+
+
+const STATION = {
+    x: 0,
+    y: 0,
+    dockRadius: 420,
+    maxDockSpeed: 140,
+    shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
+    impacts: []            // { angle, life, strength } ripples on the city shield
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = STATION;
+
+
+const LINE = 'rgba(200, 225, 255, 0.95)';
+const FILL = 'rgba(8, 16, 30, 0.88)';
+
+const poly = (ctx, pts, fill) => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    if(fill !== false) ctx.fill();
+    ctx.stroke();
+};
+
+const line = (ctx, x1, y1, x2, y2) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+};
+
+const hexagon = (r, offset) => {
+    const pts = [];
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + (offset || 0);
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return pts;
+};
+
+// One arm along +x. Main piers are long with a broad, angled end platform;
+// the others are shorter with a compact platform.
+const drawArm = (ctx, main, index) => {
+    const length = main ? 270 : 215;
+    const half = main ? 22 : 18;
+
+    // Pier.
+    poly(ctx, [[70, -half], [length, -half], [length, half], [70, half]]);
+    line(ctx, 80, 0, length - 10, 0);
+    line(ctx, 80, -half * 0.5, length - 10, -half * 0.5);
+    line(ctx, 80, half * 0.5, length - 10, half * 0.5);
+    for(let x = 95; x < length - 10; x += 22) line(ctx, x, -half, x, half);
+
+    // End platform.
+    if(main) {
+        poly(ctx, [[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
+            [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]);
+        poly(ctx, [[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]);
+        // Tower blocks seen from above.
+        [[length + 36, -18], [length + 56, 14], [length + 44, 26], [length + 62, -26]].forEach(t => {
+            ctx.strokeRect(t[0] - 6, t[1] - 6, 12, 12);
+            ctx.strokeRect(t[0] - 3, t[1] - 3, 6, 6);
+        });
+        // Side jetty.
+        poly(ctx, [[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]);
+    } else {
+        poly(ctx, [[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
+            [length + 52, 30], [length + 20, 38], [length, half]]);
+        ctx.strokeRect(length + 16, -12, 24, 24);
+        ctx.beginPath();
+        ctx.arc(length + 28, 0, 6, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Window lights along the pier.
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 230, 160, 0.85)';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = 'rgba(255, 210, 120, 0.9)';
+    for(let x = 90; x < length; x += 11) {
+        const on = Math.sin(x * 0.37 + index * 1.7) > -0.3;
+        if(!on) continue;
+        ctx.fillRect(x, -half * 0.75, 2, 2);
+        ctx.fillRect(x + 4, half * 0.7, 2, 2);
+    }
+    ctx.restore();
+};
+
+const EXTENT = 460;
+const sprites = {};
+
+// City, shield dome and docking ring baked together: one straight image copy per frame.
+// Two variants: normal, and with the docking ring lit when the player can dock.
+const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(EXTENT * 2, EXTENT * 2, ctx => {
+    ctx.translate(EXTENT, EXTENT);
+
+    ctx.setLineDash([12, 14]);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
+    ctx.beginPath();
+    ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // City shield styled like the ship shields: soft edge, hexagon lattice, glowing rim.
+    const R = STATION.shieldRadius;
+    const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
+    dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
+    dome.addColorStop(0.8, 'rgba(120, 190, 255, 0.04)');
+    dome.addColorStop(1, 'rgba(140, 205, 255, 0.2)');
+    ctx.fillStyle = dome;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    const size = 16;
+    const w = size * Math.sqrt(3);
+    const lattice = new Path2D();
+    for(let row = -Math.ceil(R / (size * 1.5)); row <= Math.ceil(R / (size * 1.5)); row++) {
+        for(let col = -Math.ceil(R / w) - 1; col <= Math.ceil(R / w) + 1; col++) {
+            const cx = col * w + (row % 2 ? w / 2 : 0);
+            const cy = row * size * 1.5;
+            if(cx * cx + cy * cy > (R + size) * (R + size)) continue;
+            for(let i = 0; i < 6; i++) {
+                const a1 = Math.PI / 6 + i * Math.PI / 3;
+                lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
+                lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
+            }
+        }
+    }
+    const fade = ctx.createRadialGradient(0, 0, R * 0.4, 0, 0, R);
+    fade.addColorStop(0, 'rgba(140, 205, 255, 0.02)');
+    fade.addColorStop(1, 'rgba(140, 205, 255, 0.22)');
+    ctx.strokeStyle = fade;
+    ctx.lineWidth = 0.8;
+    ctx.stroke(lattice);
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150, 215, 255, 0.55)';
+    ctx.lineWidth = 1.8;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = 'rgb(120, 200, 255)';
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.lineJoin = 'miter';
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = LINE;
+    ctx.fillStyle = FILL;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(150, 200, 255, 0.7)';
+
+    for(let i = 0; i < 6; i++) {
+        ctx.save();
+        ctx.rotate(i * Math.PI / 3 - Math.PI / 2);
+        ctx.strokeStyle = LINE;
+        ctx.fillStyle = FILL;
+        drawArm(ctx, i % 2 === 0, i);
+        ctx.restore();
+    }
+
+    poly(ctx, hexagon(92, Math.PI / 6));
+    poly(ctx, hexagon(70, 0));
+    poly(ctx, hexagon(48, Math.PI / 6));
+    const star = hexagon(40, 0);
+    [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].forEach(pair => {
+        line(ctx, star[pair[0]][0], star[pair[0]][1], star[pair[1]][0], star[pair[1]][1]);
+    });
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        line(ctx, Math.cos(a) * 70, Math.sin(a) * 70, Math.cos(a) * 92, Math.sin(a) * 92);
+    }
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.stroke();
+}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* spriteResolution */])()));
+
+// `effectsOnly`: the 3D view draws the city and its shield dome; only the docking ring,
+// shield impacts, lights and label are drawn here.
+const drawStation = (ctx, time, canDock, effectsOnly) => {
+    const key = canDock ? 'dock' : 'idle';
+    const R = STATION.shieldRadius;
+
+    ctx.save();
+    ctx.translate(STATION.x, STATION.y);
+    if(effectsOnly) {
+        ctx.setLineDash([12, 14]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
+        ctx.beginPath();
+        ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else {
+        if(!sprites[key]) sprites[key] = buildCity(canDock);
+        ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+    }
+
+    // Impact ripples and flares, like the ship shields (only while something has just hit).
+    if(STATION.impacts.length) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.globalCompositeOperation = 'lighter';
+        STATION.impacts.forEach(impact => {
+            const ix = Math.cos(impact.angle) * R;
+            const iy = Math.sin(impact.angle) * R;
+            const age = 1 - impact.life;
+            const size = (50 + 90 * impact.strength) * impact.life;
+            ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('140,200,255'), ix, iy, size, size);
+            ctx.globalAlpha = 0.7 * impact.life;
+            ctx.strokeStyle = 'rgb(150, 215, 255)';
+            ctx.lineWidth = 2.5 * impact.life + 0.5;
+            ctx.beginPath();
+            ctx.arc(ix, iy, 6 + age * R * 0.7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.9 * impact.life;
+            ctx.lineWidth = 3 * impact.life;
+            ctx.beginPath();
+            ctx.arc(0, 0, R, impact.angle - 0.2 * impact.strength, impact.angle + 0.2 * impact.strength);
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // Gate room glow.
+    ctx.globalCompositeOperation = 'lighter';
+    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
+    ctx.globalAlpha = 0.8 * pulse;
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
+
+    // Beacons on the main pier tips.
+    const blink = Math.sin(time * 4) > 0;
+    if(blink) {
+        ctx.globalAlpha = 1;
+        const color = canDock ? '140,255,160' : '255,120,100';
+        for(let i = 0; i < 6; i += 2) {
+            const angle = i * Math.PI / 3 - Math.PI / 2;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+        }
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = '16px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.85)';
+    ctx.fillText('ATLANTIS · SHIPYARD', STATION.x, STATION.y - STATION.dockRadius - 14);
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = drawStation;
+
+
+
+/***/ }),
+/* 19 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(3);
+// DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
+// origin, then press the dome to dial.
 
 
 
 
 
-
-const SLOT_HIT_RADIUS = 16;
+const SIZE = 520;
+const OUTER = [205, 250];   // inner / outer radius of the outer key ring
+const INNER = [140, 200];
+const DOME = 75;
 
 const el = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -5516,153 +8585,524 @@ const el = (tag, className, text) => {
     return node;
 };
 
-const formatCredits = (value) => Math.round(value).toLocaleString('en-US') + ' cr';
-// Prices read "FREE" in debug mode.
-const formatPrice = (value) => (Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'FREE' : formatCredits(value));
+// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
+// origin on the inner ring.
+const KEYS = [];
+for(let i = 0; i < 19; i++) KEYS.push({ glyph: __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][i], ring: OUTER, slot: i, count: 19 });
+for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
 
-const setupCanvas = (canvas, width, height) => {
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(width * ratio);
-    canvas.height = Math.round(height * ratio);
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    return ctx;
-};
-
-const drawHullPreview = (ctx, hull, width, height, padding, maxScale) => {
-    const b = Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["d" /* hullBounds */])(hull);
-    const scale = Math.min((width - padding * 2) / (b.maxX - b.minX), (height - padding * 2) / (b.maxY - b.minY),
-        maxScale || Infinity);
-    const offsetX = width / 2 - ((b.minX + b.maxX) / 2) * scale;
-    const offsetY = height / 2 - ((b.minY + b.maxY) / 2) * scale;
-    return { scale: scale, offsetX: offsetX, offsetY: offsetY };
-};
-
-class Shipyard {
+class DHD {
 
     constructor() {
         this.isOpen = false;
-        this.selectedSlot = null;
-        this.armedModule = null;
-        this.hoverSlot = null;
-        this.drag = null;
-        this.frameId = null;
-        this.messageTimer = null;
+        this.entered = [];
+        this.hover = -1;
         this.build();
     }
 
     build() {
-        const root = el('div', 'shipyard');
-        root.id = 'shipyard';
+        const root = el('div', 'dhd-overlay');
+        const panel = el('div', 'dhd-panel');
+        const header = el('div', 'dhd-header');
+        this.title = el('div', 'dhd-title', 'Dial-home device');
+        header.appendChild(this.title);
+        const close = el('button', 'sy-button small', 'Close (Esc)');
+        close.addEventListener('click', () => this.close());
+        header.appendChild(close);
+        panel.appendChild(header);
 
-        const header = el('div', 'shipyard-header');
-        header.appendChild(el('h1', '', 'Shipyard'));
-        const tabs = el('div', 'shipyard-tabs');
-        this.tabButtons = {};
-        [['ship', 'Ship'], ['market', 'Market']].forEach(tab => {
-            const button = el('button', 'sy-tab', tab[1]);
-            button.addEventListener('click', () => this.showTab(tab[0]));
-            tabs.appendChild(button);
-            this.tabButtons[tab[0]] = button;
+        this.addressBar = el('canvas', 'dhd-address');
+        panel.appendChild(this.addressBar);
+
+        this.canvas = el('canvas', 'dhd-canvas');
+        panel.appendChild(this.canvas);
+
+        this.status = el('div', 'dhd-status');
+        panel.appendChild(this.status);
+
+        const actions = el('div', 'dhd-actions');
+        const clear = el('button', 'sy-button small', 'Clear');
+        clear.addEventListener('click', () => {
+            this.entered = [];
+            this.say('Address cleared.');
+            this.render();
         });
-        header.appendChild(tabs);
-        this.debugButton = el('button', 'sy-tab debug-toggle', 'Debug');
-        this.debugButton.title = 'Debug mode: unlock everything and make it free';
-        this.debugButton.addEventListener('click', () => {
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
-            this.flash(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug mode ON: everything unlocked and free' : 'Debug mode OFF');
-            this.refresh();
-        });
-        header.appendChild(this.debugButton);
-        this.creditsLabel = el('div', 'shipyard-credits');
-        header.appendChild(this.creditsLabel);
-        this.closeButton = el('button', 'sy-button primary', 'Launch');
-        this.closeButton.addEventListener('click', () => this.close());
-        header.appendChild(this.closeButton);
-        root.appendChild(header);
+        actions.appendChild(clear);
+        actions.appendChild(el('span', 'dhd-hint', 'Enter 6 symbols, then the point of origin, then press the dome. Addresses are on the starmap (M).'));
+        panel.appendChild(actions);
 
-        const body = el('div', 'shipyard-body');
-
-        const hullColumn = el('div', 'shipyard-panel hull-list');
-        hullColumn.appendChild(el('h3', '', 'Hulls'));
-        this.hullList = el('div', 'hull-cards');
-        hullColumn.appendChild(this.hullList);
-        body.appendChild(hullColumn);
-
-        const center = el('div', 'shipyard-panel hull-view');
-        this.hullTitle = el('div', 'hull-title');
-        center.appendChild(this.hullTitle);
-        this.canvasWrap = el('div', 'hull-canvas-wrap');
-        this.canvas = el('canvas', 'hull-canvas');
-        this.canvasWrap.appendChild(this.canvas);
-        this.buildPopover();
-        center.appendChild(this.canvasWrap);
-        this.hint = el('div', 'shipyard-hint');
-        center.appendChild(this.hint);
-        this.statsBox = el('div', 'ship-stats');
-        center.appendChild(this.statsBox);
-        body.appendChild(center);
-
-        const moduleColumn = el('div', 'shipyard-panel module-panel');
-        moduleColumn.appendChild(el('h3', '', 'Modules'));
-        this.palette = el('div', 'module-palette');
-        moduleColumn.appendChild(this.palette);
-        moduleColumn.appendChild(el('h3', '', 'Selected mount'));
-        this.inspector = el('div', 'inspector');
-        moduleColumn.appendChild(this.inspector);
-        body.appendChild(moduleColumn);
-
-        root.appendChild(body);
-        this.shipBody = body;
-
-        this.marketBody = el('div', 'shipyard-market');
-        root.appendChild(this.marketBody);
-
-        this.message = el('div', 'shipyard-message');
-        root.appendChild(this.message);
-
-        this.root = root;
+        root.appendChild(panel);
         document.body.appendChild(root);
+        this.root = root;
 
-        this.buildPalette();
-        this.bindCanvas();
+        const ratio = window.devicePixelRatio || 1;
+        this.canvas.width = SIZE * ratio;
+        this.canvas.height = SIZE * ratio;
+        this.canvas.style.width = SIZE + 'px';
+        this.canvas.style.height = SIZE + 'px';
+        this.ctx = this.canvas.getContext('2d');
+        this.ctx.scale(ratio, ratio);
+        this.addressBar.width = 520 * ratio;
+        this.addressBar.height = 70 * ratio;
+        this.addressBar.style.width = '520px';
+        this.addressBar.style.height = '70px';
+        this.barCtx = this.addressBar.getContext('2d');
+        this.barCtx.scale(ratio, ratio);
 
+        this.canvas.addEventListener('mousemove', (event) => {
+            const k = this.keyAt(event);
+            if(k !== this.hover) {
+                this.hover = k;
+                this.render();
+            }
+        });
+        this.canvas.addEventListener('mouseleave', () => {
+            this.hover = -1;
+            this.render();
+        });
+        this.canvas.addEventListener('click', (event) => this.click(event));
         window.addEventListener('keydown', (event) => {
             if(!this.isOpen) return;
             if(event.code === 'Escape') {
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                if(this.armedModule) {
-                    this.armedModule = null;
-                    this.refresh();
-                } else {
-                    this.close();
-                }
+                this.close();
             }
         }, true);
-
-        window.addEventListener('resize', () => { if(this.isOpen) this.resizeCanvas(); });
     }
 
-    get hull() {
-        return __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().hull];
-    }
-
+    // options: { originIndex, originName, systemId, onDial(targetSystem, symbols), onClose }
     open(options) {
-        this.options = options || {};
+        this.options = options;
+        this.entered = [];
         this.isOpen = true;
-        this.selectedSlot = null;
-        this.armedModule = null;
-        this.closeButton.textContent = this.options.closeLabel || 'Launch';
         this.root.classList.add('open');
-        this.tab = this.options.tab || 'ship';
-        this.refresh();
-        this.resizeCanvas();
+        this.title.textContent = 'Dial-home device · ' + options.systemName;
+        this.say(options.busy ? 'The gate is active. Press the dome to shut it down.' : 'Ready.');
+        this.render();
+    }
+
+    close() {
+        if(!this.isOpen) return;
+        this.isOpen = false;
+        this.root.classList.remove('open');
+        if(this.options && this.options.onClose) this.options.onClose();
+    }
+
+    say(text, error) {
+        this.status.textContent = text;
+        this.status.classList.toggle('error', !!error);
+    }
+
+    keyGeometry(key) {
+        const step = Math.PI * 2 / key.count;
+        const a1 = -Math.PI / 2 + key.slot * step - step / 2 + 0.01;
+        const a2 = a1 + step - 0.02;
+        return { a1: a1, a2: a2, mid: (a1 + a2) / 2, r1: key.ring[0], r2: key.ring[1] };
+    }
+
+    keyAt(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        // The canvas may be scaled down by CSS on small screens.
+        const sx = SIZE / (rect.width || SIZE);
+        const sy = SIZE / (rect.height || SIZE);
+        const x = (event.clientX - rect.left) * sx - SIZE / 2;
+        const y = (event.clientY - rect.top) * sy - SIZE / 2;
+        const r = Math.sqrt(x * x + y * y);
+        if(r < DOME) return 'dome';
+        let a = Math.atan2(y, x);
+        for(let i = 0; i < KEYS.length; i++) {
+            const g = this.keyGeometry(KEYS[i]);
+            if(r < g.r1 || r > g.r2) continue;
+            let rel = a - g.a1;
+            while(rel < 0) rel += Math.PI * 2;
+            while(rel > Math.PI * 2) rel -= Math.PI * 2;
+            if(rel <= g.a2 - g.a1) return i;
+        }
+        return -1;
+    }
+
+    glyphOf(key) {
+        return key.glyph === 'origin' ? 'origin:' + this.options.originIndex : key.glyph;
+    }
+
+    click(event) {
+        const k = this.keyAt(event);
+        if(k === -1) return;
+        if(k === 'dome') {
+            this.pressDome();
+            return;
+        }
+        if(this.options.busy) {
+            this.say('The gate is active. Press the dome to shut it down first.', true);
+            return;
+        }
+        const glyph = this.glyphOf(KEYS[k]);
+        if(this.entered.indexOf(glyph) !== -1) return;
+        if(this.entered.length >= 7) {
+            this.say('Seven symbols entered. Press the dome to dial.');
+            return;
+        }
+        this.entered.push(glyph);
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdPress(k);
+        this.say(this.entered.length < 7 ? 'Symbol ' + this.entered.length + ' entered.' : 'Address complete. Press the dome.');
+        this.render();
+    }
+
+    pressDome() {
+        // With the gate dialling or open, the dome shuts it down so a new address can be
+        // entered.
+        if(this.options.busy) {
+            __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();
+            if(this.options.onCancel) this.options.onCancel();
+            this.options.busy = false;
+            this.entered = [];
+            this.say('Gate shut down. Enter a new address.');
+            this.render();
+            return;
+        }
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();
+        const origin = 'origin:' + this.options.originIndex;
+        const symbols = this.entered.slice(0, 6);
+        const fail = (message) => {
+            setTimeout(() => __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dialFail(), 250);
+            this.say(message, true);
+            this.entered = [];
+            this.render();
+        };
+        if(this.entered.length < 7) return fail('Incomplete address: enter six symbols and the point of origin.');
+        if(this.entered[6] !== origin || symbols.some(g => typeof g === 'string')) return fail('The seventh symbol must be this gate\'s point of origin.');
+        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["h" /* systemForAddress */])(symbols);
+        if(!target) return fail('Dialling failed: no Stargate at that address.');
+        if(target.id === this.options.systemId) return fail('You cannot dial the gate you are standing at.');
+        this.options.onDial(target, this.entered.slice());
+        this.close();
+    }
+
+    render() {
+        const ctx = this.ctx;
+        const c = SIZE / 2;
+        ctx.clearRect(0, 0, SIZE, SIZE);
+        ctx.save();
+        ctx.translate(c, c);
+
+        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
+        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
+        base.addColorStop(0, 'rgb(96, 92, 86)');
+        base.addColorStop(0.7, 'rgb(62, 59, 55)');
+        base.addColorStop(1, 'rgb(34, 32, 30)');
+        ctx.fillStyle = base;
+        ctx.beginPath();
+        ctx.arc(0, 0, 258, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
+            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Collar around the dome.
+        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
+        collar.addColorStop(0, 'rgb(30, 28, 26)');
+        collar.addColorStop(1, 'rgb(80, 76, 70)');
+        ctx.fillStyle = collar;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        KEYS.forEach((key, i) => {
+            const g = this.keyGeometry(key);
+            const glyph = this.glyphOf(key);
+            const lit = this.entered.indexOf(glyph) !== -1;
+            const hovered = this.hover === i;
+            const r = (g.r1 + g.r2) / 2;
+            const kx = Math.cos(g.mid) * r;
+            const ky = Math.sin(g.mid) * r;
+            ctx.beginPath();
+            ctx.arc(0, 0, g.r2, g.a1, g.a2);
+            ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
+            ctx.closePath();
+            // Each key is a slightly domed tile lit from the top-left.
+            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
+            if(lit) {
+                tile.addColorStop(0, 'rgb(255, 214, 150)');
+                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
+                tile.addColorStop(1, 'rgb(150, 60, 15)');
+            } else {
+                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
+                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
+            }
+            ctx.fillStyle = tile;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
+                ctx.shadowBlur = 14;
+            }
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgb(28, 25, 22)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
+            const size = key.ring === OUTER ? 30 : 34;
+            if(lit) {
+                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
+                ctx.shadowBlur = 8;
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
+                ctx.shadowBlur = 0;
+            } else {
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
+                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
+            }
+        });
+
+        // Dome: the big red crystal. It glows once a full address is entered.
+        const ready = this.entered.length === 7;
+        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
+        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
+        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
+        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
+        dome.addColorStop(1, 'rgb(60, 8, 6)');
+        if(ready) {
+            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
+            ctx.shadowBlur = 30;
+        }
+        ctx.fillStyle = dome;
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Facets inside the crystal.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 12; i++) {
+            const a = i * Math.PI / 6;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
+            ctx.stroke();
+        }
+        [18, 42].forEach(rr => {
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, 0, Math.PI * 2);
+            ctx.stroke();
+        });
+        // Specular highlight.
+        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
+        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(-60, -64, 70, 70);
+        ctx.restore();
+        if(this.hover === 'dome' || ready) {
+            ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Hovered key name.
+        if(typeof this.hover === 'number' && this.hover >= 0) {
+            const key = KEYS[this.hover];
+            const name = key.glyph === 'origin' ? 'Point of origin · ' + this.options.originName : __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][key.glyph];
+            ctx.font = '14px Bungee, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#fff';
+            ctx.fillText(name, c, SIZE - 6);
+        }
+
+        // Address bar: seven slots.
+        const bar = this.barCtx;
+        bar.clearRect(0, 0, 520, 70);
+        for(let i = 0; i < 7; i++) {
+            const x = 30 + i * 70;
+            bar.fillStyle = i < this.entered.length ? 'rgba(240, 140, 50, 0.25)' : 'rgba(255, 255, 255, 0.06)';
+            bar.strokeStyle = i === 6 ? 'rgba(255, 120, 90, 0.7)' : 'rgba(200, 210, 230, 0.4)';
+            bar.lineWidth = 1.5;
+            bar.fillRect(x, 8, 56, 56);
+            bar.strokeRect(x, 8, 56, 56);
+            if(i < this.entered.length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(bar, this.entered[i], x + 28, 36, 38, 'rgb(255, 214, 160)', 3, 'rgba(150, 60, 15, 0.9)');
+            else {
+                bar.font = '10px Bungee, sans-serif';
+                bar.textAlign = 'center';
+                bar.fillStyle = 'rgba(200, 210, 230, 0.5)';
+                bar.fillText(i === 6 ? 'ORIGIN' : String(i + 1), x + 28, 40);
+            }
+        }
+    }
+}
+
+let instance = null;
+const getDHD = () => {
+    if(!instance) instance = new DHD();
+    return instance;
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = getDHD;
+
+const isDHDOpen = () => !!(instance && instance.isOpen);
+/* harmony export (immutable) */ __webpack_exports__["b"] = isDHDOpen;
+
+
+
+
+
+/***/ }),
+/* 20 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(13);
+// Starmap: a rotatable 3D map of the constellations (gate symbols) and known worlds.
+// Selecting a world draws the three lines of its gate address meeting at it, and shows
+// the address (plus your current gate's point of origin), the distance and, if your ship
+// has a hyperdrive, the travel time and an "Engage hyperdrive" button.
+
+
+
+
+const LINE_COLORS = ['255,140,90', '120,220,255', '190,255,140'];
+const PLANET_COLORS = { ocean: '90,150,255', earth: '110,170,255', desert: '235,190,120', jungle: '120,210,140',
+    rocky: '230,130,100', industrial: '200,170,230', ice: '170,235,255' };
+
+const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if(className) node.className = className;
+    if(text !== undefined) node.textContent = text;
+    return node;
+};
+
+// Hyperspace travel time in seconds for a distance (light years) and drive speed.
+const hyperTravelTime = (distance, speed) => Math.max(5, Math.min(45, distance / (90 * speed)));
+/* harmony export (immutable) */ __webpack_exports__["b"] = hyperTravelTime;
+
+
+class Starmap {
+
+    constructor() {
+        this.isOpen = false;
+        this.yaw = 0.6;
+        this.pitch = 0.35;
+        this.zoom = 1;
+        this.selected = null;
+        this.build();
+        // Decorative background stars on a far sphere.
+        this.stars = [];
+        for(let i = 0; i < 500; i++) {
+            const y = Math.random() * 2 - 1;
+            const r = Math.sqrt(1 - y * y);
+            const a = Math.random() * Math.PI * 2;
+            this.stars.push([Math.cos(a) * r * 5200, y * 5200, Math.sin(a) * r * 5200, Math.random()]);
+        }
+    }
+
+    build() {
+        const root = el('div', 'starmap-overlay');
+        this.canvas = el('canvas', 'starmap-canvas');
+        root.appendChild(this.canvas);
+
+        const side = el('div', 'starmap-side');
+        side.appendChild(el('div', 'starmap-title', 'Starmap'));
+        side.appendChild(el('div', 'starmap-hint', (('ontouchstart' in window) ? 'Drag to rotate, pinch to zoom, tap a world to see its gate address.' : 'Drag to rotate, wheel to zoom, click a world to see its gate address.')));
+        this.info = el('div', 'starmap-info');
+        side.appendChild(this.info);
+        const close = el('button', 'sy-button small', 'Close (M / Esc)');
+        close.addEventListener('click', () => this.close());
+        side.appendChild(close);
+        root.appendChild(side);
+
+        document.body.appendChild(root);
+        this.root = root;
+        this.ctx = this.canvas.getContext('2d');
+
+        // Pointer events cover mouse and touch: one pointer drags to rotate (a tap picks a
+        // world), two pointers pinch to zoom.
+        let drag = null;
+        const pointers = {};
+        let pinch = null;
+        const pinchDistance = () => {
+            const ids = Object.keys(pointers);
+            const a = pointers[ids[0]], b = pointers[ids[1]];
+            return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        };
+        this.canvas.style.touchAction = 'none';
+        this.canvas.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(this.canvas.setPointerCapture) {
+                try { this.canvas.setPointerCapture(event.pointerId); } catch(e) { /* ignore */ }
+            }
+            if(Object.keys(pointers).length === 2) {
+                drag = null;
+                pinch = { distance: pinchDistance(), zoom: this.zoom };
+            } else if(!pinch) {
+                drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+            }
+        });
+        this.canvas.addEventListener('pointermove', (event) => {
+            if(!this.isOpen || !pointers[event.pointerId]) return;
+            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
+            if(pinch && Object.keys(pointers).length >= 2) {
+                this.zoom = Math.max(0.5, Math.min(3, pinch.zoom * pinchDistance() / pinch.distance));
+                return;
+            }
+            if(!drag || drag.id !== event.pointerId) return;
+            const dx = event.clientX - drag.x;
+            const dy = event.clientY - drag.y;
+            if(Math.abs(dx) + Math.abs(dy) > (event.pointerType === 'mouse' ? 4 : 10)) drag.moved = true;
+            this.yaw = drag.yaw + dx * 0.008;
+            this.pitch = Math.max(-1.4, Math.min(1.4, drag.pitch + dy * 0.008));
+        });
+        const release = (event) => {
+            if(drag && drag.id === event.pointerId && !drag.moved && this.isOpen && event.type === 'pointerup') this.pick(event);
+            if(drag && drag.id === event.pointerId) drag = null;
+            delete pointers[event.pointerId];
+            if(Object.keys(pointers).length === 0) pinch = null;
+        };
+        this.canvas.addEventListener('pointerup', release);
+        this.canvas.addEventListener('pointercancel', release);
+        this.canvas.addEventListener('wheel', (event) => {
+            event.preventDefault();
+            this.zoom = Math.max(0.5, Math.min(3, this.zoom * Math.exp(-event.deltaY * 0.0012)));
+        }, { passive: false });
+        window.addEventListener('keydown', (event) => {
+            if(!this.isOpen) return;
+            if(event.code === 'KeyJ') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.engage();
+                return;
+            }
+            if(event.code === 'Escape' || event.code === 'KeyM') {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.close();
+            }
+        }, true);
+        window.addEventListener('resize', () => { if(this.isOpen) this.resize(); });
+    }
+
+    // options: { systemId, originIndex, hyperdrive: { speed } | null, onEngage(system), onClose }
+    open(options) {
+        this.options = options;
+        this.isOpen = true;
+        this.root.classList.add('open');
+        if(!this.selected || this.selected === options.systemId) this.selected = null;
+        this.resize();
+        this.renderInfo();
         const loop = () => {
-            this.renderCanvas();
-            this.frameId = requestAnimationFrame(loop);
+            if(!this.isOpen) return;
+            this.render();
+            this.frame = requestAnimationFrame(loop);
         };
         loop();
     }
@@ -5671,1282 +9111,386 @@ class Shipyard {
         if(!this.isOpen) return;
         this.isOpen = false;
         this.root.classList.remove('open');
-        cancelAnimationFrame(this.frameId);
-        this.endDrag();
+        cancelAnimationFrame(this.frame);
         if(this.options.onClose) this.options.onClose();
     }
 
-    flash(text) {
-        this.message.textContent = text;
-        this.message.classList.add('visible');
-        clearTimeout(this.messageTimer);
-        this.messageTimer = setTimeout(() => this.message.classList.remove('visible'), 2200);
-    }
-
-    // ------------------------------------------------------------ panels
-
-    showTab(tab) {
-        this.tab = tab;
-        this.armedModule = null;
-        this.refresh();
-    }
-
-    refresh() {
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
-        this.creditsLabel.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'DEBUG · everything free' : formatCredits(profile.credits);
-        this.debugButton.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Debug: ON' : 'Debug: OFF';
-        this.debugButton.classList.toggle('active', Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])());
-        Object.keys(this.tabButtons).forEach(key => this.tabButtons[key].classList.toggle('active', key === this.tab));
-        this.shipBody.style.display = this.tab === 'ship' ? '' : 'none';
-        this.marketBody.style.display = this.tab === 'market' ? '' : 'none';
-        this.renderMarket();
-        this.renderHullList();
-        this.renderTitle();
-        this.renderStats();
-        this.renderPalette();
-        this.renderInspector();
-        this.renderPopover();
-        this.renderHint();
-    }
-
-    renderMarket() {
-        const box = this.marketBody;
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
-        const capacity = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id).cargo;
-        box.innerHTML = '';
-
-        const panel = el('div', 'shipyard-panel market-panel');
-        panel.appendChild(el('h3', '', 'Ore exchange'));
-        const canTrade = !!(this.options && this.options.canTrade);
-        if(!canTrade) panel.appendChild(el('p', 'market-warning', 'Fly to the shipyard station and dock (B) to sell ore.'));
-        panel.appendChild(el('p', 'muted', 'Cargo hold: ' + Object(__WEBPACK_IMPORTED_MODULE_3__profile__["d" /* cargoUsed */])() + ' / ' + capacity +
-            ' units. Prices are per unit; metals found further from base are worth more.'));
-
-        const table = el('table', 'market-table');
-        const head = el('tr');
-        ['Material', 'Price', 'In hold', 'Value', ''].forEach(h => head.appendChild(el('th', '', h)));
-        table.appendChild(head);
-
-        __WEBPACK_IMPORTED_MODULE_1__world_materials__["a" /* MATERIAL_ORDER */].forEach(id => {
-            const material = __WEBPACK_IMPORTED_MODULE_1__world_materials__["b" /* default */][id];
-            const amount = profile.cargo[id] || 0;
-            const tr = el('tr', amount ? '' : 'empty');
-            const name = el('td', 'material-name');
-            const swatch = el('span', 'swatch');
-            swatch.style.background = 'rgb(' + material.color + ')';
-            swatch.style.boxShadow = '0 0 6px rgb(' + material.color + ')';
-            name.appendChild(swatch);
-            name.appendChild(document.createTextNode(material.name));
-            tr.appendChild(name);
-            tr.appendChild(el('td', '', formatCredits(material.price)));
-            tr.appendChild(el('td', '', String(amount)));
-            tr.appendChild(el('td', '', formatCredits(amount * material.price)));
-            const cell = el('td');
-            const sell = el('button', 'sy-button small', 'Sell');
-            sell.disabled = amount === 0 || !canTrade;
-            sell.addEventListener('click', () => {
-                const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])(id);
-                this.flash('Sold ' + material.name + ' for ' + formatCredits(earned));
-                this.refresh();
-            });
-            cell.appendChild(sell);
-            tr.appendChild(cell);
-            table.appendChild(tr);
-        });
-        panel.appendChild(table);
-
-        const total = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["e" /* cargoValue */])();
-        const sellAll = el('button', 'sy-button buy', 'Sell all cargo  +' + formatCredits(total));
-        sellAll.disabled = total === 0 || !canTrade;
-        sellAll.addEventListener('click', () => {
-            const earned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["q" /* sellCargo */])();
-            this.flash('Cargo sold for ' + formatCredits(earned));
-            this.refresh();
-        });
-        panel.appendChild(sellAll);
-
-        // Repairs are only offered when docked with a damaged ship.
-        const status = this.options && this.options.hullStatus ? this.options.hullStatus() : null;
-        if(status) {
-            panel.appendChild(el('h3', 'market-section', 'Repairs'));
-            const missing = Math.ceil(status.max - status.hp);
-            if(missing <= 0) {
-                panel.appendChild(el('p', 'muted', 'Hull at full strength.'));
-            } else {
-                const cost = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(missing * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]);
-                const affordable = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? missing : Math.min(missing, Math.floor(profile.credits / __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */]));
-                panel.appendChild(el('p', '', 'Hull ' + Math.ceil(status.hp) + ' / ' + status.max +
-                    ' · ' + __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */] + ' cr per point'));
-                const repair = el('button', 'sy-button', affordable < missing
-                    ? 'Repair ' + affordable + ' points  ' + formatPrice(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])
-                    : 'Full repair  ' + formatPrice(cost));
-                repair.disabled = affordable <= 0;
-                repair.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["t" /* spendCredits */])(affordable * __WEBPACK_IMPORTED_MODULE_3__profile__["a" /* REPAIR_COST_PER_HP */])) {
-                        this.options.repair(affordable);
-                        this.flash('Hull repaired.');
-                    }
-                    this.refresh();
-                });
-                panel.appendChild(repair);
-            }
-        }
-
-        box.appendChild(panel);
-    }
-
-    renderHullList() {
-        const profile = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])();
-        this.hullList.innerHTML = '';
-
-        __WEBPACK_IMPORTED_MODULE_0__hulls__["a" /* HULL_ORDER */].forEach(id => {
-            const hull = __WEBPACK_IMPORTED_MODULE_0__hulls__["b" /* default */][id];
-            const owned = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["m" /* ownsHull */])(id);
-            const active = profile.hull === id;
-            const card = el('div', 'hull-card' + (active ? ' active' : '') + (owned ? ' owned' : ''));
-
-            const thumb = el('canvas', 'hull-thumb');
-            const ctx = setupCanvas(thumb, 120, 64);
-            const fit = drawHullPreview(ctx, hull, 120, 64, 8);
-            ctx.translate(fit.offsetX, fit.offsetY);
-            ctx.scale(fit.scale, fit.scale);
-            Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["c" /* drawHullArt */])(ctx, hull, { lineWidth: 1.2 / fit.scale, glow: 4 });
-            card.appendChild(thumb);
-
-            const info = el('div', 'hull-info');
-            info.appendChild(el('div', 'hull-name', hull.name));
-            info.appendChild(el('div', 'hull-class', hull.className + ' · ' + hull.faction));
-            info.appendChild(el('div', 'hull-meta', hull.slots.length + ' mounts · ' + hull.cargo + ' cargo · ' + hull.hull + ' hull' +
-                (hull.baseShield ? ' · ' + hull.baseShield + ' shield' : '')));
-
-            let action;
-            if(active) {
-                action = el('div', 'hull-state', 'Active');
-            } else if(owned) {
-                action = el('button', 'sy-button small', 'Fly this');
-                action.addEventListener('click', () => {
-                    Object(__WEBPACK_IMPORTED_MODULE_3__profile__["p" /* selectHull */])(id);
-                    this.selectedSlot = null;
-                    this.refresh();
-                });
-            } else {
-                action = el('button', 'sy-button small buy', 'Buy ' + formatPrice(hull.cost));
-                action.disabled = profile.credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(hull.cost);
-                action.addEventListener('click', () => {
-                    if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["c" /* buyHull */])(id)) {
-                        this.selectedSlot = null;
-                        this.flash(hull.name + ' purchased!');
-                    }
-                    this.refresh();
-                });
-            }
-            info.appendChild(action);
-            card.appendChild(info);
-            card.title = hull.description;
-            this.hullList.appendChild(card);
-        });
-    }
-
-    renderTitle() {
-        const hull = this.hull;
-        this.hullTitle.innerHTML = '';
-        this.hullTitle.appendChild(el('span', 'title-name', hull.name + ' ' + hull.className));
-        this.hullTitle.appendChild(el('span', 'title-desc', hull.description));
-    }
-
-    renderStats() {
-        const stats = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["f" /* computeShipStats */])(this.hull.id);
-        const rows = [
-            ['Hull', Math.round(stats.maxHull)],
-            ['Shield', stats.maxShield ? Math.round(stats.maxShield) + ' (+' + Math.round(stats.shieldRegen) + '/s)' : 'none'],
-            ['Acceleration', Math.round(stats.acceleration)],
-            ['Turn rate', stats.maxTurn.toFixed(1)],
-
-            ['Weapons', stats.weapons],
-            ['Guidance', stats.guidance ? stats.guidance.range + 'px' : 'none'],
-            ['Cargo hold', stats.cargo],
-            ['Tractor', stats.magnetRange + 'px'],
-            ['Scanner', stats.scanner ? stats.scanner.range + 'px' : 'none'],
-            ['Hyperdrive', stats.hyperdrive ? 'x' + stats.hyperdrive.speed : 'none'],
-            ['Mounts', stats.modules.length + ' / ' + this.hull.slots.length]
-        ];
-        this.statsBox.innerHTML = '';
-        rows.forEach(row => {
-            const item = el('div', 'stat');
-            item.appendChild(el('span', 'stat-label', row[0]));
-            item.appendChild(el('span', 'stat-value', String(row[1])));
-            this.statsBox.appendChild(item);
-        });
-    }
-
-    buildPalette() {
-        this.paletteItems = {};
-        __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
-            const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type];
-            const item = el('div', 'module-item');
-            item.dataset.type = type;
-
-            const icon = el('canvas', 'module-icon');
-            const ctx = setupCanvas(icon, 40, 40);
-            ctx.translate(20, 20);
-            Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, type, 1, { scale: 2.6, lineWidth: 1.4 });
-            item.appendChild(icon);
-
-            const info = el('div', 'module-info');
-            info.appendChild(el('div', 'module-name', def.name));
-            info.appendChild(el('div', 'module-desc', def.description));
-            const price = el('div', 'module-price', formatCredits(def.cost));
-            info.appendChild(price);
-            item.appendChild(info);
-
-            item.addEventListener('pointerdown', (event) => this.startDrag(event, type));
-            this.palette.appendChild(item);
-            this.paletteItems[type] = { item: item, price: price };
-        });
-    }
-
-    renderPalette() {
-        const credits = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits;
-        __WEBPACK_IMPORTED_MODULE_2__modules__["b" /* MODULE_ORDER */].forEach(type => {
-            const entry = this.paletteItems[type];
-            entry.item.classList.toggle('armed', this.armedModule === type);
-            entry.item.classList.toggle('unaffordable', credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost));
-            entry.price.textContent = formatPrice(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost);
-        });
-    }
-
-    renderInspector() {
-        const hull = this.hull;
-        const box = this.inspector;
-        box.innerHTML = '';
-
-        if(!this.selectedSlot) {
-            box.appendChild(el('p', 'muted', 'Click a mount on the ship to inspect it.'));
-            return;
-        }
-
-        const module = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[this.selectedSlot];
-        if(!module) {
-            box.appendChild(el('p', '', 'Empty mount'));
-            box.appendChild(el('p', 'muted', this.armedModule
-                ? 'Click the mount again to install the ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][this.armedModule].short + '.'
-                : 'Drag a module here, or pick one from the list and click the mount.'));
-            return;
-        }
-
-        const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type];
-        const stats = Object(__WEBPACK_IMPORTED_MODULE_2__modules__["e" /* moduleStats */])(module.type, module.level);
-        box.appendChild(el('div', 'inspector-name', def.name + ' Mk ' + ['I', 'II', 'III'][module.level - 1]));
-        box.appendChild(el('div', 'inspector-stats', def.describe(stats)));
-
-        if(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["g" /* upgradeCost */])(module.type, module.level) !== null) {
-            box.appendChild(el('div', 'inspector-next', 'Next: ' + def.describe(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["e" /* moduleStats */])(module.type, module.level + 1))));
-        } else {
-            box.appendChild(el('div', 'inspector-next', 'Max level (Mk ' + ['I', 'II', 'III'][__WEBPACK_IMPORTED_MODULE_2__modules__["a" /* MAX_LEVEL */] - 1] + ')'));
-        }
-        box.appendChild(el('p', 'muted', 'Upgrade or remove it with the buttons next to the module on the ship.'));
-    }
-
-    // ------------------------------------------------------------ module popover
-    //
-    // Clicking a fitted module on the ship opens a small popover right next to it with
-    // icon buttons to upgrade it and to sell / remove it.
-
-    buildPopover() {
-        const pop = el('div', 'module-popover');
-        this.popName = el('div', 'popover-name');
-        pop.appendChild(this.popName);
-        const row = el('div', 'popover-actions');
-        const iconButton = (className, svg) => {
-            const wrap = el('div', 'popover-action');
-            const button = el('button', 'icon-button ' + className);
-            button.innerHTML = svg;
-            const caption = el('span', 'popover-caption');
-            wrap.appendChild(button);
-            wrap.appendChild(caption);
-            row.appendChild(wrap);
-            return { button: button, caption: caption };
-        };
-        this.popUpgrade = iconButton('upgrade',
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 11h-5v9H9v-9H4z"/></svg>');
-        this.popSell = iconButton('danger',
-            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6l1 2h5v2H3V4h5zM5 8h14l-1.2 14H6.2zm4 3v8h2v-8zm4 0v8h2v-8z"/></svg>');
-        pop.appendChild(row);
-        this.popUpgrade.button.addEventListener('click', (event) => {
-            event.stopPropagation();
-            const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
-            if(!module) return;
-            if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["v" /* upgradeModule */])(this.hull.id, this.selectedSlot)) this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type].short + ' upgraded!');
-            this.refresh();
-        });
-        this.popSell.button.addEventListener('click', (event) => {
-            event.stopPropagation();
-            if(!this.selectedSlot || !Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot]) return;
-            Object(__WEBPACK_IMPORTED_MODULE_3__profile__["r" /* sellModule */])(this.hull.id, this.selectedSlot);
-            this.refresh();
-        });
-        pop.addEventListener('pointerdown', (event) => event.stopPropagation());
-        this.canvasWrap.appendChild(pop);
-        this.popover = pop;
-        this.popover.style.display = 'none';
-    }
-
-    renderPopover() {
-        const module = this.selectedSlot && Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[this.selectedSlot];
-        if(!module) {
-            this.popover.style.display = 'none';
-            return;
-        }
-        const def = __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][module.type];
-        this.popover.style.display = '';
-        this.popName.textContent = def.short + ' Mk ' + ['I', 'II', 'III'][module.level - 1];
-
-        // Upgrade: always shown; disabled at max level or when unaffordable.
-        const cost = Object(__WEBPACK_IMPORTED_MODULE_2__modules__["g" /* upgradeCost */])(module.type, module.level);
-        const up = this.popUpgrade;
-        if(cost === null) {
-            up.button.disabled = true;
-            up.button.title = 'Max level';
-            up.caption.textContent = 'MAX';
-        } else {
-            up.button.disabled = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(cost);
-            up.button.title = 'Upgrade to Mk ' + ['I', 'II', 'III'][module.level] + ' (' + formatPrice(cost) + ')';
-            up.caption.textContent = formatPrice(cost);
-        }
-        const sellLabel = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : 'Sell +' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
-        this.popSell.button.title = sellLabel;
-        this.popSell.caption.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["i" /* isDebug */])() ? 'Remove' : '+' + formatCredits(Object(__WEBPACK_IMPORTED_MODULE_2__modules__["f" /* sellValue */])(module.type, module.level));
-        this.positionPopover();
-    }
-
-    // Keep the popover beside the selected mount (and inside the view).
-    positionPopover() {
-        if(!this.popover || this.popover.style.display === 'none' || !this.ctx) return;
-        const spot = this.layout().slots.filter(sl => sl.slot.id === this.selectedSlot)[0];
-        if(!spot) return;
-        const w = this.popover.offsetWidth;
-        const h = this.popover.offsetHeight;
-        let x = spot.x + 22;
-        let y = spot.y - h / 2;
-        if(x + w > this.canvasWidth - 4) x = spot.x - 22 - w;
-        x = Math.max(4, Math.min(this.canvasWidth - w - 4, x));
-        y = Math.max(4, Math.min(this.canvasHeight - h - 4, y));
-        const key = Math.round(x) + ',' + Math.round(y);
-        if(key !== this.popoverKey) {
-            this.popoverKey = key;
-            this.popover.style.left = Math.round(x) + 'px';
-            this.popover.style.top = Math.round(y) + 'px';
-        }
-    }
-
-    renderHint() {
-        this.hint.textContent = this.armedModule
-            ? 'Placing ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][this.armedModule].name + ': click an empty mount (Esc to cancel)'
-            : 'Drag modules from the right onto the ship\'s mounts. Mine ore and sell it in the Market tab.';
-    }
-
-    // ------------------------------------------------------------ hull canvas
-
-    resizeCanvas() {
-        const rect = this.canvasWrap.getBoundingClientRect();
-        this.canvasWidth = Math.max(200, Math.floor(rect.width));
-        this.canvasHeight = Math.max(160, Math.floor(rect.height));
-        this.ctx = setupCanvas(this.canvas, this.canvasWidth, this.canvasHeight);
-    }
-
-    layout() {
-        const hull = this.hull;
-        const fit = drawHullPreview(this.ctx, hull, this.canvasWidth, this.canvasHeight, 40, 14);
-        const slots = hull.slots.map(slot => ({
-            slot: slot,
-            x: fit.offsetX + slot.x * fit.scale,
-            y: fit.offsetY + slot.y * fit.scale
-        }));
-        return { fit: fit, slots: slots };
-    }
-
-    slotAt(clientX, clientY) {
+    resize() {
         const rect = this.canvas.getBoundingClientRect();
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-        const layout = this.layout();
+        const ratio = window.devicePixelRatio || 1;
+        this.width = rect.width;
+        this.height = rect.height;
+        this.canvas.width = rect.width * ratio;
+        this.canvas.height = rect.height * ratio;
+        this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+
+    project(p) {
+        const cy = Math.cos(this.yaw);
+        const sy = Math.sin(this.yaw);
+        const cp = Math.cos(this.pitch);
+        const sp = Math.sin(this.pitch);
+        const x1 = p[0] * cy - p[2] * sy;
+        const z1 = p[0] * sy + p[2] * cy;
+        const y2 = p[1] * cp - z1 * sp;
+        const z2 = p[1] * sp + z1 * cp;
+        const camera = 9000 / this.zoom;
+        const scale = Math.min(this.width, this.height) * 0.9 / (camera + z2) * this.zoom * 0.95;
+        return { x: this.width / 2 + x1 * scale, y: this.height / 2 + y2 * scale, depth: z2, scale: scale };
+    }
+
+    pick(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
         let best = null;
-        let bestDist = SLOT_HIT_RADIUS * SLOT_HIT_RADIUS * 2.5;
-        layout.slots.forEach(s => {
-            const d = (s.x - x) * (s.x - x) + (s.y - y) * (s.y - y);
+        const reach = event.pointerType && event.pointerType !== 'mouse' ? 34 : 22;
+        let bestDist = reach * reach;
+        __WEBPACK_IMPORTED_MODULE_0__world_systems__["b" /* SYSTEMS */].forEach(system => {
+            const p = this.project(system.map);
+            const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
             if(d < bestDist) {
                 bestDist = d;
-                best = s.slot.id;
+                best = system.id;
             }
         });
-        return best;
+        if(best) {
+            this.selected = best;
+            this.renderInfo();
+        }
     }
 
-    bindCanvas() {
-        this.canvas.addEventListener('pointermove', (event) => {
-            if(this.drag) return;
-            this.hoverSlot = this.slotAt(event.clientX, event.clientY);
-            this.canvas.style.cursor = this.hoverSlot ? 'pointer' : 'default';
+    renderInfo() {
+        const box = this.info;
+        box.innerHTML = '';
+        const here = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.options.systemId);
+        box.appendChild(el('div', 'starmap-here', 'You are at ' + here.name + ' (' + here.galaxy + ')'));
+        if(!this.selected) {
+            box.appendChild(el('p', 'muted', 'Select a world on the map.'));
+            return;
+        }
+        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected);
+        box.appendChild(el('div', 'starmap-name', target.name));
+        box.appendChild(el('div', 'starmap-galaxy', target.galaxy + ' galaxy'));
+        box.appendChild(el('p', '', target.description));
+        if(target.id === here.id) {
+            box.appendChild(el('p', 'muted', 'This is your current location.'));
+            return;
+        }
+
+        box.appendChild(el('div', 'starmap-label', 'Gate address (dial at the DHD)'));
+        const glyphs = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["d" /* addressOf */])(target.id).concat(['origin:' + this.options.originIndex]);
+        const strip = el('canvas', 'starmap-glyphs');
+        const ratio = window.devicePixelRatio || 1;
+        strip.width = 7 * 40 * ratio;
+        strip.height = 58 * ratio;
+        strip.style.width = 7 * 40 + 'px';
+        strip.style.height = '58px';
+        const sctx = strip.getContext('2d');
+        sctx.scale(ratio, ratio);
+        glyphs.forEach((g, i) => {
+            const color = i < 6 ? 'rgb(' + LINE_COLORS[Math.floor(i / 2)] + ')' : 'rgb(255, 140, 120)';
+            sctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            sctx.strokeRect(i * 40 + 2, 2, 36, 36);
+            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(sctx, g, i * 40 + 20, 20, 28, color, 2.6, 'rgba(10, 20, 50, 0.9)');
+            sctx.font = '7px sans-serif';
+            sctx.textAlign = 'center';
+            sctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
+            const name = i < 6 ? __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][g] : here.origin;
+            sctx.fillText(name.length > 10 ? name.slice(0, 9) + '.' : name, i * 40 + 20, 50);
         });
-        this.canvas.addEventListener('pointerleave', () => { if(!this.drag) this.hoverSlot = null; });
-        this.canvas.addEventListener('click', (event) => {
-            const slotId = this.slotAt(event.clientX, event.clientY);
-            if(!slotId) {
-                this.selectedSlot = null;
-                this.refresh();
-                return;
-            }
-            const occupied = !!Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(this.hull.id)[slotId];
-            if(this.armedModule && !occupied) {
-                this.install(slotId, this.armedModule);
-            } else {
-                this.selectedSlot = slotId;
-                this.refresh();
-            }
-        });
+        box.appendChild(strip);
+        box.appendChild(el('p', 'muted', 'Symbols 1-2, 3-4 and 5-6 are the three lines meeting at ' + target.name +
+            '. The last is the point of origin of the gate you dial from (' + here.origin + ').'));
+
+        const distance = Math.round(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["f" /* distanceBetween */])(here.id, target.id));
+        box.appendChild(el('div', 'starmap-label', 'Distance: ' + distance.toLocaleString('en-US') + ' light years'));
+        const drive = this.options.hyperdrive;
+        if(drive) {
+            const time = hyperTravelTime(distance, drive.speed);
+            box.appendChild(el('p', '', 'Hyperspace travel time: ' + time.toFixed(1) + ' s'));
+            const engage = el('button', 'sy-button primary', 'Engage hyperdrive (J)');
+            engage.addEventListener('click', () => this.engage());
+            box.appendChild(engage);
+        } else {
+            box.appendChild(el('p', 'muted', 'No hyperdrive fitted: use the Stargate. Fly to the DHD and press B.'));
+        }
     }
 
-    install(slotId, type) {
-        const hull = this.hull;
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id)[slotId]) {
-            this.flash('That mount is taken. Sell its module first.');
-            return;
-        }
-        if(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].minHullMass && hull.mass < __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].minHullMass) {
-            this.flash('The ' + hull.name + ' is too small for a ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '. Use the Stargate instead.');
-            return;
-        }
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) {
-            this.flash('Not enough credits for ' + __WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + '.');
-            return;
-        }
-        Object(__WEBPACK_IMPORTED_MODULE_3__profile__["h" /* installModule */])(hull.id, slotId, type);
-        this.selectedSlot = slotId;
-        this.flash(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].name + ' installed.');
-        if(Object(__WEBPACK_IMPORTED_MODULE_3__profile__["g" /* getProfile */])().credits < Object(__WEBPACK_IMPORTED_MODULE_3__profile__["n" /* priceOf */])(__WEBPACK_IMPORTED_MODULE_2__modules__["c" /* default */][type].cost)) this.armedModule = null;
-        this.refresh();
+    engage() {
+        if(!this.selected || !this.options.hyperdrive || this.selected === this.options.systemId) return;
+        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected);
+        this.options.onEngage(target);
+        this.close();
     }
 
-    // Pointer drag from palette onto a mount. A press without movement arms the module instead.
-    startDrag(event, type) {
-        event.preventDefault();
-        this.drag = { type: type, startX: event.clientX, startY: event.clientY, moved: false, ghost: null };
-
-        this.onDragMove = (e) => {
-            const drag = this.drag;
-            if(!drag) return;
-            if(!drag.moved && Math.abs(e.clientX - drag.startX) + Math.abs(e.clientY - drag.startY) > 6) {
-                drag.moved = true;
-                drag.ghost = el('canvas', 'drag-ghost');
-                const ctx = setupCanvas(drag.ghost, 48, 48);
-                ctx.translate(24, 24);
-                Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, type, 1, { scale: 3, lineWidth: 1.5 });
-                document.body.appendChild(drag.ghost);
-            }
-            if(drag.ghost) {
-                drag.ghost.style.left = (e.clientX - 24) + 'px';
-                drag.ghost.style.top = (e.clientY - 24) + 'px';
-                this.hoverSlot = this.slotAt(e.clientX, e.clientY);
-            }
-        };
-
-        this.onDragEnd = (e) => {
-            const drag = this.drag;
-            this.endDrag();
-            if(!drag) return;
-            if(drag.moved) {
-                const slotId = this.slotAt(e.clientX, e.clientY);
-                if(slotId) this.install(slotId, drag.type);
-            } else {
-                this.armedModule = this.armedModule === drag.type ? null : drag.type;
-                this.refresh();
-            }
-        };
-
-        window.addEventListener('pointermove', this.onDragMove);
-        window.addEventListener('pointerup', this.onDragEnd);
-    }
-
-    endDrag() {
-        if(this.drag && this.drag.ghost) this.drag.ghost.remove();
-        this.drag = null;
-        if(this.onDragMove) window.removeEventListener('pointermove', this.onDragMove);
-        if(this.onDragEnd) window.removeEventListener('pointerup', this.onDragEnd);
-        this.onDragMove = null;
-        this.onDragEnd = null;
-    }
-
-    renderCanvas() {
-        const rect = this.canvasWrap.getBoundingClientRect();
-        if(Math.abs(rect.width - this.canvasWidth) > 1 || Math.abs(rect.height - this.canvasHeight) > 1) {
-            this.resizeCanvas();
-        }
+    render() {
         const ctx = this.ctx;
-        if(!ctx) return;
-        this.positionPopover();
-        const hull = this.hull;
-        const layout = this.layout();
-        const fit = layout.fit;
-        const loadout = Object(__WEBPACK_IMPORTED_MODULE_3__profile__["j" /* loadoutFor */])(hull.id);
-        const time = performance.now() / 1000;
-        const placing = !!(this.armedModule || (this.drag && this.drag.moved));
+        const w = this.width;
+        const h = this.height;
+        ctx.fillStyle = 'rgb(3, 6, 14)';
+        ctx.fillRect(0, 0, w, h);
+        this.yaw += 0.0008;
 
-        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-
-        // Blueprint grid.
-        ctx.save();
-        ctx.strokeStyle = 'rgba(120, 170, 255, 0.07)';
-        ctx.lineWidth = 1;
-        for(let x = 0; x < this.canvasWidth; x += 24) {
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.canvasHeight); ctx.stroke();
-        }
-        for(let y = 0; y < this.canvasHeight; y += 24) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.canvasWidth, y); ctx.stroke();
-        }
-        ctx.restore();
-
-        ctx.save();
-        ctx.translate(fit.offsetX, fit.offsetY);
-        ctx.scale(fit.scale, fit.scale);
-        Object(__WEBPACK_IMPORTED_MODULE_0__hulls__["c" /* drawHullArt */])(ctx, hull, { lineWidth: 1.6 / fit.scale, glow: 8 });
-        ctx.restore();
-
-        layout.slots.forEach(s => {
-            const module = loadout[s.slot.id];
-            const hovered = this.hoverSlot === s.slot.id;
-            const selected = this.selectedSlot === s.slot.id;
-            const iconScale = Math.max(1.6, Math.min(4, hull.moduleScale * fit.scale * 0.9));
-            const radius = iconScale * 5.5;
-
-            ctx.save();
-            ctx.translate(s.x, s.y);
-
-            if(module) {
-                Object(__WEBPACK_IMPORTED_MODULE_2__modules__["d" /* drawModule */])(ctx, module.type, module.level, { scale: iconScale, lineWidth: 1.5 });
-            } else {
-                const pulse = placing ? 0.5 + 0.5 * Math.sin(time * 6) : 0;
-                ctx.setLineDash([3, 3]);
-                ctx.strokeStyle = placing
-                    ? 'rgba(140, 255, 160, ' + (0.5 + pulse * 0.5) + ')'
-                    : 'rgba(200, 220, 255, 0.55)';
-                ctx.lineWidth = 1.3;
-                ctx.beginPath();
-                ctx.arc(0, 0, radius * 0.75, 0, Math.PI * 2);
-                ctx.stroke();
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(-3, 0); ctx.lineTo(3, 0);
-                ctx.moveTo(0, -3); ctx.lineTo(0, 3);
-                ctx.stroke();
-            }
-
-            if(hovered || selected) {
-                ctx.strokeStyle = selected ? 'rgba(255, 255, 255, 0.95)' : 'rgba(255, 255, 255, 0.5)';
-                ctx.lineWidth = selected ? 2 : 1.2;
-                ctx.shadowBlur = 8;
-                ctx.shadowColor = '#fff';
-                ctx.beginPath();
-                ctx.arc(0, 0, radius + 3, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-            ctx.restore();
+        // Background stars.
+        this.stars.forEach(s => {
+            const p = this.project(s);
+            if(p.scale <= 0) return;
+            ctx.fillStyle = 'rgba(200, 215, 255, ' + (0.15 + s[3] * 0.4) + ')';
+            ctx.fillRect(p.x, p.y, 1.2, 1.2);
         });
+
+        const selectedGlyphs = this.selected && this.selected !== this.options.systemId ? Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["d" /* addressOf */])(this.selected) : [];
+
+        // Address lines for the selected world.
+        if(selectedGlyphs.length) {
+            Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["c" /* addressLines */])(this.selected).forEach((line, i) => {
+                const a = this.project(line[0]);
+                const b = this.project(line[1]);
+                ctx.strokeStyle = 'rgba(' + LINE_COLORS[i] + ', 0.75)';
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+            });
+        }
+
+        // Constellations.
+        __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */].forEach((name, i) => {
+            const p = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["e" /* constellationPosition */])(i));
+            const inAddress = selectedGlyphs.indexOf(i);
+            const near = Math.max(0.25, Math.min(1, 0.65 - p.depth / 8000));
+            const color = inAddress !== -1 ? 'rgba(' + LINE_COLORS[Math.floor(inAddress / 2)] + ', 1)' : 'rgba(170, 190, 230, ' + near + ')';
+            // The constellation's star figure; constellations in the selected address also
+            // show their gate glyph beside it.
+            const size = (inAddress !== -1 ? 40 : 26) * Math.max(0.7, Math.min(1.4, p.scale * 12));
+            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawConstellation */])(ctx, i, p.x, p.y, size, inAddress !== -1 ? color : 'rgba(150, 175, 230, ' + (near * 0.55) + ')',
+                inAddress !== -1 ? '#fff' : 'rgba(225, 235, 255, ' + near + ')');
+            if(inAddress !== -1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, i, p.x + size * 0.75, p.y - size * 0.45, 20, color, 2.4, 'rgba(5, 10, 30, 0.9)');
+            ctx.font = (inAddress !== -1 ? '11px' : '9px') + ' sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = color;
+            ctx.fillText(name, p.x, p.y + size * 0.5 + (inAddress !== -1 ? 13 : 10));
+        });
+
+        // Worlds.
+        __WEBPACK_IMPORTED_MODULE_0__world_systems__["b" /* SYSTEMS */].forEach(system => {
+            const p = this.project(system.map);
+            const color = PLANET_COLORS[system.planet.type];
+            const current = system.id === this.options.systemId;
+            const selected = system.id === this.selected;
+            ctx.fillStyle = 'rgb(' + color + ')';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, selected ? 7 : 5, 0, Math.PI * 2);
+            ctx.fill();
+            if(current || selected) {
+                ctx.strokeStyle = current ? 'rgba(140, 255, 160, 0.9)' : 'rgba(255, 255, 255, 0.9)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.font = '12px Bungee, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgb(' + color + ')';
+            ctx.fillText(system.name + (current ? ' (you)' : ''), p.x + 14, p.y + 4);
+        });
+
+        // Hyperspace route from here to the selection.
+        if(this.selected && this.selected !== this.options.systemId) {
+            const a = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.options.systemId).map);
+            const b = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected).map);
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
     }
 }
 
 let instance = null;
-
-const getShipyard = () => {
-    if(!instance) instance = new Shipyard();
+const getStarmap = () => {
+    if(!instance) instance = new Starmap();
     return instance;
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = getShipyard;
+/* harmony export (immutable) */ __webpack_exports__["a"] = getStarmap;
 
-
-const isShipyardOpen = () => !!(instance && instance.isOpen);
-/* unused harmony export isShipyardOpen */
+const isStarmapOpen = () => !!(instance && instance.isOpen);
+/* harmony export (immutable) */ __webpack_exports__["c"] = isStarmapOpen;
 
 
 
 /***/ }),
-/* 13 */
+/* 21 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CHEVRON_ANGLES; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
-// The Stargate in each system, and the DHD (dial-home device) next to it.
-//
-// Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
-// sounds line up exactly: the ring starts rolling, chevrons 1-6 encode at slightly random
-// intervals while it turns, the ring stops, chevron 7 locks, and 1.2 s later the gate opens
-// with the kawoosh (7 s from pressing the dome), settling into a rippling event horizon.
-// Small ships can fly through an outgoing wormhole; it closes after a while.
+// Visuals for travelling between star systems: the wormhole ride through a Stargate,
+// the hyperspace window that opens in front of a ship, and the hyperspace tunnel.
 
 
 
-
-
-const GATE_RADIUS = 78;
-/* harmony export (immutable) */ __webpack_exports__["d"] = GATE_RADIUS;
-        // outer ring
-const GATE_INNER = 58;
-/* harmony export (immutable) */ __webpack_exports__["c"] = GATE_INNER;
-         // event horizon radius (ships bigger than this can't pass)
-const DHD_OFFSET = { x: 0, y: 220 };
-/* unused harmony export DHD_OFFSET */
-
-const DHD_RANGE = 170;
-/* harmony export (immutable) */ __webpack_exports__["b"] = DHD_RANGE;
-         // how close to the DHD you need to be to use it
-
-// DHD dial timeline (seconds after the dome is pressed), from CAP's stargate_sg1 sequence.
-const RING_START = 0.1;               // ring starts rolling
-const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
-const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
-const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
-const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
-const FORM_TIME = 0.8;                // horizon water rushing in from the rim before the burst
-
-// Churning foam blobs for the horizon forming (fixed layout, animated).
-const FOAM = [];
-for(let i = 0; i < 46; i++) {
-    FOAM.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), size: 0.5 + Math.random(),
-        spin: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6), phase: Math.random() * 10 });
+// Streaks for the tunnels, created once.
+const STREAKS = [];
+for(let i = 0; i < 160; i++) {
+    STREAKS.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), speed: 0.6 + Math.random() * 0.8, width: 0.5 + Math.random() * 2 });
 }
-const KAWOOSH_TIME = 1.3;
-const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
-const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
-const CLOSE_TIME = 0.9;
-const SYMBOLS = 39;
 
-const CHEVRON_ANGLES = [];
-for(let i = 0; i < 9; i++) CHEVRON_ANGLES.push(-Math.PI / 2 + i * Math.PI * 2 / 9);
-// Order in which chevrons light: chevrons 1-6 around the gate, then the top one (7).
-const LOCK_ORDER = [1, 2, 3, 6, 7, 8, 0];
+// Wormhole: a rushing, twisting tunnel of blue-white bands. `progress` 0..1 over the trip.
+const drawWormhole = (ctx, w, h, time, progress) => {
+    const cx = w / 2 + Math.sin(time * 1.7) * w * 0.06;
+    const cy = h / 2 + Math.cos(time * 1.3) * h * 0.05;
+    const max = Math.sqrt(w * w + h * h) * 0.6;
 
-let ringSprite = null;
-let symbolSprite = null;
+    ctx.fillStyle = 'rgb(4, 10, 30)';
+    ctx.fillRect(0, 0, w, h);
 
-// Outer ring body (cached).
-const buildRing = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2 + 20, GATE_RADIUS * 2 + 20, ctx => {
-    const c = GATE_RADIUS + 10;
-    ctx.translate(c, c);
-    ctx.beginPath();
-    ctx.arc(0, 0, GATE_RADIUS, 0, Math.PI * 2);
-    ctx.arc(0, 0, GATE_INNER, 0, Math.PI * 2, true);
-    const metal = ctx.createRadialGradient(-20, -25, GATE_INNER * 0.6, 0, 0, GATE_RADIUS);
-    metal.addColorStop(0, 'rgb(150, 150, 158)');
-    metal.addColorStop(0.6, 'rgb(95, 96, 104)');
-    metal.addColorStop(1, 'rgb(55, 56, 64)');
-    ctx.fillStyle = metal;
-    ctx.fill('evenodd');
-    ctx.strokeStyle = 'rgba(20, 20, 26, 0.9)';
-    ctx.lineWidth = 1.5;
-    [GATE_RADIUS, GATE_INNER, GATE_RADIUS - 6, GATE_INNER + 5].forEach(r => {
+    // Banded walls rushing past.
+    for(let i = 14; i >= 0; i--) {
+        const z = ((i / 14) + time * 1.6) % 1;
+        const r = Math.pow(z, 2.2) * max;
+        const twist = time * 2 + i * 0.4;
+        const g = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r);
+        const hue = i % 3 === 0 ? '170,210,255' : i % 3 === 1 ? '80,130,255' : '140,110,255';
+        g.addColorStop(0, 'rgba(' + hue + ', 0)');
+        g.addColorStop(1, 'rgba(' + hue + ', ' + (0.12 + 0.1 * z) + ')');
+        ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, r, r * (0.85 + 0.1 * Math.sin(twist)), twist * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Streaks spiralling outwards.
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    STREAKS.forEach(s => {
+        const z = (s.depth + time * s.speed * 0.9) % 1;
+        const a = s.angle + time * 1.2 + z * 1.5;
+        const r1 = Math.pow(z, 2.4) * max;
+        const r2 = Math.pow(Math.min(1, z + 0.05), 2.4) * max;
+        ctx.strokeStyle = 'rgba(210, 230, 255, ' + (0.15 + 0.7 * z) + ')';
+        ctx.lineWidth = s.width * (0.5 + z * 2);
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+        ctx.lineTo(cx + Math.cos(a + 0.08) * r2, cy + Math.sin(a + 0.08) * r2);
         ctx.stroke();
     });
-    // Segment seams.
-    for(let i = 0; i < 36; i++) {
-        const a = i * Math.PI * 2 / 36;
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * (GATE_RADIUS - 6), Math.sin(a) * (GATE_RADIUS - 6));
-        ctx.lineTo(Math.cos(a) * GATE_RADIUS, Math.sin(a) * GATE_RADIUS);
-        ctx.stroke();
+    // Bright light at the end of the tunnel, growing as you arrive.
+    const end = 60 + progress * 260;
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('190,220,255'), cx, cy, end, end);
+    ctx.restore();
+
+    // Flash in and out.
+    const flash = Math.max(0, 1 - progress * 6) + Math.max(0, (progress - 0.85) / 0.15);
+    if(flash > 0) {
+        ctx.fillStyle = 'rgba(230, 240, 255, ' + Math.min(1, flash) + ')';
+        ctx.fillRect(0, 0, w, h);
     }
-}, 2);
-
-// Inner symbol ring with all 39 glyphs (cached; rotated when spinning).
-const buildSymbols = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx => {
-    ctx.translate(GATE_RADIUS, GATE_RADIUS);
-    const mid = (GATE_INNER + 5 + GATE_RADIUS - 6) / 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, GATE_RADIUS - 6, 0, Math.PI * 2);
-    ctx.arc(0, 0, GATE_INNER + 5, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgb(70, 72, 80)';
-    ctx.fill('evenodd');
-    for(let i = 0; i < SYMBOLS; i++) {
-        const a = i * Math.PI * 2 / SYMBOLS;
-        ctx.save();
-        ctx.rotate(a);
-        // Slot 38 holds the point of origin (where the ring comes to rest after a dial).
-        if(i < __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */].length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */][i], 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
-        else if(i === SYMBOLS - 1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
-        ctx.restore();
-    }
-}, 2);
-
-
-
-// The inner symbol ring image (also used as the 3D ring's texture).
-const gateSymbolSprite = () => {
-    if(!symbolSprite) symbolSprite = buildSymbols();
-    return symbolSprite;
 };
-/* harmony export (immutable) */ __webpack_exports__["f"] = gateSymbolSprite;
+/* harmony export (immutable) */ __webpack_exports__["c"] = drawWormhole;
 
 
-class Stargate {
+// Hyperspace: a deep blue tunnel with streaming light clouds and star streaks.
+const drawHyperspace = (ctx, w, h, time, progress, label) => {
+    const cx = w / 2;
+    const cy = h / 2;
+    const max = Math.sqrt(w * w + h * h) * 0.6;
 
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-        this.state = 'idle';
-        this.timer = 0;
-        this.locked = 0;
-        this.spin = 0;
-        this.spinFrom = 0;
-        this.spinTo = 0;
-        this.phase = 'spin';
-        this.outgoing = false;
-        this.target = null;
-        this.kawoosh = 0;
-        this.time = 0;
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, max);
+    bg.addColorStop(0, 'rgb(200, 225, 255)');
+    bg.addColorStop(0.12, 'rgb(60, 110, 220)');
+    bg.addColorStop(0.5, 'rgb(15, 35, 110)');
+    bg.addColorStop(1, 'rgb(5, 10, 40)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // Light clouds rushing past.
+    for(let i = 0; i < 24; i++) {
+        const z = ((i / 24) + time * 0.7) % 1;
+        const a = i * 2.4 + time * 0.3;
+        const r = Math.pow(z, 2) * max;
+        const size = 40 + z * 380;
+        ctx.globalAlpha = 0.12 + 0.25 * z;
+        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
     }
-
-    get dhd() {
-        return { x: this.x + DHD_OFFSET.x, y: this.y + DHD_OFFSET.y };
-    }
-
-    get isOpen() {
-        return this.state === 'open';
-    }
-
-    get busy() {
-        return this.state !== 'idle';
-    }
-
-    // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
-    dial(targetId, symbols) {
-        // A gate that is still shutting down can be dialled again straight away.
-        if(this.busy && this.state !== 'closing') return false;
-        if(this.state === 'closing') __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
-        this.wasOpen = false;
-        this.state = 'dialing';
-        this.outgoing = true;
-        this.target = targetId;
-        this.symbols = symbols;
-        this.locked = 0;
-        this.phase = 'spin';
-        this.clock = 0;
-        this.ringOn = false;
-        // Chevrons 1-6 at random-ish intervals (CAP: 0.3-1.0 s each plus an even share, the
-        // last gap always the longest) that together span CHEVRONS_SPAN.
-        const gaps = [];
-        for(let i = 0; i < 5; i++) gaps.push(0.3 + Math.random() * 0.7);
-        gaps.push(1);
-        const total = gaps.reduce((a, b) => a + b, 0);
-        const delta = (CHEVRONS_SPAN - total) / 6;
-        this.chevronTimes = [];
-        let t = FIRST_CHEVRON;
-        for(let i = 0; i < 6; i++) {
-            this.chevronTimes.push(t);
-            t += gaps[i] + delta;
-        }
-        this.ringStop = t;
-        this.lockTime = t + RING_STOP_TO_LOCK;
-        this.openTime = this.lockTime + LOCK_TO_OPEN;
-        // The ring turns one way for the whole dial and comes to rest with the point of
-        // origin under the top chevron.
-        this.spinFrom = this.spin;
-        const finalAngle = -Math.PI / 2 + Math.PI / 2 - 38 * Math.PI * 2 / SYMBOLS;
-        let to = finalAngle;
-        while(to < this.spin + Math.PI * 4) to += Math.PI * 2;
-        this.spinTo = to;
-        return true;
-    }
-
-    // A wormhole arriving here (after travelling through it).
-    incoming() {
-        this.state = 'open';
-        this.outgoing = false;
-        this.locked = 7;
-        this.timer = INCOMING_OPEN_TIME;
-        this.kawoosh = 0;
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
-    }
-
-    // `silent`: shut down without the closing sound (the ship has just gone through).
-    close(silent) {
-        if(this.state === 'idle' || this.state === 'closing') return;
-        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
-        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
-        this.ringOn = false;
-        this.state = 'closing';
-        this.timer = CLOSE_TIME;
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateClose(silent);
-    }
-
-    update(dt) {
-        this.time += dt;
-        if(this.state === 'idle') return;
-        this.timer -= dt;
-
-        if(this.state === 'dialing') {
-            const t = (this.clock += dt);
-            if(!this.ringOn && t >= RING_START && t < this.ringStop) {
-                this.ringOn = true;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(true);
-            }
-            // Ring: ease in, roll, ease out to a stop at ringStop.
-            const span = this.ringStop - RING_START;
-            const u = Math.max(0, Math.min(1, (t - RING_START) / span));
-            const ease = u < 0.12 ? (u * u) / (2 * 0.12 * 0.88) :
-                u > 0.88 ? 1 - ((1 - u) * (1 - u)) / (2 * 0.12 * 0.88) :
-                (u - 0.06) / 0.88;
-            this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
-            // Chevrons 1-6 encode while the ring turns.
-            while(this.locked < 6 && t >= this.chevronTimes[this.locked]) {
-                this.locked++;
-                this.phase = 'encode';
-                this.lockFlash = 0.3;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(false);
-            }
-            // Ring stopped: its sound stops as chevron 7 locks.
-            if(this.locked === 6 && t >= this.lockTime) {
-                this.locked = 7;
-                this.phase = 'lock';
-                this.lockFlash = 0.6;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
-                this.ringOn = false;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(true);
-            }
-            if(this.lockFlash > 0) this.lockFlash -= dt;
-            if(t >= this.openTime) {
-                this.state = 'opening';
-                this.timer = FORM_TIME;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].kawoosh();
-            }
-        } else if(this.state === 'opening') {
-            if(this.timer <= 0) {
-                this.state = 'kawoosh';
-                this.timer = KAWOOSH_TIME;
-            }
-        } else if(this.state === 'kawoosh') {
-            this.kawoosh = 1 - Math.max(0, this.timer) / KAWOOSH_TIME;
-            if(this.timer <= 0) {
-                this.state = 'open';
-                this.timer = OPEN_TIME;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
-            }
-        } else if(this.state === 'open') {
-            if(this.timer <= 0) this.close();
-        } else if(this.state === 'closing') {
-            if(this.timer <= 0) {
-                this.state = 'idle';
-                this.locked = 0;
-                this.target = null;
-            }
-        }
-    }
-
-    // `effectsOnly`: the 3D view draws the ring, symbols and chevrons; only the event
-    // horizon, kawoosh and chevron glow are drawn here.
-    draw(ctx, time, effectsOnly) {
-        if(!ringSprite) ringSprite = buildRing();
-        if(!symbolSprite) symbolSprite = buildSymbols();
-        const R = GATE_RADIUS;
-
-        ctx.save();
-        ctx.translate(this.x, this.y);
-
-        // The horizon forming: water rushing in from the rim (and still there under the
-        // first moments of the kawoosh).
-        if(this.state === 'opening') this.drawForming(ctx, time, 1 - Math.max(0, this.timer) / FORM_TIME);
-        if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
-
-        // Event horizon behind the ring.
-        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
-            const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
-            this.drawHorizon(ctx, time, fade);
-        }
-
-        if(!effectsOnly) {
-            ctx.save();
-            ctx.rotate(this.spin);
-            ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
-            ctx.restore();
-            ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
-        }
-
-        // Chevrons: locked ones glow.
-        CHEVRON_ANGLES.forEach((a, i) => {
-            const order = LOCK_ORDER.indexOf(i);
-            const lit = order !== -1 && order < this.locked;
-            const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
-            if(effectsOnly && !lit) return;
-            ctx.save();
-            ctx.rotate(a + Math.PI / 2);
-            ctx.translate(0, -R + 2);
-            if(effectsOnly) {
-                ctx.globalCompositeOperation = 'lighter';
-                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
-                ctx.restore();
-                return;
-            }
-            ctx.fillStyle = 'rgb(120, 118, 125)';
-            ctx.strokeStyle = 'rgb(35, 35, 42)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(-8, -4); ctx.lineTo(8, -4); ctx.lineTo(4, 7); ctx.lineTo(0, 9); ctx.lineTo(-4, 7);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = lit ? 'rgb(255, 140, 60)' : 'rgb(80, 40, 30)';
-            ctx.beginPath();
-            ctx.moveTo(-4, -1); ctx.lineTo(4, -1); ctx.lineTo(0, 6 + (engaging ? 2 : 0));
-            ctx.closePath();
-            ctx.fill();
-            if(lit) {
-                ctx.globalCompositeOperation = 'lighter';
-                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
-            }
-            ctx.restore();
-        });
-
-        // The kawoosh: the unstable vortex bursting out and collapsing back.
-        if(this.state === 'kawoosh') {
-            const k = this.kawoosh;
-            const burst = Math.sin(Math.min(1, k / 0.75) * Math.PI);
-            const radius = GATE_INNER * (0.6 + 1.9 * burst);
-            ctx.globalCompositeOperation = 'lighter';
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-            g.addColorStop(0, 'rgba(240, 250, 255, ' + (0.9 * burst) + ')');
-            g.addColorStop(0.5, 'rgba(110, 170, 255, ' + (0.75 * burst) + ')');
-            g.addColorStop(1, 'rgba(60, 110, 255, 0)');
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2);
-            ctx.fill();
-            // Spiralling vortex streaks.
-            ctx.strokeStyle = 'rgba(220, 240, 255, ' + (0.6 * burst) + ')';
-            ctx.lineWidth = 2;
-            for(let i = 0; i < 6; i++) {
-                const a0 = i * Math.PI / 3 + time * 6;
-                ctx.beginPath();
-                for(let s = 0; s <= 10; s++) {
-                    const rr = radius * s / 10;
-                    const aa = a0 + s * 0.35;
-                    if(s === 0) ctx.moveTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
-                    else ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
-                }
-                ctx.stroke();
-            }
-        }
-        ctx.restore();
-    }
-
-    // The event horizon forming, as seen in the show: churning icy white-blue water rushes in
-    // from the rim while the middle is still see-through. `f` 0..1 is how far it has closed.
-    drawForming(ctx, time, f) {
-        const r = GATE_INNER;
-        const e = f * f * (3 - 2 * f);
-        const inner = r * (1 - e) * 0.95;
-        ctx.save();
+    ctx.globalAlpha = 1;
+    // Long star streaks.
+    ctx.lineCap = 'round';
+    STREAKS.forEach(s => {
+        const z = (s.depth + time * s.speed * 1.4) % 1;
+        const r1 = Math.pow(z, 2.6) * max;
+        const r2 = Math.pow(Math.min(1, z + 0.1), 2.6) * max;
+        ctx.strokeStyle = 'rgba(235, 245, 255, ' + (0.1 + 0.8 * z) + ')';
+        ctx.lineWidth = s.width * (0.4 + z * 1.6);
         ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.clip();
-        // Translucent watery band, brightest and thickest at the rim.
-        const g = ctx.createRadialGradient(0, 0, Math.max(0, inner * 0.85), 0, 0, r);
-        g.addColorStop(0, 'rgba(150, 190, 240, 0)');
-        g.addColorStop(0.2, 'rgba(170, 205, 250, ' + (0.35 + 0.3 * e) + ')');
-        g.addColorStop(0.65, 'rgba(215, 235, 255, ' + (0.7 + 0.2 * e) + ')');
-        g.addColorStop(1, 'rgba(150, 195, 250, 0.95)');
-        ctx.fillStyle = g;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
-        // Churning foam swirling around in the band.
-        ctx.globalCompositeOperation = 'lighter';
-        FOAM.forEach(blob => {
-            const a = blob.angle + time * blob.spin;
-            const d = inner + (r - inner) * (0.15 + 0.85 * blob.depth) + Math.sin(time * 6 + blob.phase) * 2;
-            const size = (6 + 12 * blob.size) * (0.6 + 0.4 * Math.sin(time * 7 + blob.phase));
-            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(time * 9 + blob.phase);
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(blob.spin > 0 ? '230,242,255' : '185,215,255'), Math.cos(a) * d, Math.sin(a) * d, size * 1.6, size);
-        });
-        // Ripple lines racing round the band.
-        ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = 'rgb(235, 245, 255)';
-        ctx.lineWidth = 1.2;
-        for(let i = 0; i < 7; i++) {
-            const rr = inner + (r - inner) * ((i + 0.5) / 7);
-            const a0 = time * (i % 2 ? 3 : -2.4) + i;
-            ctx.beginPath();
-            ctx.arc(0, 0, rr, a0, a0 + 0.8 + 0.5 * Math.sin(time * 4 + i));
-            ctx.stroke();
-        }
-        ctx.restore();
-    }
-
-    // Rippling, shimmering pool of the event horizon.
-    drawHorizon(ctx, time, fade) {
-        const r = GATE_INNER;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.clip();
-        const pool = ctx.createRadialGradient(-r * 0.2, -r * 0.25, r * 0.1, 0, 0, r);
-        pool.addColorStop(0, 'rgba(200, 230, 255, ' + (0.95 * fade) + ')');
-        pool.addColorStop(0.5, 'rgba(70, 140, 240, ' + (0.9 * fade) + ')');
-        pool.addColorStop(1, 'rgba(25, 60, 170, ' + (0.95 * fade) + ')');
-        ctx.fillStyle = pool;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.lineWidth = 1.5;
-        for(let i = 0; i < 6; i++) {
-            const t = (time * 0.45 + i / 6) % 1;
-            ctx.strokeStyle = 'rgba(210, 235, 255, ' + (0.35 * (1 - t) * fade) + ')';
-            ctx.beginPath();
-            ctx.arc(Math.sin(time * 0.7 + i) * 4, Math.cos(time * 0.6 + i) * 4, r * t, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        // Caustic shimmer.
-        for(let i = 0; i < 10; i++) {
-            const a = time * 0.8 + i * 0.63;
-            const d = (0.2 + 0.7 * ((i * 0.37 + time * 0.1) % 1)) * r;
-            ctx.globalAlpha = 0.25 * fade;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('170,210,255'), Math.cos(a) * d, Math.sin(a * 1.3) * d, 22, 10);
-        }
-        ctx.restore();
-    }
-
-    // DHD pedestal: octagonal base, two rings of keys, red dome. Glows when you're in range.
-    // `effectsOnly`: the 3D view draws the pedestal; only the glow and label are drawn here.
-    drawDHD(ctx, time, inRange, effectsOnly) {
-        const d = this.dhd;
-        ctx.save();
-        ctx.translate(d.x, d.y);
-        if(effectsOnly) {
-            if(this.busy || inRange) {
-                ctx.globalCompositeOperation = 'lighter';
-                ctx.globalAlpha = this.busy ? 1 : (0.6 + 0.4 * Math.sin(time * 3)) * 0.6;
-                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
-            }
-            ctx.restore();
-            this.drawDHDLabel(ctx, inRange);
-            return;
-        }
-        ctx.fillStyle = 'rgb(70, 68, 66)';
-        ctx.strokeStyle = 'rgb(30, 28, 26)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for(let i = 0; i < 8; i++) {
-            const a = i * Math.PI / 4 + Math.PI / 8;
-            if(i === 0) ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
-            else ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 30);
-        }
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(cx + Math.cos(s.angle) * r1, cy + Math.sin(s.angle) * r1);
+        ctx.lineTo(cx + Math.cos(s.angle) * r2, cy + Math.sin(s.angle) * r2);
         ctx.stroke();
-        [[24, 19], [16, 20]].forEach(ring => {
-            for(let i = 0; i < ring[1]; i++) {
-                const a = i * Math.PI * 2 / ring[1];
-                ctx.fillStyle = 'rgb(150, 145, 135)';
-                ctx.fillRect(Math.cos(a) * ring[0] - 2, Math.sin(a) * ring[0] - 2, 4, 4);
-            }
-        });
-        const pulse = 0.6 + 0.4 * Math.sin(time * 3);
-        ctx.fillStyle = this.busy ? 'rgb(255, 90, 50)' : 'rgb(150, 40, 30)';
-        ctx.beginPath();
-        ctx.arc(0, 0, 9, 0, Math.PI * 2);
-        ctx.fill();
-        if(this.busy || inRange) {
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = this.busy ? 1 : pulse * 0.6;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
-        }
-        ctx.restore();
-        this.drawDHDLabel(ctx, inRange);
-    }
+    });
+    ctx.restore();
 
-    drawDHDLabel(ctx, inRange) {
-        const d = this.dhd;
-        ctx.save();
-        ctx.font = '11px Bungee, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = inRange ? 'rgba(140, 255, 160, 0.95)' : 'rgba(200, 210, 230, 0.6)';
-        ctx.fillText(inRange ? 'DHD · press B' : 'DHD', d.x, d.y + 46);
-        ctx.restore();
-    }
+    // Progress and destination.
+    ctx.save();
+    ctx.font = '18px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(230, 240, 255, 0.9)';
+    ctx.fillText(label, cx, h - 80);
+    ctx.strokeStyle = 'rgba(230, 240, 255, 0.6)';
+    ctx.strokeRect(cx - 150, h - 64, 300, 8);
+    ctx.fillStyle = 'rgba(160, 210, 255, 0.9)';
+    ctx.fillRect(cx - 149, h - 63, 298 * progress, 6);
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = drawHyperspace;
 
-    // Which chevrons are lit (for the 3D view), by chevron index 0-8.
-    chevronLit(index) {
-        const order = LOCK_ORDER.indexOf(index);
-        return order !== -1 && order < this.locked;
-    }
+
+// Hyperspace window, in world space: a swirling, wispy cloud of pale blue-white light with
+// a bright heart (no hard edge). `open` 0..1 is how far it has opened.
+const WISPS = [];
+for(let i = 0; i < 14; i++) {
+    WISPS.push({ angle: Math.random() * Math.PI * 2, dist: 0.15 + Math.random() * 0.55, size: 0.5 + Math.random() * 0.9,
+        spin: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.9), phase: Math.random() * 10 });
 }
 
-/* harmony default export */ __webpack_exports__["e"] = (Stargate);
-
-
-/***/ }),
-/* 14 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__sprites__ = __webpack_require__(0);
-// Background planets and nebula tint for each star system, rendered once into sprites.
-
-
-
-const cache = {};
-
-const PALETTES = {
-    ocean: { base: [40, 90, 170], dark: [10, 30, 70], land: [70, 140, 120], cloud: [235, 245, 255], atmosphere: '120,180,255' },
-    earth: { base: [40, 80, 160], dark: [10, 25, 60], land: [70, 130, 70], cloud: [245, 248, 255], atmosphere: '130,180,255' },
-    desert: { base: [200, 160, 100], dark: [90, 60, 30], land: [170, 120, 70], cloud: [240, 225, 200], atmosphere: '240,200,140' },
-    jungle: { base: [60, 120, 70], dark: [15, 40, 20], land: [110, 100, 60], cloud: [235, 245, 235], atmosphere: '150,220,170' },
-    rocky: { base: [150, 80, 60], dark: [50, 20, 15], land: [110, 60, 45], cloud: [220, 190, 170], atmosphere: '230,150,120' },
-    industrial: { base: [110, 100, 110], dark: [30, 25, 35], land: [80, 70, 80], cloud: [200, 195, 210], atmosphere: '190,170,220' },
-    ice: { base: [180, 220, 235], dark: [50, 80, 110], land: [140, 190, 215], cloud: [250, 252, 255], atmosphere: '170,230,255' }
+const drawHyperWindow = (ctx, x, y, radius, time, open) => {
+    if(open <= 0) return;
+    const r = radius * open;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.globalCompositeOperation = 'lighter';
+    // Faint outer haze.
+    ctx.globalAlpha = Math.min(1, open * 1.2) * 0.35;
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('90,150,150'), 0, 0, r * 2.6, r * 2.4);
+    // Cloudy, turning wisps.
+    WISPS.forEach(wisp => {
+        const a = wisp.angle + time * wisp.spin;
+        const d = r * wisp.dist * (0.85 + 0.15 * Math.sin(time * 1.7 + wisp.phase));
+        const size = r * wisp.size * (0.8 + 0.25 * Math.sin(time * 2.3 + wisp.phase));
+        ctx.globalAlpha = Math.min(1, open * 1.5) * (0.14 + 0.1 * Math.sin(time * 3 + wisp.phase));
+        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(wisp.spin > 0 ? '150,215,215' : '190,235,235'), Math.cos(a) * d, Math.sin(a) * d, size * 1.4, size * 0.8);
+    });
+    // Bright heart.
+    ctx.globalAlpha = Math.min(1, open * 2);
+    const flicker = 0.85 + 0.15 * Math.sin(time * 9) * Math.sin(time * 5.3);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('210,245,240'), r * 0.05, -r * 0.04, r * 0.75 * flicker, r * 0.65 * flicker);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,255,255'), 0, 0, r * 0.3, r * 0.3);
+    ctx.restore();
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = PALETTES;
-
-
-const rgb = (c, a) => 'rgba(' + c.map(v => Math.round(v)).join(',') + ',' + (a === undefined ? 1 : a) + ')';
-
-const rnd = (seed) => {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-};
-
-// A lit sphere with surface patches, cloud bands, a terminator and an atmosphere glow.
-const planetSprite = (system) => {
-    if(cache[system.id]) return cache[system.id];
-    const p = system.planet;
-    const pal = PALETTES[p.type];
-    const R = 220;
-    const size = R * 2 + 80;
-    const r = rnd(system.id.length * 977 + p.radius);
-
-    cache[system.id] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(size, size, ctx => {
-        ctx.translate(size / 2, size / 2);
-
-        // Atmosphere halo.
-        const halo = ctx.createRadialGradient(0, 0, R * 0.95, 0, 0, R + 38);
-        halo.addColorStop(0, 'rgba(' + pal.atmosphere + ', 0.35)');
-        halo.addColorStop(1, 'rgba(' + pal.atmosphere + ', 0)');
-        ctx.fillStyle = halo;
-        ctx.beginPath();
-        ctx.arc(0, 0, R + 38, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(0, 0, R, 0, Math.PI * 2);
-        ctx.fillStyle = rgb(pal.base);
-        ctx.fill();
-        ctx.save();
-        ctx.clip();
-
-        // Land / surface patches.
-        for(let i = 0; i < 26; i++) {
-            const a = r() * Math.PI * 2;
-            const d = Math.sqrt(r()) * R;
-            ctx.fillStyle = rgb(pal.land, 0.5 + r() * 0.4);
-            ctx.beginPath();
-            ctx.ellipse(Math.cos(a) * d, Math.sin(a) * d, 20 + r() * 70, 12 + r() * 40, r() * Math.PI, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // Dune / band texture for desert and gas-like worlds.
-        if(p.type === 'desert' || p.type === 'industrial') {
-            ctx.strokeStyle = rgb(pal.dark, 0.15);
-            ctx.lineWidth = 3;
-            for(let y = -R; y < R; y += 14) {
-                ctx.beginPath();
-                ctx.moveTo(-R, y);
-                ctx.quadraticCurveTo(0, y + (r() - 0.5) * 30, R, y + (r() - 0.5) * 20);
-                ctx.stroke();
-            }
-        }
-        // City lights on industrial worlds.
-        if(p.type === 'industrial') {
-            for(let i = 0; i < 80; i++) {
-                ctx.fillStyle = 'rgba(255, 190, 110, ' + (0.4 + r() * 0.5) + ')';
-                ctx.fillRect(-R * 0.2 + r() * R * 1.1, (r() - 0.5) * R * 1.6, 2, 2);
-            }
-        }
-        // Clouds.
-        for(let i = 0; i < 18; i++) {
-            const y = (r() - 0.5) * R * 1.8;
-            ctx.fillStyle = rgb(pal.cloud, 0.12 + r() * 0.25);
-            ctx.beginPath();
-            ctx.ellipse((r() - 0.5) * R, y, 60 + r() * 120, 6 + r() * 14, (r() - 0.5) * 0.3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // Terminator: night side towards the bottom right.
-        const night = ctx.createLinearGradient(-R * 0.6, -R * 0.7, R * 0.8, R * 0.9);
-        night.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
-        night.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
-        night.addColorStop(0.75, 'rgba(0, 0, 10, 0.7)');
-        night.addColorStop(1, 'rgba(0, 0, 10, 0.92)');
-        ctx.fillStyle = night;
-        ctx.fillRect(-R, -R, R * 2, R * 2);
-        ctx.restore();
-
-        // Thin bright rim on the lit side.
-        ctx.strokeStyle = 'rgba(' + pal.atmosphere + ', 0.6)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(0, 0, R - 1, Math.PI * 0.85, Math.PI * 1.75);
-        ctx.stroke();
-
-        // Moon.
-        if(p.moon) {
-            const mx = -R * 1.05;
-            const my = R * 0.85;
-            const mr = 26;
-            ctx.fillStyle = 'rgb(170, 168, 160)';
-            ctx.beginPath();
-            ctx.arc(mx, my, mr, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = 'rgba(0, 0, 10, 0.6)';
-            ctx.beginPath();
-            ctx.arc(mx + 9, my + 8, mr, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }, 1);
-    cache[system.id].R = R;
-    return cache[system.id];
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = planetSprite;
-
-
-// Very soft coloured nebula wash for the system's background.
-const nebulaSprite = (system) => {
-    const key = 'nebula:' + system.id;
-    if(cache[key]) return cache[key];
-    const r = rnd(system.id.length * 131 + 7);
-    cache[key] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(512, 512, ctx => {
-        for(let i = 0; i < 7; i++) {
-            const x = 80 + r() * 352;
-            const y = 80 + r() * 352;
-            const rad = 90 + r() * 160;
-            const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-            g.addColorStop(0, 'rgba(' + system.tint + ', ' + (0.12 + r() * 0.1) + ')');
-            g.addColorStop(1, 'rgba(' + system.tint + ', 0)');
-            ctx.fillStyle = g;
-            ctx.fillRect(0, 0, 512, 512);
-        }
-    }, 1);
-    return cache[key];
-};
-/* unused harmony export nebulaSprite */
+/* harmony export (immutable) */ __webpack_exports__["a"] = drawHyperWindow;
 
 
 
 /***/ }),
-/* 15 */
+/* 22 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -7192,24 +9736,724 @@ class TouchControls {
 
 
 /***/ }),
-/* 16 */
+/* 23 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__shipyard_modules__ = __webpack_require__(8);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render3d_scene3d__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ship_ship__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__audio_audio__ = __webpack_require__(3);
+/* unused harmony reexport DAMAGE_TYPE */
+// A ship flying freely in 3D (six degrees of freedom): the same hulls, modules and stats as
+// the shipyard, with zero-g Newtonian flight, an optional stabilizer, turrets that aim
+// anywhere around the ship, missiles and drones, and shields that soak kinetic hits.
+//
+// Ship-local frame (matches the hull models): +X forward (bow), +Z up, -Y starboard.
+// Hull line art (x, y) maps to local (x, -y).
+
+
+
+
+
+
+
+const SECONDARY = 0.6;          // retro / strafe / lift thrust relative to the main engines
+const MAX_SPEED = 700;
+const MASS_UNIT = 300;
+const BULLET_SPEED = 1400;
+/* harmony export (immutable) */ __webpack_exports__["a"] = BULLET_SPEED;
+
+const PLASMA_SPEED = 650;
+/* harmony export (immutable) */ __webpack_exports__["b"] = PLASMA_SPEED;
+
+const SPREAD = 0.012;
+const HEAT_COOLING = 0.35;
+const HEAT_RESUME = 0.3;
+const HIT_COOLDOWN = 0.25;
+const SHIELD_REGEN_DELAY = 2;
+const SHIELD_FLASH_TIME = 0.35;
+const SHIELD_FACTOR = { kinetic: 0.5, energy: 1.5 };
+const HULL_FACTOR = { kinetic: 1.25, energy: 0.6 };
+const TURRET_TYPES = ['minigun', 'staff', 'beam'];
+const LAUNCHER_TYPES = ['missile', 'drones'];
+const SALVO_GAP = 0.12;
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Hull models are shared by every ship of a type.
+const hullGeometryCache = {};
+const hullEdgeCache = {};
+
+const shieldShader = (THREE, color) => new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color[0] / 255, color[1] / 255, color[2] / 255) }, uLevel: { value: 0 }, uFlash: { value: 0 } },
+    vertexShader: [
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'varying vec3 vPos;',
+        'void main() {',
+        '    vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '    vNormal = normalize(normalMatrix * normal);',
+        '    vView = normalize(-mv.xyz);',
+        '    vPos = position;',
+        '    gl_Position = projectionMatrix * mv;',
+        '}'
+    ].join('\n'),
+    fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uLevel;',
+        'uniform float uFlash;',
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'varying vec3 vPos;',
+        'void main() {',
+        '    float rim = pow(1.0 - abs(dot(vNormal, vView)), 2.2);',
+        // Faint hexagonal-ish lattice from the surface position.
+        '    vec3 p = vPos * 0.18;',
+        '    float lattice = smoothstep(0.92, 1.0, max(abs(sin(p.x * 3.1 + p.y * 1.8)), abs(sin(p.y * 3.1 - p.z * 1.8))));',
+        '    float a = (rim * 0.55 + lattice * 0.08) * uLevel + uFlash * (0.35 + rim * 0.65);',
+        '    gl_FragColor = vec4(uColor * a, a);',
+        '}'
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide
+});
+
+class Ship3D {
+
+    constructor(THREE, stats, side, glowTexture) {
+        this.THREE = THREE;
+        this.side = side || 'player';
+        this.position = new THREE.Vector3();
+        this.velocity = new THREE.Vector3();
+        this.quaternion = new THREE.Quaternion();
+        this.angular = new THREE.Vector3();      // local angular velocity (roll, about Y, about Z)
+        this.alive = true;
+        this.hidden = false;
+        this.stabilizer = side === 'player';
+        this.shieldsEnabled = true;
+        this.weaponsOff = {};
+        this.autoTarget = true;
+        this.targetMode = 'both';
+        this.damageScale = 1;
+        this.immunity = 1.5;
+        this.hitCooldown = 0;
+        this.sinceHit = SHIELD_REGEN_DELAY;
+        this.shieldFlash = 0;
+        this.hullFlash = 0;
+        this.salvoCooldown = 0;
+        this.nextLauncher = 0;
+        this.missileLock = null;
+        this.time = 0;
+        this.thrustLevel = 0;
+        this.firing = false;
+        this.minigunFiring = false;
+        this.beaming = false;
+        this.glowTexture = glowTexture;
+        this.tmp = new THREE.Vector3();
+        this.tmp2 = new THREE.Vector3();
+        this.applyStats(stats);
+        this.hp = this.maxHull;
+        this.shield = this.maxShield;
+    }
+
+    get x() { return this.position.x; }
+    get y() { return this.position.y; }
+    get z() { return this.position.z; }
+    get vx() { return this.velocity.x; }
+    get vy() { return this.velocity.y; }
+    get vz() { return this.velocity.z; }
+    get dead() { return !this.alive; }
+    get shieldUp() { return this.shieldsEnabled && this.alive && this.maxShield > 0 && this.shield > 0.5; }
+    get thrusting() { return this.thrustLevel > 0.15; }
+
+    applyStats(stats) {
+        const THREE = this.THREE;
+        const hullFraction = this.maxHull ? this.hp / this.maxHull : 1;
+        const hull = stats.hull;
+        this.stats = stats;
+        this.hullDef = hull;
+        this.mass = stats.mass * MASS_UNIT;
+        this.radius = hull.radius;
+        this.maxHull = stats.maxHull;
+        this.hp = this.maxHull * hullFraction;
+        this.maxShield = stats.maxShield;
+        this.shield = Math.min(this.shield || 0, this.maxShield);
+        this.guidance = stats.guidance;
+        this.scanner = stats.scanner;
+        this.hyperdrive = stats.hyperdrive;
+        this.cargoCapacity = stats.cargo;
+        this.magnetRange = stats.magnetRange + Math.max(0, hull.radius - 30) * 0.8 + 40;
+        this.collectRadius = hull.radius * 0.6 + 12;
+        const s = Object(__WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["e" /* shieldFor */])(hull);
+        this.shieldShape = { x: s.x, y: -s.y, rx: s.rx, ry: s.ry, rz: Math.max(8, Math.min(s.rx, s.ry) * 0.7) };
+        this.turrets = stats.modules.filter(m => TURRET_TYPES.indexOf(m.type) !== -1).map(m => ({
+            module: m, kind: m.type, local: new THREE.Vector3(m.slot.x, -m.slot.y, 2 * hull.moduleScale),
+            aim: new THREE.Vector3(1, 0, 0), cooldown: 0, target: null, heat: 0, overheated: false, beamTime: 0, beam: null
+        }));
+        this.launchers = stats.modules.filter(m => LAUNCHER_TYPES.indexOf(m.type) !== -1)
+            .map(m => ({ module: m, kind: m.type, local: new THREE.Vector3(m.slot.x, -m.slot.y, 1), cooldown: 0, salvo: null }));
+        this.colliders = hull.colliders.map(c => ({ local: new THREE.Vector3(c[0], -c[1], 0), r: c[2] }));
+        this.buildModel();
+    }
+
+    // ------------------------------------------------------------ model
+
+    buildModel() {
+        const THREE = this.THREE;
+        const hull = this.hullDef;
+        if(this.group && this.group.parent) this.group.parent.remove(this.group);
+        const group = new THREE.Group();
+        if(!hullGeometryCache[hull.id]) {
+            hullGeometryCache[hull.id] = Object(__WEBPACK_IMPORTED_MODULE_2__render3d_scene3d__["a" /* buildHullGeometries */])(THREE, hull);
+            hullEdgeCache[hull.id] = hullGeometryCache[hull.id].map(g => new THREE.EdgesGeometry(g, 35));
+        }
+        const color = hull.color.split(',').map(v => parseFloat(v) / 255);
+        this.bodyMaterial = new THREE.MeshStandardMaterial({
+            color: new THREE.Color(0.1 + color[0] * 0.32, 0.11 + color[1] * 0.32, 0.13 + color[2] * 0.34),
+            metalness: 0.4, roughness: 0.42, emissive: new THREE.Color(0, 0, 0)
+        });
+        this.edgeMaterial = new THREE.LineBasicMaterial({ color: new THREE.Color(color[0], color[1], color[2]), transparent: true, opacity: 0.85 });
+        const model = new THREE.Group();
+        hullGeometryCache[hull.id].forEach(g => model.add(new THREE.Mesh(g, this.bodyMaterial)));
+        hullEdgeCache[hull.id].forEach(g => model.add(new THREE.LineSegments(g, this.edgeMaterial)));
+        // The hull models are built "top down"; centre them vertically around the ship.
+        model.position.z = hull.radius * 0.08;
+        group.add(model);
+
+        // Modules: turrets with barrels that swing to their target, other modules as blocks.
+        const u = hull.moduleScale;
+        this.turretPivots = [];
+        this.stats.modules.forEach(m => {
+            const mc = __WEBPACK_IMPORTED_MODULE_0__shipyard_modules__["c" /* default */][m.type].color.split(',').map(v => parseFloat(v) / 255);
+            const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(mc[0] * 0.6, mc[1] * 0.6, mc[2] * 0.6), emissive: new THREE.Color(mc[0] * 0.35, mc[1] * 0.35, mc[2] * 0.35), metalness: 0.5, roughness: 0.4 });
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(3.2 * u, 3.8 * u, 2.2 * u, 10), mat);
+            base.rotation.x = Math.PI / 2;
+            base.position.set(m.slot.x, -m.slot.y, 1.5 * u + model.position.z);
+            group.add(base);
+            const turret = this.turrets.filter(t => t.module === m)[0];
+            if(turret) {
+                const pivot = new THREE.Object3D();
+                pivot.position.copy(base.position);
+                pivot.position.z += 1.6 * u;
+                const barrel = new THREE.Mesh(new THREE.BoxGeometry(9 * u, (m.type === 'minigun' ? 1.6 : 2.4) * u, 1.6 * u), mat);
+                barrel.position.x = 4.5 * u;
+                pivot.add(barrel);
+                group.add(pivot);
+                turret.pivot = pivot;
+                turret.local.copy(pivot.position);
+            }
+        });
+
+        // Engine glows (bigger and brighter with thrust).
+        this.engineGlows = [];
+        const exhaust = (hull.exhaust || '255,150,60').split(',').map(v => parseFloat(v) / 255);
+        hull.engines.forEach(e => {
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+                map: this.glowTexture, color: new THREE.Color(exhaust[0], exhaust[1], exhaust[2]),
+                blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
+            }));
+            sprite.position.set(e.x - 2 * e.size, -e.y, model.position.z);
+            sprite.userData.size = e.size;
+            group.add(sprite);
+            this.engineGlows.push(sprite);
+        });
+
+        // Shield bubble.
+        const shieldColor = (hull.shieldColor || '120,210,255').split(',').map(Number);
+        this.shieldMaterial = shieldShader(THREE, shieldColor);
+        const bubble = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 20), this.shieldMaterial);
+        bubble.scale.set(this.shieldShape.rx, this.shieldShape.ry, this.shieldShape.rz);
+        bubble.position.set(this.shieldShape.x, this.shieldShape.y, model.position.z);
+        bubble.renderOrder = 3;
+        group.add(bubble);
+        this.bubble = bubble;
+        this.group = group;
+    }
+
+    syncModel() {
+        const g = this.group;
+        const blink = this.immunity > 0 && this.side === 'player' && Math.floor(this.immunity * 10) % 2 === 0;
+        g.visible = this.alive && !this.hidden && !blink;
+        g.position.copy(this.position);
+        g.quaternion.copy(this.quaternion);
+        this.shieldLevel = (this.shieldLevel || 0) + ((this.shieldUp ? 1 : 0) - (this.shieldLevel || 0)) * 0.15;
+        this.shieldMaterial.uniforms.uLevel.value = this.shieldLevel * (0.4 + 0.6 * Math.max(0.2, this.shield / (this.maxShield || 1)));
+        this.shieldMaterial.uniforms.uFlash.value = Math.max(0, this.shieldFlash / SHIELD_FLASH_TIME) * (this.shieldUp ? 1 : 0.3);
+        this.bubble.visible = this.shieldLevel > 0.02 || this.shieldFlash > 0;
+        this.bodyMaterial.emissive.setRGB(this.hullFlash > 0 ? 0.6 : 0, this.hullFlash > 0 ? 0.08 : 0, this.hullFlash > 0 ? 0.05 : 0);
+        const flicker = 0.85 + Math.random() * 0.3;
+        this.engineGlows.forEach(s => {
+            const k = (0.25 + this.thrustLevel * 1.1) * flicker;
+            const size = s.userData.size * 18 * k;
+            s.scale.set(size, size, size);
+            s.material.opacity = Math.min(1, 0.35 + this.thrustLevel);
+        });
+        this.turrets.forEach(t => {
+            if(!t.pivot) return;
+            // Barrel direction in ship-local space.
+            this.tmp.copy(t.aim).applyQuaternion(this.invQuat());
+            t.pivot.quaternion.setFromUnitVectors(this.tmp2.set(1, 0, 0), this.tmp.normalize());
+        });
+    }
+
+    invQuat() {
+        if(!this._inv) this._inv = new this.THREE.Quaternion();
+        return this._inv.copy(this.quaternion).invert();
+    }
+
+    // ------------------------------------------------------------ frame of reference
+
+    localToWorld(local, out) {
+        return (out || new this.THREE.Vector3()).copy(local).applyQuaternion(this.quaternion).add(this.position);
+    }
+
+    axis(x, y, z, out) {
+        return (out || new this.THREE.Vector3()).set(x, y, z).applyQuaternion(this.quaternion);
+    }
+
+    forward(out) { return this.axis(1, 0, 0, out); }
+    up(out) { return this.axis(0, 0, 1, out); }
+    right(out) { return this.axis(0, -1, 0, out); }
+
+    worldColliders() {
+        return this.colliders.map(c => ({ p: this.localToWorld(c.local), r: c.r }));
+    }
+
+    // Point (radius r) against the shield ellipsoid. Returns contact info or null.
+    shieldContact(point, r) {
+        const THREE = this.THREE;
+        const local = this.tmp.copy(point).sub(this.position).applyQuaternion(this.invQuat());
+        const s = this.shieldShape;
+        const lx = (local.x - s.x) / s.rx;
+        const ly = (local.y - s.y) / s.ry;
+        const lz = local.z / s.rz;
+        const k = Math.sqrt(lx * lx + ly * ly + lz * lz) || 0.0001;
+        const scale = (s.rx + s.ry + s.rz) / 3;
+        const gap = (k - 1) * scale;
+        if(gap > r) return null;
+        const normal = new THREE.Vector3(lx / (s.rx * k), ly / (s.ry * k), lz / (s.rz * k)).normalize().applyQuaternion(this.quaternion);
+        return { normal: normal, overlap: r - gap };
+    }
+
+    // ------------------------------------------------------------ flight
+
+    // controls: { thrust, strafe, lift, pitch, yaw, roll } each -1..1, plus weapons:
+    // { fire, missiles, aimPoint (world Vector3), lockTarget }.
+    update(dt, controls, world) {
+        if(!this.alive) {
+            this.firing = this.minigunFiring = this.beaming = false;
+            return;
+        }
+        this.time += dt;
+        if(this.hitCooldown > 0) this.hitCooldown -= dt;
+        if(this.immunity > 0) this.immunity -= dt;
+        if(this.shieldFlash > 0) this.shieldFlash -= dt;
+        if(this.hullFlash > 0) this.hullFlash -= dt;
+        if(this.salvoCooldown > 0) this.salvoCooldown -= dt;
+        this.sinceHit += dt;
+        if(this.sinceHit > SHIELD_REGEN_DELAY && this.shield < this.maxShield) {
+            this.shield = Math.min(this.maxShield, this.shield + this.stats.shieldRegen * dt);
+        }
+        this.fly(dt, controls);
+        this.updateTargeting(controls, world);
+        this.updateTurrets(dt, controls, world);
+        this.updateLaunchers(dt, controls, world);
+    }
+
+    fly(dt, c) {
+        const stats = this.stats;
+        const THREE = this.THREE;
+        const maxTurn = stats.maxTurn;
+        const accel = stats.angularAcceleration * 1.2;
+        // Rotation: the controls set a wanted turn rate, the thrusters chase it.
+        const want = [clamp(c.roll || 0, -1, 1) * maxTurn * 1.3, -clamp(c.pitch || 0, -1, 1) * maxTurn, -clamp(c.yaw || 0, -1, 1) * maxTurn];
+        const w = this.angular;
+        ['x', 'y', 'z'].forEach((k, i) => {
+            const diff = want[i] - w[k];
+            w[k] += clamp(diff, -accel * dt, accel * dt);
+        });
+        const angle = w.length() * dt;
+        if(angle > 1e-6) {
+            const dq = this.dq || (this.dq = new THREE.Quaternion());
+            dq.setFromAxisAngle(this.tmp.copy(w).normalize(), angle);
+            this.quaternion.multiply(dq).normalize();
+        }
+
+        // Thrust in the ship's frame.
+        const main = stats.acceleration;
+        const side = main * SECONDARY;
+        const thrust = clamp(c.thrust || 0, -1, 1);
+        const lx = thrust > 0 ? thrust * main : thrust * side;
+        const ly = -clamp(c.strafe || 0, -1, 1) * side;
+        const lz = clamp(c.lift || 0, -1, 1) * side;
+        const force = this.tmp.set(lx, ly, lz).applyQuaternion(this.quaternion);
+        this.thrustLevel += ((thrust > 0 ? thrust : 0) - this.thrustLevel) * Math.min(1, dt * 8);
+
+        // Stabilizer: cancel any drift the pilot isn't asking for (and brake to a stop with
+        // no input), like the flight assist of a real spacecraft.
+        if(this.stabilizer) {
+            const drift = this.tmp2.copy(this.velocity);
+            const commanded = force.length();
+            if(commanded > 0) {
+                const dir = force.clone().divideScalar(commanded);
+                const along = Math.max(0, drift.dot(dir));
+                drift.addScaledVector(dir, -along);
+            }
+            const d = drift.length();
+            if(d > 1) force.addScaledVector(drift, -Math.min(side, d / dt) / d);
+        }
+        this.velocity.addScaledVector(force, dt);
+        const speed = this.velocity.length();
+        if(speed > MAX_SPEED) this.velocity.multiplyScalar(MAX_SPEED / speed);
+        this.position.addScaledVector(this.velocity, dt);
+    }
+
+    // ------------------------------------------------------------ weapons
+
+    nearestOf(point, list, range) {
+        let best = null;
+        let bestDist = Infinity;
+        for(let i = 0; i < list.length; i++) {
+            const item = list[i];
+            if(item.dead) continue;
+            const dx = item.x - point.x, dy = item.y - point.y, dz = item.z - point.z;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) - (item.hullDef ? item.radius * 0.8 : item.radius || 0);
+            if(dist < range && dist < bestDist) {
+                bestDist = dist;
+                best = item;
+            }
+        }
+        return best;
+    }
+
+    // Guidance: turret targets and the missile lock. Point defence first, then ships, then
+    // asteroids, following the targeting mode.
+    updateTargeting(c, world) {
+        if(!this.guidance) {
+            this.missileLock = null;
+            this.turrets.forEach(t => { t.target = null; });
+            return;
+        }
+        const range = this.guidance.range + this.radius;
+        const combat = world.combat;
+        const ships = this.targetMode !== 'asteroids' ? combat.hostileShips(this.side) : [];
+        const rocks = this.targetMode === 'ships' ? [] : world.rocks;
+        const incoming = combat.hostileMissiles(this.side, 'missile').filter(m => {
+            const dx = this.x - m.x, dy = this.y - m.y, dz = this.z - m.z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            return d < 450 + this.radius && (m.vx * dx + m.vy * dy + m.vz * dz) / (d || 1) > 100;
+        });
+        const aim = c.aimPoint || this.position;
+        this.missileLock = (c.aimTarget && c.aimTarget.hullDef && ships.indexOf(c.aimTarget) !== -1 ? c.aimTarget : null)
+            || this.nearestOf(aim, ships, 250)
+            || (c.aimTarget && !c.aimTarget.hullDef && rocks.length ? c.aimTarget : null)
+            || this.nearestOf(this.position, ships, range * 1.8)
+            || this.nearestOf(this.position, rocks, range);
+        this.turrets.forEach(t => {
+            if(!this.autoTarget) {
+                t.target = null;
+                return;
+            }
+            const p = this.localToWorld(t.local, this.tmp);
+            const reach = t.kind === 'beam' ? Math.min(range, t.module.stats.range) : range;
+            const shipReach = t.kind === 'beam' ? t.module.stats.range : Math.max(range, 800);
+            t.target = (t.kind === 'minigun' && this.nearestOf(p, incoming, reach))
+                || this.nearestOf(p, ships, shipReach)
+                || this.nearestOf(p, rocks, reach);
+        });
+    }
+
+    updateTurrets(dt, c, world) {
+        const THREE = this.THREE;
+        this.firing = this.minigunFiring = this.beaming = false;
+        this.turrets.forEach(t => {
+            if(t.cooldown > 0) t.cooldown -= dt;
+            t.beam = null;
+            if(t.kind === 'minigun') {
+                t.heat = Math.max(0, t.heat - HEAT_COOLING * dt);
+                if(t.overheated && t.heat <= HEAT_RESUME) t.overheated = false;
+            }
+            const enabled = !this.weaponsOff[t.kind];
+            const p = this.localToWorld(t.local);
+            let aimPoint = c.aimPoint;
+            let shouldFire = !!c.fire && enabled;
+            if(!c.fire && t.target && enabled) {
+                // Lead the target for the shot's travel time.
+                const target = t.target;
+                const speed = t.kind === 'staff' ? PLASMA_SPEED : BULLET_SPEED;
+                const d = Math.sqrt((target.x - p.x) * (target.x - p.x) + (target.y - p.y) * (target.y - p.y) + (target.z - p.z) * (target.z - p.z));
+                const time = t.kind === 'beam' ? 0 : d / speed;
+                aimPoint = new THREE.Vector3(target.x + (target.vx || 0) * time, target.y + (target.vy || 0) * time, target.z + (target.vz || 0) * time);
+                shouldFire = true;
+            }
+            if(aimPoint) t.aim.copy(aimPoint).sub(p).normalize();
+            else t.aim.copy(this.forward(this.tmp2));
+            if(t.kind === 'beam') {
+                this.updateBeam(dt, t, p, shouldFire && !!aimPoint, world);
+                return;
+            }
+            if(!shouldFire || !aimPoint || t.overheated) return;
+            this.firing = true;
+            if(t.kind === 'minigun') this.minigunFiring = true;
+            if(t.cooldown > 0) return;
+            if(t.kind === 'minigun') this.fireMinigun(t, p, world);
+            else this.fireStaff(t, p, world);
+        });
+    }
+
+    shotVelocity(dir, speed) {
+        // Shots inherit the ship's speed along the line of fire, not its sideways drift.
+        const inherited = Math.max(0, this.velocity.dot(dir));
+        return dir.clone().multiplyScalar(speed + inherited);
+    }
+
+    jitter(dir, amount) {
+        const THREE = this.THREE;
+        const d = dir.clone();
+        d.x += (Math.random() - 0.5) * 2 * amount;
+        d.y += (Math.random() - 0.5) * 2 * amount;
+        d.z += (Math.random() - 0.5) * 2 * amount;
+        return d.normalize();
+    }
+
+    fireMinigun(t, p, world) {
+        const stats = t.module.stats;
+        t.cooldown = Math.max(0, t.cooldown) + 1 / stats.fireRate;
+        const dir = this.jitter(t.aim, SPREAD);
+        const barrel = 9 * this.hullDef.moduleScale;
+        const v = this.shotVelocity(dir, BULLET_SPEED);
+        world.bullets.push({ kind: 'bullet', x: p.x + dir.x * barrel, y: p.y + dir.y * barrel, z: p.z + dir.z * barrel,
+            vx: v.x, vy: v.y, vz: v.z, damage: stats.damage * this.damageScale, side: this.side, life: 1.6, age: 0, mass: 1.2 });
+        this.velocity.addScaledVector(dir, -0.8 / this.stats.mass);
+        world.effects.spawn({ x: p.x + dir.x * barrel, y: p.y + dir.y * barrel, z: p.z + dir.z * barrel,
+            vx: this.vx, vy: this.vy, vz: this.vz, life: 0.05, size: 7 * this.hullDef.moduleScale, color: '255,220,150' });
+        if(this.side === 'player' || Math.random() < 0.3) __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].minigunShot();
+        t.heat += 1 / stats.heatShots + HEAT_COOLING / stats.fireRate;
+        if(t.heat >= 1) {
+            t.heat = 1;
+            t.overheated = true;
+            if(this.side === 'player') __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].overheat();
+        }
+    }
+
+    fireStaff(t, p, world) {
+        const stats = t.module.stats;
+        t.cooldown = 1 / stats.fireRate;
+        const dir = t.aim.clone();
+        const barrel = 8 * this.hullDef.moduleScale;
+        const v = this.shotVelocity(dir, PLASMA_SPEED);
+        world.bullets.push({ kind: 'plasma', x: p.x + dir.x * barrel, y: p.y + dir.y * barrel, z: p.z + dir.z * barrel,
+            vx: v.x, vy: v.y, vz: v.z, damage: stats.damage * this.damageScale, splash: stats.splash, side: this.side, life: 2.4, age: 0, mass: 30 });
+        this.velocity.addScaledVector(dir, -4.8 / this.stats.mass);
+        world.effects.burst(p, this.velocity, 6, { minSpeed: 40, maxSpeed: 140, minLife: 0.12, maxLife: 0.3, size: 4, color: '255,170,60', dir: dir, cone: 0.7 });
+        __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].staffShot();
+    }
+
+    updateBeam(dt, t, p, trigger, world) {
+        const stats = t.module.stats;
+        if(t.beamTime > 0 && !trigger) {
+            t.cooldown = stats.cooldown * (1 - t.beamTime / stats.burst);
+            t.beamTime = 0;
+        }
+        if(trigger && t.beamTime <= 0 && t.cooldown <= 0) t.beamTime = stats.burst;
+        if(t.beamTime <= 0) return;
+        t.beamTime -= dt;
+        if(t.beamTime <= 0) {
+            t.beamTime = 0;
+            t.cooldown = stats.cooldown;
+        }
+        const hit = world.raycast(p, t.aim, stats.range, this.side);
+        const end = p.clone().addScaledVector(t.aim, hit.distance);
+        t.beam = { from: p.clone(), to: end, hit: !!hit.object };
+        this.firing = this.beaming = true;
+        if(hit.object) world.beamHits.push({ object: hit.object, damage: stats.dps * dt * this.damageScale, point: end, dir: t.aim.clone() });
+    }
+
+    updateLaunchers(dt, c, world) {
+        this.launchers.forEach(l => {
+            if(l.cooldown > 0) l.cooldown -= dt;
+            if(l.salvo) this.continueSalvo(l, c, world, dt);
+        });
+        if(!c.missiles || this.salvoCooldown > 0 || !this.launchers.length) return;
+        for(let i = 0; i < this.launchers.length; i++) {
+            const index = (this.nextLauncher + i) % this.launchers.length;
+            const l = this.launchers[index];
+            if(l.cooldown > 0 || this.weaponsOff[l.kind]) continue;
+            if(l.kind === 'missile') this.fireMissile(l, c, world);
+            else this.fireDrones(l, c, world);
+            this.salvoCooldown = SALVO_GAP;
+            this.nextLauncher = index + 1;
+            return;
+        }
+    }
+
+    missileTarget(c, world) {
+        if(c.lockTarget) return c.lockTarget;
+        if(this.guidance) return this.missileLock;
+        // Without a targeting computer, missiles go for whatever is under the crosshair.
+        return c.aimTarget || null;
+    }
+
+    fireMissile(l, c, world) {
+        const stats = l.module.stats;
+        const p = this.localToWorld(l.local);
+        const target = this.missileTarget(c, world);
+        const dir = target ? new this.THREE.Vector3(target.x - p.x, target.y - p.y, target.z - p.z).normalize()
+            : (c.aimPoint ? c.aimPoint.clone().sub(p).normalize() : this.forward());
+        const v = this.velocity.clone().addScaledVector(dir, 140);
+        world.missiles.push({ kind: 'missile', x: p.x, y: p.y, z: p.z, vx: v.x, vy: v.y, vz: v.z, dir: dir,
+            damage: stats.damage * this.damageScale, blast: stats.blast, target: target,
+            homing: this.guidance ? this.guidance.homing : (target ? 2.6 : 0), side: this.side, life: 5, targetMode: this.targetMode });
+        l.cooldown = stats.cooldown;
+        __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].missileLaunch();
+    }
+
+    fireDrones(l, c, world) {
+        const stats = l.module.stats;
+        const drones = world.combat.hostileMissiles(this.side, 'drone');
+        const target = this.nearestOf(this.position, drones, 1000) || this.missileTarget(c, world)
+            || (this.targetMode !== 'asteroids' ? this.nearestOf(this.position, world.combat.hostileShips(this.side), 1500) : null);
+        l.salvo = { remaining: stats.count, timer: 0, target: target, index: 0 };
+        l.cooldown = stats.cooldown;
+    }
+
+    continueSalvo(l, c, world, dt) {
+        const s = l.salvo;
+        s.timer -= dt;
+        if(s.timer > 0) return;
+        if(!this.alive || s.remaining <= 0) {
+            l.salvo = null;
+            return;
+        }
+        const stats = l.module.stats;
+        const p = this.localToWorld(l.local);
+        const target = s.target && !s.target.dead ? s.target : null;
+        // Drones leave in a spread around the launch direction and weave in.
+        const base = target ? new this.THREE.Vector3(target.x - p.x, target.y - p.y, target.z - p.z).normalize() : this.forward();
+        const dir = this.jitter(base, 0.45);
+        const v = this.velocity.clone().addScaledVector(dir, 240);
+        world.missiles.push({ kind: 'drone', x: p.x, y: p.y, z: p.z, vx: v.x, vy: v.y, vz: v.z, dir: dir,
+            damage: stats.damage * this.damageScale, blast: stats.blast, target: target, homing: 7, side: this.side, life: 7, targetMode: this.targetMode });
+        __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].droneLaunch();
+        s.remaining--;
+        s.index++;
+        s.timer = 0.11;
+        if(s.remaining <= 0) l.salvo = null;
+    }
+
+    weaponStatus() {
+        const groups = {};
+        this.turrets.concat(this.launchers).forEach(w => {
+            const def = __WEBPACK_IMPORTED_MODULE_0__shipyard_modules__["c" /* default */][w.kind];
+            if(!groups[w.kind]) groups[w.kind] = { name: def.short, color: def.color, ready: 0, count: 0, state: 'ready' };
+            const g = groups[w.kind];
+            const stats = w.module.stats;
+            let ready = 1;
+            let state = 'ready';
+            if(w.kind === 'minigun') {
+                ready = 1 - w.heat;
+                state = w.overheated ? 'overheated' : (w.heat > 0.6 ? 'hot' : 'ready');
+            } else if(w.kind === 'beam') {
+                if(w.beamTime > 0) { ready = w.beamTime / stats.burst; state = 'firing'; }
+                else if(w.cooldown > 0) { ready = 1 - w.cooldown / stats.cooldown; state = 'charging'; }
+            } else if(w.cooldown > 0) {
+                const total = w.kind === 'staff' ? 1 / stats.fireRate : stats.cooldown;
+                ready = 1 - w.cooldown / total;
+                state = 'reloading';
+            }
+            g.ready += clamp(ready, 0, 1);
+            g.count++;
+            if(state !== 'ready') g.state = state;
+        });
+        return Object.keys(groups).map(kind => {
+            const g = groups[kind];
+            const off = !!this.weaponsOff[kind];
+            return { kind: kind, name: g.name, color: g.color, ready: g.ready / g.count, count: g.count, state: off ? 'off' : g.state, off: off };
+        });
+    }
+
+    toggleWeapon(kind) {
+        this.weaponsOff[kind] = !this.weaponsOff[kind];
+        return !this.weaponsOff[kind];
+    }
+
+    cycleTargetMode() {
+        this.targetMode = __WEBPACK_IMPORTED_MODULE_3__components_ship_ship__["c" /* TARGET_MODES */][(__WEBPACK_IMPORTED_MODULE_3__components_ship_ship__["c" /* TARGET_MODES */].indexOf(this.targetMode) + 1) % __WEBPACK_IMPORTED_MODULE_3__components_ship_ship__["c" /* TARGET_MODES */].length];
+        return this.targetMode;
+    }
+
+    toggleShields() {
+        this.shieldsEnabled = !this.shieldsEnabled;
+        if(this.shieldsEnabled) __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].shieldUp();
+        else __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].shieldDown();
+    }
+
+    // ------------------------------------------------------------ damage
+
+    // `type` ('kinetic' / 'energy') marks a weapon hit (no knock cooldown, resistances
+    // apply); `quiet` skips sounds for continuous beams. Returns { shield, hull } absorbed.
+    takeDamage(amount, type, quiet) {
+        if(!this.alive || this.immunity > 0) return null;
+        if(!type && this.hitCooldown > 0) return null;
+        if(!type) this.hitCooldown = HIT_COOLDOWN;
+        this.sinceHit = 0;
+        const shieldFactor = type ? SHIELD_FACTOR[type] : 1;
+        const hullFactor = type ? HULL_FACTOR[type] : 1;
+        let remaining = amount;
+        let onShield = 0;
+        if(this.shieldUp) {
+            onShield = Math.min(amount, this.shield / shieldFactor);
+            this.shield = Math.max(0, this.shield - onShield * shieldFactor);
+            remaining = amount - onShield;
+            if(onShield > 0) {
+                this.shieldFlash = SHIELD_FLASH_TIME;
+                if(!quiet || Math.random() < 0.08) __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].shieldHit(type ? 1 + onShield / 25 : 0.4 + onShield / 25);
+            }
+        }
+        if(remaining > 0) {
+            this.hp -= remaining * hullFactor;
+            this.hullFlash = 0.15;
+            if(!quiet || Math.random() < 0.08) __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].hullHit();
+        }
+        if(this.hp <= 0) {
+            this.hp = 0;
+            this.alive = false;
+            __WEBPACK_IMPORTED_MODULE_4__audio_audio__["a" /* default */].shipExplosion();
+        }
+        return { shield: onShield, hull: remaining };
+    }
+}
+/* harmony export (immutable) */ __webpack_exports__["c"] = Ship3D;
+
+
+
+
+
+/***/ }),
+/* 24 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(12);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(30);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__ = __webpack_require__(31);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_shipyard__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__styles_main_css__ = __webpack_require__(36);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4__styles_main_css__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__scripts_ui_touch__ = __webpack_require__(22);
 
 
 
 
 
 
-if(Object(__WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__["b" /* isTouchDevice */])()) document.body.classList.add('touch');
+
+if(Object(__WEBPACK_IMPORTED_MODULE_5__scripts_ui_touch__["b" /* isTouchDevice */])()) document.body.classList.add('touch');
 
 const startGame = document.getElementById('startGame');
 const openShipyard = document.getElementById('openShipyard');
@@ -7217,7 +10461,7 @@ const menu = document.getElementById('menu');
 const menuCredits = document.getElementById('menuCredits');
 
 const renderMenuCredits = () => {
-    const profile = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["g" /* getProfile */])();
+    const profile = Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["g" /* getProfile */])();
     const cargo = Object.keys(profile.cargo).reduce((sum, id) => sum + profile.cargo[id], 0);
     menuCredits.textContent = 'Credits: ' + Math.round(profile.credits).toLocaleString('en-US') +
         (cargo ? ' · Ore in hold: ' + cargo : '');
@@ -7225,17 +10469,17 @@ const renderMenuCredits = () => {
 
 const debugToggle = document.getElementById('debugToggle');
 const renderDebug = () => {
-    debugToggle.textContent = Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
-    debugToggle.classList.toggle('on', Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])());
+    debugToggle.textContent = Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["i" /* isDebug */])() ? 'Debug mode: ON (everything unlocked and free)' : 'Debug mode: OFF';
+    debugToggle.classList.toggle('on', Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["i" /* isDebug */])());
 };
-debugToggle.addEventListener('click', () => Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])()));
+debugToggle.addEventListener('click', () => Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["s" /* setDebug */])(!Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["i" /* isDebug */])()));
 
 // Debug mode can also be switched on from the address bar: index.html?debug
-if(/[?&]debug\b/.test(window.location.search) && !Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["i" /* isDebug */])()) Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["s" /* setDebug */])(true);
+if(/[?&]debug\b/.test(window.location.search) && !Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["i" /* isDebug */])()) Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["s" /* setDebug */])(true);
 
 renderMenuCredits();
 renderDebug();
-Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["l" /* onProfileChange */])(() => {
+Object(__WEBPACK_IMPORTED_MODULE_3__scripts_shipyard_profile__["l" /* onProfileChange */])(() => {
     renderMenuCredits();
     renderDebug();
 });
@@ -7243,7 +10487,7 @@ Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__["l" /* onProfileC
 // On phones, go full screen in landscape when launching so the browser bars don't eat
 // the view. Both calls may be refused (iOS Safari has no fullscreen API); that's fine.
 const goFullscreen = () => {
-    if(!Object(__WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__["b" /* isTouchDevice */])()) return;
+    if(!Object(__WEBPACK_IMPORTED_MODULE_5__scripts_ui_touch__["b" /* isTouchDevice */])()) return;
     const root = document.documentElement;
     const request = root.requestFullscreen || root.webkitRequestFullscreen;
     if(!request || document.fullscreenElement || document.webkitFullscreenElement) return;
@@ -7257,15 +10501,27 @@ const goFullscreen = () => {
     } catch(e) { /* not allowed */ }
 };
 
+// The full 3D game on computers with WebGL; phones (touch controls) and browsers without
+// WebGL get the classic 2D game, which is always available from the menu too.
+const use3D = () => Object(__WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__["a" /* can3D */])() && !Object(__WEBPACK_IMPORTED_MODULE_5__scripts_ui_touch__["b" /* isTouchDevice */])();
+
 startGame.addEventListener('click', () => {
+    goFullscreen();
+    menu.style.visibility = 'hidden';
+    if(use3D()) Object(__WEBPACK_IMPORTED_MODULE_1__scripts_game3d_game3d__["b" /* start3D */])();
+    else Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
+});
+
+document.getElementById('classicGame').addEventListener('click', () => {
     goFullscreen();
     menu.style.visibility = 'hidden';
     Object(__WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__["a" /* default */])();
 });
+if(!use3D()) document.getElementById('classicGame').style.display = 'none';
 
 openShipyard.addEventListener('click', () => {
     menu.style.visibility = 'hidden';
-    Object(__WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__["a" /* getShipyard */])().open({
+    Object(__WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_shipyard__["a" /* getShipyard */])().open({
         closeLabel: 'Done',
         onClose: () => { menu.style.visibility = 'visible'; }
     });
@@ -7273,32 +10529,32 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 17 */
+/* 25 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__ = __webpack_require__(11);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__ = __webpack_require__(22);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(4);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__ = __webpack_require__(28);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(3);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__physics_physics__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_sectors__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__shipyard_shipyard__ = __webpack_require__(12);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_systems__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__world_stargate__ = __webpack_require__(13);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_sectors__ = __webpack_require__(30);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_profile__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__shipyard_shipyard__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_systems__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__world_stargate__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__render_planets__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__travel__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__travel__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__ = __webpack_require__(28);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ui_touch__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ui_touch__ = __webpack_require__(22);
 
 
 
@@ -7393,7 +10649,7 @@ const originIndex = (system) => __WEBPACK_IMPORTED_MODULE_13__world_systems__["b
 
 const createState = () => {
     const system = Object(__WEBPACK_IMPORTED_MODULE_13__world_systems__["g" /* systemById */])('lantea');
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["d" /* default */](__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["e" /* default */](__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius + 80, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().hull));
     ship.angle = 0;
     return {
         system: system,
@@ -7496,7 +10752,7 @@ const renderInfo = () => {
     setText('fps', 'Fps: ' + Math.round(fps) + (scene3d ? ' (3D)' : ' (2D)'));
     setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
         (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') +
-            ' · Targets: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["c" /* TARGET_MODE_LABEL */][ship.targetMode] + hint('T') : ''));
+            ' · Targets: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["d" /* TARGET_MODE_LABEL */][ship.targetMode] + hint('T') : ''));
     setBar('hullBar', ship.hp / ship.maxHull);
     setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
     setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
@@ -8294,12 +11550,12 @@ const spawnEnemy = (hullId, level, near) => {
         const x = ship.x + Math.cos(a) * d;
         const y = ship.y + Math.sin(a) * d;
         if(state.system.station && Math.sqrt((x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x) * (x - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x) + (y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y) * (y - __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y)) < 3200 && !near) continue;
-        const enemy = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["a" /* createEnemy */])(hullId || Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["c" /* pickEnemyHull */])(state.system.id), level || (Math.random() < 0.35 ? 3 : 2), x, y);
+        const enemy = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["b" /* createEnemy */])(hullId || Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["e" /* pickEnemyHull */])(state.system.id), level || (Math.random() < 0.35 ? 3 : 2), x, y);
         enemy.angle = Math.atan2(ship.y - y, ship.x - x);
         state.enemies.push(enemy);
         // Death Gliders fly as a pair.
         if(enemy.hullDef.id === 'glider' && !hullId) {
-            const wing = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["a" /* createEnemy */])('glider', enemy.level, x + 90, y + 60);
+            const wing = Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["b" /* createEnemy */])('glider', enemy.level, x + 90, y + 60);
             wing.angle = enemy.angle;
             state.enemies.push(wing);
         }
@@ -8317,7 +11573,7 @@ const updateEnemies = (dt) => {
         state.enemyTimer -= dt;
         if(state.enemyTimer <= 0) {
             state.enemyTimer = 35 + Math.random() * 35;
-            if(state.enemies.length < Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["b" /* enemyConfig */])(state.system.id).max) spawnEnemy();
+            if(state.enemies.length < Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["c" /* enemyConfig */])(state.system.id).max) spawnEnemy();
         }
     }
     const target = combat.player[0] || null;
@@ -8326,7 +11582,7 @@ const updateEnemies = (dt) => {
         const dx = ship.x - enemy.x;
         const dy = ship.y - enemy.y;
         const inRange = target && dx * dx + dy * dy < 3600 * 3600;
-        Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["d" /* updateEnemyAI */])(enemy, dt, inRange ? target : null, state.rocks, combat.missiles.player, combat.enemies, avoid);
+        Object(__WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__["f" /* updateEnemyAI */])(enemy, dt, inRange ? target : null, state.rocks, combat.missiles.player, combat.enemies, avoid);
         enemy.update(dt, enemy.ai.input, state);
     });
 };
@@ -9960,9 +13216,9 @@ const initialize = () => {
     gameboard.appendChild(backdrop);
     // 3D unless asked for 2D (?2d). Without real graphics-card acceleration the browser
     // refuses the 3D view and the game stays 2D; ?3d forces 3D anyway.
-    if(Object(__WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["b" /* webglAvailable */])() && !/[?&]2d\b/.test(window.location.search)) {
+    if(Object(__WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["c" /* webglAvailable */])() && !/[?&]2d\b/.test(window.location.search)) {
         try {
-            scene3d = new __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["a" /* default */](gameboard, !/[?&]3d\b/.test(window.location.search));
+            scene3d = new __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["b" /* default */](gameboard, !/[?&]3d\b/.test(window.location.search));
         } catch(e) {
             scene3d = null;
             if(window.console) console.warn('3D view not started:', e && e.message);
@@ -10018,7 +13274,7 @@ const initialize = () => {
         }
         const mode = state.ship.cycleTargetMode();
         __WEBPACK_IMPORTED_MODULE_6__audio_audio__["a" /* default */].toggle(true);
-        banner('Targeting: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["c" /* TARGET_MODE_LABEL */][mode], 1.4);
+        banner('Targeting: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["d" /* TARGET_MODE_LABEL */][mode], 1.4);
         return true;
     });
 
@@ -10159,7 +13415,7 @@ const constructGameBoard = () => {
 
 
 /***/ }),
-/* 18 */
+/* 26 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10231,12 +13487,12 @@ class Bullet {
 
 
 /***/ }),
-/* 19 */
+/* 27 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__particle_particle__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__physics_physics__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_sprites__ = __webpack_require__(0);
 
 
@@ -10410,324 +13666,7 @@ class Missile {
 
 
 /***/ }),
-/* 20 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__ship__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__ = __webpack_require__(3);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__shipyard_profile__ = __webpack_require__(5);
-// Enemy ships: the same hulls the player can fly, fitted out at mid level (Mk II) or fully
-// upgraded (Mk III), flown by a simple AI pilot that feeds the ship the same kind of input
-// the player's keyboard and mouse do.
-
-
-
-
-
-// Weapons and systems each faction fits, in order; slots are filled cycling through it.
-const FACTION_FIT = {
-    "Goa'uld": ['staff', 'staff', 'missile', 'shield', 'staff', 'engine', 'armor', 'staff', 'shield'],
-    "Tau'ri": ['minigun', 'missile', 'shield', 'guidance', 'minigun', 'missile', 'engine', 'armor', 'shield', 'minigun'],
-    Asgard: ['beam', 'shield', 'beam', 'missile', 'engine', 'shield', 'beam', 'armor', 'shield'],
-    Ancient: ['drones', 'shield', 'minigun', 'drones', 'engine', 'shield', 'beam', 'armor', 'drones']
-};
-// Small craft keep a mount free for an engine instead of a second heavy system.
-const FIGHTER_FIT = {
-    glider: ['staff', 'staff', 'engine'],
-    x302: ['minigun', 'missile', 'missile'],
-    jumper: ['drones', 'shield', 'engine', 'minigun']
-};
-
-// Enemy weapons hit a little softer than the player's, so a fair fight is winnable.
-const ENEMY_DAMAGE = 0.75;
-
-const loadoutFor = (hull, level) => {
-    const fit = FIGHTER_FIT[hull.id] || FACTION_FIT[hull.faction] || FACTION_FIT["Tau'ri"];
-    const loadout = {};
-    hull.slots.forEach((slot, i) => {
-        loadout[slot.id] = { type: fit[i % fit.length], level: level };
-    });
-    return loadout;
-};
-
-const createEnemy = (hullId, level, x, y) => {
-    const hull = __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["b" /* default */][hullId];
-    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship__["d" /* default */](x, y, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, loadoutFor(hull, level)));
-    ship.side = 'enemy';
-    ship.damageScale = ENEMY_DAMAGE;
-    ship.autoTarget = false;
-    ship.stabilizer = true;   // keeps the AI's flying under control in zero-g
-    ship.immunity = 0.6;
-    ship.level = level;
-    ship.angle = Math.random() * Math.PI * 2;
-    ship.ai = {
-        input: {
-            forward: false, backward: false, rotateLeft: false, rotateRight: false,
-            strafeLeft: false, strafeRight: false, firing: false, firingMissiles: false,
-            aimX: x, aimY: y, lockTarget: null
-        },
-        orbit: Math.random() < 0.5 ? 1 : -1,
-        orbitTimer: 2 + Math.random() * 3,
-        missileTimer: 1.5 + Math.random() * 2,
-        aimError: 0
-    };
-    // Preferred fighting distance from its weapons.
-    const kinds = ship.turrets.map(t => t.kind).concat(ship.launchers.map(l => l.kind));
-    ship.ai.range = kinds.indexOf('beam') !== -1 ? 380 : kinds.indexOf('staff') !== -1 || kinds.indexOf('minigun') !== -1 ? 430 : 650;
-    ship.ai.range += hull.radius * 1.2;
-    // How far its guns are worth firing (bolts and rounds lose accuracy beyond this).
-    ship.ai.gunReach = kinds.indexOf('beam') !== -1 ? 650 : kinds.indexOf('staff') !== -1 ? 700 : 750;
-    ship.ai.gunReach += hull.radius * 0.5;
-    // Bounty paid when destroyed.
-    ship.bounty = Math.round((150 + hull.cost * 0.12) * (level === 3 ? 1.5 : 1));
-    return ship;
-};
-/* harmony export (immutable) */ __webpack_exports__["a"] = createEnemy;
-
-
-const angleDifference = (a, b) => {
-    let d = b - a;
-    while(d > Math.PI) d -= Math.PI * 2;
-    while(d < -Math.PI) d += Math.PI * 2;
-    return d;
-};
-
-// Turn towards `desired` without overshooting (zero-g: counter the spin in time).
-const steer = (ship, input, desired) => {
-    const error = angleDifference(ship.angle, desired);
-    const wanted = Math.max(-ship.stats.maxTurn, Math.min(ship.stats.maxTurn, error * 2.5));
-    input.rotateRight = ship.angularVelocity < wanted - 0.05;
-    input.rotateLeft = ship.angularVelocity > wanted + 0.05;
-    return error;
-};
-
-// One AI tick: decide how to fly and when to shoot.
-//   target:   the player ship (or null)
-//   rocks:    asteroids to steer around
-//   incoming: the player's missiles and drones (to dodge or shoot down)
-//   friends:  the other enemy ships (to keep formation spacing)
-//   avoid:    optional { x, y, radius } to stay out of (the Atlantis city shield)
-//
-// Fighters make attack runs: charge in firing, break away past the target, swing round and
-// come again, jinking away from missiles. Capital ships hold a standoff distance, circle
-// slowly and let their turrets work. Anyone badly hurt withdraws to recharge shields and
-// comes back.
-const updateEnemyAI = (ship, dt, target, rocks, incoming, friends, avoid) => {
-    const ai = ship.ai;
-    const input = ai.input;
-    input.forward = input.backward = input.strafeLeft = input.strafeRight = false;
-    input.firing = input.firingMissiles = false;
-    input.lockTarget = null;
-    if(!ship.alive) return;
-
-    const fighter = ship.radius < 45;
-    ai.mode = ai.mode || 'attack';
-    ai.modeTimer = (ai.modeTimer || 0) - dt;
-    ai.evadeTimer = (ai.evadeTimer || 0) - dt;
-    ai.orbitTimer -= dt;
-    if(ai.orbitTimer <= 0) {
-        ai.orbit = -ai.orbit;
-        ai.orbitTimer = 3 + Math.random() * 4;
-        ai.aimError = (Math.random() - 0.5) * 0.06;
-    }
-
-    // Keep clear of the city shield.
-    if(avoid) {
-        const ax = ship.x - avoid.x;
-        const ay = ship.y - avoid.y;
-        const ad = Math.sqrt(ax * ax + ay * ay) || 1;
-        if(ad < avoid.radius + ship.radius) {
-            steer(ship, input, Math.atan2(ay, ax));
-            input.forward = true;
-            return;
-        }
-    }
-
-    if(!target) {
-        ai.mode = 'attack';
-        input.forward = Math.random() < 0.02;
-        return;
-    }
-
-    const dx = target.x - ship.x;
-    const dy = target.y - ship.y;
-    const distance = Math.sqrt(dx * dx + dy * dy) || 1;
-    const toTarget = Math.atan2(dy, dx);
-    const range = ai.range;
-
-    // Badly damaged: withdraw until the shields are back up (or a while has passed).
-    const health = ship.hp / ship.maxHull;
-    if(ai.mode !== 'retreat' && health < 0.3 && ship.maxShield > 0 && !ai.retreated) {
-        ai.mode = 'retreat';
-        ai.modeTimer = 8 + Math.random() * 4;
-        ai.retreated = true;
-    }
-    if(ai.mode === 'retreat') {
-        if(ai.modeTimer <= 0 || (ship.shield > ship.maxShield * 0.8 && distance > 1600)) {
-            ai.mode = 'attack';
-        } else {
-            steer(ship, input, toTarget + Math.PI + ai.orbit * 0.4);
-            input.forward = true;
-            input.firing = distance < range * 1.5;
-            aimAt(ship, ai, input, target);
-            return;
-        }
-    }
-
-    // Dodge: a hostile missile or drone closing in fast makes fighters jink sideways.
-    let threat = null;
-    let threatDistance = Infinity;
-    for(let i = 0; i < incoming.length; i++) {
-        const m = incoming[i];
-        if(m.dead) continue;
-        const mx = ship.x - m.x;
-        const my = ship.y - m.y;
-        const d = Math.sqrt(mx * mx + my * my);
-        if(d > 420 + ship.radius) continue;
-        const closing = (m.vx * mx + m.vy * my) / (d || 1);
-        if(closing > 120 && d < threatDistance) {
-            threat = m;
-            threatDistance = d;
-        }
-    }
-    if(threat && fighter && ai.evadeTimer <= 0) {
-        ai.evadeTimer = 0.7;
-        ai.evadeSide = (threat.vx * (ship.y - threat.y) - threat.vy * (ship.x - threat.x)) > 0 ? 1 : -1;
-    }
-
-    // Aim: gun ships shoot close missiles down, otherwise lead the target.
-    const shootDown = threat && threat.kind === 'missile' && threatDistance < 320 && ship.turrets.some(t => t.kind === 'minigun');
-    aimAt(ship, ai, input, shootDown ? threat : target);
-
-    if(fighter) {
-        // Attack run: charge, break off past the target, swing back round.
-        if(ai.mode === 'attack') {
-            const facing = steer(ship, input, toTarget);
-            input.forward = Math.abs(facing) < 0.8;
-            if(distance < Math.max(160, range * 0.45)) {
-                ai.mode = 'break';
-                ai.modeTimer = 1.1 + Math.random() * 0.8;
-                ai.breakAngle = toTarget + ai.orbit * (0.9 + Math.random() * 0.5);
-            }
-        } else if(ai.mode === 'break') {
-            steer(ship, input, ai.breakAngle);
-            input.forward = true;
-            if(ai.modeTimer <= 0 && distance > range * 0.9) ai.mode = 'attack';
-            if(ai.modeTimer < -3) ai.mode = 'attack';
-        }
-    } else {
-        // Capital ship: hold the standoff distance and circle slowly.
-        ai.mode = 'attack';
-        const far = distance > range * 1.25;
-        const facing = steer(ship, input, toTarget + (far ? 0 : ai.orbit * 0.35));
-        if(distance > range * 1.05 && Math.abs(facing) < 1.2) input.forward = true;
-        if(distance < range * 0.7) input.backward = true;
-        if(distance < range * 1.2) {
-            if(ai.orbit > 0) input.strafeRight = true;
-            else input.strafeLeft = true;
-        }
-    }
-
-    if(ai.evadeTimer > 0) {
-        input.strafeLeft = ai.evadeSide < 0;
-        input.strafeRight = ai.evadeSide > 0;
-    }
-
-    // Spacing: don't pile into other enemy ships.
-    for(let i = 0; i < friends.length; i++) {
-        const other = friends[i];
-        if(other === ship || !other.alive) continue;
-        const ox = other.x - ship.x;
-        const oy = other.y - ship.y;
-        const reach = other.radius + ship.radius + 70;
-        if(ox * ox + oy * oy > reach * reach) continue;
-        const side = Math.cos(ship.angle) * oy - Math.sin(ship.angle) * ox;
-        input.strafeLeft = side > 0;
-        input.strafeRight = side <= 0;
-        break;
-    }
-
-    // Dodge asteroids in the way.
-    for(let i = 0; i < rocks.length; i++) {
-        const rock = rocks[i];
-        if(rock.dead) continue;
-        const rx = rock.x - ship.x;
-        const ry = rock.y - ship.y;
-        const reach = rock.radius + ship.radius + 60;
-        if(rx * rx + ry * ry > reach * reach) continue;
-        const side = Math.cos(ship.angle) * ry - Math.sin(ship.angle) * rx;
-        input.strafeLeft = side > 0;
-        input.strafeRight = side <= 0;
-        if(fighter) input.forward = false;
-        break;
-    }
-
-    // Guns only within their real reach (turrets swing to the aim point by themselves).
-    input.firing = !!shootDown || distance - target.radius * 0.8 < ai.gunReach;
-
-    // Missiles and drones in volleys, locked onto the target. Drones are held back for
-    // the player's drones when those are in the air.
-    ai.missileTimer -= dt;
-    const playerDrones = incoming.some(m => m.kind === 'drone' && !m.dead);
-    if(ship.launchers.length && (ai.missileTimer <= 0 || playerDrones) && distance < 1400 && distance > 140) {
-        input.firingMissiles = true;
-        input.lockTarget = target;
-        if(ship.launchers.every(l => l.cooldown > 0) || Math.random() < 0.02) {
-            ai.missileTimer = 2 + Math.random() * 3;
-        }
-    }
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = updateEnemyAI;
-
-
-// Aim with lead for the travel time of its shots, plus a little error.
-const aimAt = (ship, ai, input, target) => {
-    const projectileSpeed = ship.turrets.some(t => t.kind === 'staff') ? 520 : 1100;
-    const ex = target.x - ship.x;
-    const ey = target.y - ship.y;
-    const t = Math.sqrt(ex * ex + ey * ey) / projectileSpeed;
-    // Shots don't inherit the shooter's sideways drift, so lead by the target's own motion.
-    const lx = target.x + (target.vx || 0) * t;
-    const ly = target.y + (target.vy || 0) * t;
-    const aimAngle = Math.atan2(ly - ship.y, lx - ship.x) + ai.aimError;
-    const aimDist = Math.sqrt((lx - ship.x) * (lx - ship.x) + (ly - ship.y) * (ly - ship.y));
-    input.aimX = ship.x + Math.cos(aimAngle) * aimDist;
-    input.aimY = ship.y + Math.sin(aimAngle) * aimDist;
-};
-
-// Which hulls turn up in each star system (weights), and how many at most at once.
-const SYSTEM_ENEMIES = {
-    lantea: { max: 2, hulls: { glider: 4, jumper: 2, alkesh: 1 } },
-    earth: { max: 2, hulls: { glider: 3, alkesh: 2, x303: 1, jumper: 1 } },
-    abydos: { max: 3, hulls: { glider: 5, alkesh: 2, hatak: 1 } },
-    chulak: { max: 3, hulls: { glider: 5, alkesh: 3, hatak: 1 } },
-    dakara: { max: 3, hulls: { glider: 4, alkesh: 3, hatak: 1, x302: 1 } },
-    langara: { max: 2, hulls: { x302: 3, x303: 2, alkesh: 1 } },
-    othala: { max: 3, hulls: { alkesh: 2, x304: 1, hatak: 1, aurora: 1, asgard: 1 } }
-};
-
-const enemyConfig = (systemId) => SYSTEM_ENEMIES[systemId] || SYSTEM_ENEMIES.lantea;
-/* harmony export (immutable) */ __webpack_exports__["b"] = enemyConfig;
-
-
-const pickEnemyHull = (systemId) => {
-    const hulls = enemyConfig(systemId).hulls;
-    const total = Object.keys(hulls).reduce((sum, id) => sum + hulls[id], 0);
-    let roll = Math.random() * total;
-    const ids = Object.keys(hulls);
-    for(let i = 0; i < ids.length; i++) {
-        roll -= hulls[ids[i]];
-        if(roll <= 0) return ids[i];
-    }
-    return ids[0];
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = pickEnemyHull;
-
-
-
-/***/ }),
-/* 21 */
+/* 28 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10845,7 +13784,7 @@ class Ore {
 
 
 /***/ }),
-/* 22 */
+/* 29 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10971,11 +13910,11 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 23 */
+/* 30 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_rock_rock__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__materials__ = __webpack_require__(1);
 // Endless asteroid fields. Space is divided into square sectors that are generated
 // deterministically from a seed the first time the ship comes near. Sectors that
@@ -11049,13 +13988,13 @@ const generateSector = (seed, sx, sy, bias, safePoints) => {
 
         const giant = random() < 0.04 + distance * 0.004;
         const radius = giant ? 60 + random() * 35 : 14 + random() * 38;
-        const main = Object(__WEBPACK_IMPORTED_MODULE_1__materials__["d" /* rollMaterial */])(random, distance, bias);
+        const main = Object(__WEBPACK_IMPORTED_MODULE_1__materials__["e" /* rollMaterial */])(random, distance, bias);
         const purity = main === 'rock' ? 1 : 0.45 + random() * 0.45;
         const composition = { rock: 1 - purity };
         composition[main] = (composition[main] || 0) + purity;
 
         // Sometimes a trace of a second metal.
-        const trace = Object(__WEBPACK_IMPORTED_MODULE_1__materials__["d" /* rollMaterial */])(random, distance, bias);
+        const trace = Object(__WEBPACK_IMPORTED_MODULE_1__materials__["e" /* rollMaterial */])(random, distance, bias);
         if(trace !== main && trace !== 'rock') {
             const share = 0.05 + random() * 0.15;
             composition[trace] = (composition[trace] || 0) + share;
@@ -11140,2232 +14079,2690 @@ class SectorManager {
 
 
 /***/ }),
-/* 24 */
+/* 31 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-// Home base at the centre of the map: an Atlantis-style six-armed city-ship.
-// Fly inside the docking ring and press B to dock with the shipyard.
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__ship3d__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__effects3d__ = __webpack_require__(32);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__rocks3d__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ai3d__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__hud3d__ = __webpack_require__(35);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__render3d_world3d__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__render3d_scene3d__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__ = __webpack_require__(6);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__components_ship_enemy__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_stargate__ = __webpack_require__(12);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__world_systems__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__world_materials__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__render_planets__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__gameboard_travel__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__shipyard_shipyard__ = __webpack_require__(11);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__shipyard_profile__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__audio_audio__ = __webpack_require__(3);
+// The 3D game: free six-degrees-of-freedom flight through endless 3D asteroid fields,
+// mining, combat, Atlantis, the Stargate and hyperspace, all rendered with WebGL.
 //
-// Performance: the city's line art (hundreds of glowing strokes) and the shield dome
-// gradient are rendered once into sprites; each frame just stamps them.
+// It shares everything that isn't tied to a flat map with the classic 2D game: hulls,
+// modules and stats, the shipyard and market, star systems, the DHD and starmap, gate
+// dialling, sounds, enemy fits and damage rules.
 
 
 
-const STATION = {
-    x: 0,
-    y: 0,
-    dockRadius: 420,
-    maxDockSpeed: 140,
-    shieldRadius: 380,     // city shield: blocks asteroids, lets ships, shots and ore through
-    impacts: []            // { angle, life, strength } ripples on the city shield
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const STEP = 1 / 90;
+const MAX_STEPS = 4;
+const FOV = 62;
+const VIEW_DISTANCE = 6000;
+const ORE_LIFETIME = 90;
+const GAME_OVER_DELAY = 2.6;
+const STEER_DEAD_ZONE = 0.08;     // fraction of the screen where the mouse only aims
+
+const can3D = () => Object(__WEBPACK_IMPORTED_MODULE_6__render3d_scene3d__["c" /* webglAvailable */])() && !/[?&]2d\b/.test(window.location.search);
+/* harmony export (immutable) */ __webpack_exports__["a"] = can3D;
+
+
+let T = null;            // THREE
+let renderer = null;
+let scene = null;
+let camera = null;
+let hudCanvas = null;
+let hud = null;
+let effects = null;
+let rockRenderer = null;
+let oreMesh = null;
+let sky = null;
+let state = null;
+let frameId = null;
+let lastTime = 0;
+let accumulator = 0;
+let fps = 60;
+let width = 0;
+let height = 0;
+let pixelRatio = 1;
+let initialized = false;
+let onExit = null;
+const mouse = { x: 0, y: 0, left: false, right: false };
+const keys = {};
+const domHud = {};
+
+// ------------------------------------------------------------ setup
+
+const systemSeed = (id) => {
+    let h = Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["g" /* getProfile */])().seed || 1;
+    for(let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return h;
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = STATION;
 
+const initialize = () => {
+    initialized = true;
+    T = window.THREE;
+    const board = document.getElementById('gameboard');
+    renderer = new T.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    renderer.setClearColor(0x000000, 0);
+    renderer.domElement.className = 'game3d-layer';
+    board.appendChild(renderer.domElement);
+    hudCanvas = document.createElement('canvas');
+    hudCanvas.className = 'game3d-hud';
+    board.appendChild(hudCanvas);
+    hud = hudCanvas.getContext('2d');
 
-const LINE = 'rgba(200, 225, 255, 0.95)';
-const FILL = 'rgba(8, 16, 30, 0.88)';
+    scene = new T.Scene();
+    scene.fog = new T.FogExp2(0x04070f, 0.00016);
+    camera = new T.PerspectiveCamera(FOV, 1, 1, 150000);
+    scene.add(new T.AmbientLight(0x8a96b0, 0.5));
+    scene.add(new T.HemisphereLight(0xb8c8e8, 0x1a1c24, 0.6));
+    const sun = new T.DirectionalLight(0xfff0dc, 3.2);
+    sun.position.set(-0.55, 0.65, 0.85);
+    scene.add(sun);
+    const rim = new T.DirectionalLight(0x6f8cff, 0.7);
+    rim.position.set(0.5, -0.6, -0.5);
+    scene.add(rim);
 
-const poly = (ctx, pts, fill) => {
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.closePath();
-    if(fill !== false) ctx.fill();
-    ctx.stroke();
+    effects = new __WEBPACK_IMPORTED_MODULE_1__effects3d__["a" /* default */](T, scene);
+    rockRenderer = new __WEBPACK_IMPORTED_MODULE_2__rocks3d__["c" /* RockRenderer */](T, scene);
+    oreMesh = Object(__WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["e" /* buildOreCrystals */])(T);
+    scene.add(oreMesh);
+    buildSky();
+    buildGateEffects();
+    buildLines();
+
+    ['shieldButton', 'cargoButton', 'starmapButton', 'credits', 'location', 'targeting', 'fps', 'hullBar', 'hullText',
+        'shieldBar', 'shieldText', 'cargoBar', 'cargoText'].forEach(id => { domHud[id] = document.getElementById(id); });
+    window.addEventListener('resize', resize);
+    bindInput();
+    document.getElementById('shieldButton').addEventListener('click', () => { if(state && !state.paused) toggleShields(); });
+    document.getElementById('starmapButton').addEventListener('click', () => { if(state && !state.paused) openStarmap(); });
+    document.getElementById('resumeGame').addEventListener('click', () => { if(state) setPaused(false); });
+    document.getElementById('abandonGame').addEventListener('click', () => { if(state) endGame('Returned to base. Cargo in the hold is kept.'); });
 };
 
-const line = (ctx, x1, y1, x2, y2) => {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-};
-
-const hexagon = (r, offset) => {
-    const pts = [];
-    for(let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + (offset || 0);
-        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+// Stars on a huge sphere that travels with the camera (they never get closer).
+const buildSky = () => {
+    sky = new T.Group();
+    const count = 5000;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for(let i = 0; i < count; i++) {
+        let x, y, z, l;
+        do { x = Math.random() * 2 - 1; y = Math.random() * 2 - 1; z = Math.random() * 2 - 1; l = x * x + y * y + z * z; } while(l > 1 || l < 0.01);
+        l = Math.sqrt(l);
+        positions[i * 3] = x / l * 60000; positions[i * 3 + 1] = y / l * 60000; positions[i * 3 + 2] = z / l * 60000;
+        const b = 0.45 + Math.random() * 0.55;
+        const warm = Math.random();
+        colors[i * 3] = b * (warm < 0.2 ? 1 : 0.85); colors[i * 3 + 1] = b * 0.9; colors[i * 3 + 2] = b * (warm > 0.7 ? 1 : 0.9);
     }
-    return pts;
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new T.BufferAttribute(colors, 3));
+    const stars = new T.Points(geometry, new T.PointsMaterial({ size: 1.7, sizeAttenuation: false, vertexColors: true, fog: false, transparent: true, depthWrite: false }));
+    stars.renderOrder = -2;
+    sky.add(stars);
+    scene.add(sky);
 };
 
-// One arm along +x. Main piers are long with a broad, angled end platform;
-// the others are shorter with a compact platform.
-const drawArm = (ctx, main, index) => {
-    const length = main ? 270 : 215;
-    const half = main ? 22 : 18;
+// The event horizon (a rippling pool) and the kawoosh (a vortex bursting out of the gate).
+const HORIZON_FRAGMENT = [
+    'uniform float uTime;',
+    'uniform float uAlpha;',
+    'uniform float uHole;',
+    'varying vec2 vUv;',
+    'void main() {',
+    '    vec2 p = vUv * 2.0 - 1.0;',
+    '    float r = length(p);',
+    '    if(r > 1.0 || r < uHole) discard;',
+    '    float ripple = sin(r * 30.0 - uTime * 5.0) * 0.5 + 0.5;',
+    '    float swirl = sin(atan(p.y, p.x) * 5.0 + r * 9.0 - uTime * 1.7) * 0.5 + 0.5;',
+    '    float foam = uHole > 0.0 ? smoothstep(uHole + 0.25, uHole, r) * 0.8 : 0.0;',
+    '    vec3 deep = vec3(0.08, 0.22, 0.68);',
+    '    vec3 bright = vec3(0.78, 0.9, 1.0);',
+    '    vec3 color = mix(deep, bright, clamp(pow(1.0 - r, 1.4) * 0.75 + ripple * 0.22 + swirl * 0.1 + foam, 0.0, 1.0));',
+    '    gl_FragColor = vec4(color, uAlpha * smoothstep(1.0, 0.92, r));',
+    '}'
+].join('\n');
 
-    // Pier.
-    poly(ctx, [[70, -half], [length, -half], [length, half], [70, half]]);
-    line(ctx, 80, 0, length - 10, 0);
-    line(ctx, 80, -half * 0.5, length - 10, -half * 0.5);
-    line(ctx, 80, half * 0.5, length - 10, half * 0.5);
-    for(let x = 95; x < length - 10; x += 22) line(ctx, x, -half, x, half);
+let horizon = null;
+let kawoosh = null;
 
-    // End platform.
-    if(main) {
-        poly(ctx, [[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
-            [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]);
-        poly(ctx, [[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]);
-        // Tower blocks seen from above.
-        [[length + 36, -18], [length + 56, 14], [length + 44, 26], [length + 62, -26]].forEach(t => {
-            ctx.strokeRect(t[0] - 6, t[1] - 6, 12, 12);
-            ctx.strokeRect(t[0] - 3, t[1] - 3, 6, 6);
-        });
-        // Side jetty.
-        poly(ctx, [[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]);
-    } else {
-        poly(ctx, [[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
-            [length + 52, 30], [length + 20, 38], [length, half]]);
-        ctx.strokeRect(length + 16, -12, 24, 24);
-        ctx.beginPath();
-        ctx.arc(length + 28, 0, 6, 0, Math.PI * 2);
-        ctx.stroke();
-    }
-
-    // Window lights along the pier.
-    ctx.save();
-    ctx.fillStyle = 'rgba(255, 230, 160, 0.85)';
-    ctx.shadowBlur = 6;
-    ctx.shadowColor = 'rgba(255, 210, 120, 0.9)';
-    for(let x = 90; x < length; x += 11) {
-        const on = Math.sin(x * 0.37 + index * 1.7) > -0.3;
-        if(!on) continue;
-        ctx.fillRect(x, -half * 0.75, 2, 2);
-        ctx.fillRect(x + 4, half * 0.7, 2, 2);
-    }
-    ctx.restore();
+const buildGateEffects = () => {
+    horizon = new T.Mesh(new T.CircleGeometry(__WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */], 72), new T.ShaderMaterial({
+        uniforms: { uTime: { value: 0 }, uAlpha: { value: 0 }, uHole: { value: 0 } },
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: HORIZON_FRAGMENT,
+        transparent: true, side: T.DoubleSide, depthWrite: false
+    }));
+    horizon.visible = false;
+    scene.add(horizon);
+    const cone = new T.ConeGeometry(__WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */] * 0.95, 1, 40, 1, true);
+    cone.rotateX(-Math.PI / 2);
+    cone.translate(0, 0, 0.5);
+    kawoosh = new T.Mesh(cone, new T.MeshBasicMaterial({ color: 0xa8d0ff, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide }));
+    kawoosh.visible = false;
+    scene.add(kawoosh);
 };
 
-const EXTENT = 460;
-const sprites = {};
+// Beam weapons and tractor beams as glowing lines.
+let beamLines = null;
+const MAX_BEAMS = 64;
+const buildLines = () => {
+    const geometry = new T.BufferGeometry();
+    geometry.setAttribute('position', new T.BufferAttribute(new Float32Array(MAX_BEAMS * 6), 3).setUsage(T.DynamicDrawUsage));
+    geometry.setAttribute('color', new T.BufferAttribute(new Float32Array(MAX_BEAMS * 6), 3).setUsage(T.DynamicDrawUsage));
+    geometry.setDrawRange(0, 0);
+    beamLines = new T.LineSegments(geometry, new T.LineBasicMaterial({ vertexColors: true, transparent: true, blending: T.AdditiveBlending, depthWrite: false }));
+    beamLines.frustumCulled = false;
+    scene.add(beamLines);
+};
 
-// City, shield dome and docking ring baked together: one straight image copy per frame.
-// Two variants: normal, and with the docking ring lit when the player can dock.
-const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(EXTENT * 2, EXTENT * 2, ctx => {
-    ctx.translate(EXTENT, EXTENT);
+const resize = () => {
+    if(!renderer) return;
+    width = window.innerWidth;
+    height = window.innerHeight;
+    pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(width, height, false);
+    renderer.domElement.style.width = width + 'px';
+    renderer.domElement.style.height = height + 'px';
+    hudCanvas.width = Math.floor(width * pixelRatio);
+    hudCanvas.height = Math.floor(height * pixelRatio);
+    hudCanvas.style.width = width + 'px';
+    hudCanvas.style.height = height + 'px';
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    effects.resize(height * pixelRatio, FOV);
+};
 
-    ctx.setLineDash([12, 14]);
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
-    ctx.beginPath();
-    ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
+// ------------------------------------------------------------ input
 
-    // City shield styled like the ship shields: soft edge, hexagon lattice, glowing rim.
-    const R = STATION.shieldRadius;
-    const dome = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
-    dome.addColorStop(0, 'rgba(120, 190, 255, 0)');
-    dome.addColorStop(0.8, 'rgba(120, 190, 255, 0.04)');
-    dome.addColorStop(1, 'rgba(140, 205, 255, 0.2)');
-    ctx.fillStyle = dome;
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    const size = 16;
-    const w = size * Math.sqrt(3);
-    const lattice = new Path2D();
-    for(let row = -Math.ceil(R / (size * 1.5)); row <= Math.ceil(R / (size * 1.5)); row++) {
-        for(let col = -Math.ceil(R / w) - 1; col <= Math.ceil(R / w) + 1; col++) {
-            const cx = col * w + (row % 2 ? w / 2 : 0);
-            const cy = row * size * 1.5;
-            if(cx * cx + cy * cy > (R + size) * (R + size)) continue;
-            for(let i = 0; i < 6; i++) {
-                const a1 = Math.PI / 6 + i * Math.PI / 3;
-                lattice.moveTo(cx + Math.cos(a1) * size, cy + Math.sin(a1) * size);
-                lattice.lineTo(cx + Math.cos(a1 + Math.PI / 3) * size, cy + Math.sin(a1 + Math.PI / 3) * size);
-            }
+const bindInput = () => {
+    window.addEventListener('keydown', (event) => {
+        if(!state) return;
+        if(Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["b" /* isDHDOpen */])() || Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["c" /* isStarmapOpen */])() || Object(__WEBPACK_IMPORTED_MODULE_17__shipyard_shipyard__["b" /* isShipyardOpen */])()) return;
+        const code = event.code;
+        if(code === 'Escape') {
+            if(!state.docked && !state.transition && state.ship.alive) setPaused(!state.paused);
+            event.preventDefault();
+            return;
         }
-    }
-    const fade = ctx.createRadialGradient(0, 0, R * 0.4, 0, 0, R);
-    fade.addColorStop(0, 'rgba(140, 205, 255, 0.02)');
-    fade.addColorStop(1, 'rgba(140, 205, 255, 0.22)');
-    ctx.strokeStyle = fade;
-    ctx.lineWidth = 0.8;
-    ctx.stroke(lattice);
-    ctx.restore();
-    ctx.save();
-    ctx.strokeStyle = 'rgba(150, 215, 255, 0.55)';
-    ctx.lineWidth = 1.8;
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = 'rgb(120, 200, 255)';
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.lineJoin = 'miter';
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = LINE;
-    ctx.fillStyle = FILL;
-    ctx.shadowBlur = 8;
-    ctx.shadowColor = 'rgba(150, 200, 255, 0.7)';
-
-    for(let i = 0; i < 6; i++) {
-        ctx.save();
-        ctx.rotate(i * Math.PI / 3 - Math.PI / 2);
-        ctx.strokeStyle = LINE;
-        ctx.fillStyle = FILL;
-        drawArm(ctx, i % 2 === 0, i);
-        ctx.restore();
-    }
-
-    poly(ctx, hexagon(92, Math.PI / 6));
-    poly(ctx, hexagon(70, 0));
-    poly(ctx, hexagon(48, Math.PI / 6));
-    const star = hexagon(40, 0);
-    [[0, 2], [2, 4], [4, 0], [1, 3], [3, 5], [5, 1]].forEach(pair => {
-        line(ctx, star[pair[0]][0], star[pair[0]][1], star[pair[1]][0], star[pair[1]][1]);
+        if(state.paused) return;
+        if(!keys[code] && !event.repeat) pressed(code);
+        keys[code] = true;
+        if(['Space', 'Tab'].indexOf(code) !== -1 || code.indexOf('Arrow') === 0) event.preventDefault();
     });
-    for(let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-        line(ctx, Math.cos(a) * 70, Math.sin(a) * 70, Math.cos(a) * 92, Math.sin(a) * 92);
+    window.addEventListener('keyup', (event) => { keys[event.code] = false; });
+    window.addEventListener('blur', () => { Object.keys(keys).forEach(k => { keys[k] = false; }); mouse.left = mouse.right = false; });
+    window.addEventListener('mousemove', (event) => {
+        mouse.x = event.clientX;
+        mouse.y = event.clientY;
+    });
+    window.addEventListener('mousedown', (event) => {
+        if(!state || state.paused) return;
+        if(event.target !== hudCanvas) return;
+        if(weaponPanelClick(event.clientX, event.clientY)) return;
+        if(event.button === 0) mouse.left = true;
+        if(event.button === 2) mouse.right = true;
+    });
+    window.addEventListener('mouseup', (event) => {
+        if(event.button === 0) mouse.left = false;
+        if(event.button === 2) mouse.right = false;
+    });
+    window.addEventListener('contextmenu', (event) => { if(state) event.preventDefault(); });
+    window.addEventListener('wheel', (event) => {
+        if(!state || state.paused) return;
+        state.cameraDistance = Math.max(0.5, Math.min(4, state.cameraDistance * Math.exp(event.deltaY * 0.0012)));
+    }, { passive: true });
+};
+
+const pressed = (code) => {
+    const ship = state.ship;
+    if(!ship.alive || state.transition) return;
+    if(code === 'KeyX') {
+        ship.stabilizer = !ship.stabilizer;
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].toggle(ship.stabilizer);
+        banner('Stabilizer ' + (ship.stabilizer ? 'ON: cancelling drift' : 'OFF: free drift'));
+    } else if(code === 'KeyH') toggleShields();
+    else if(code === 'KeyG' && ship.guidance) {
+        ship.autoTarget = !ship.autoTarget;
+        banner('Auto-targeting ' + (ship.autoTarget ? 'ON' : 'OFF'));
+    } else if(code === 'KeyT') {
+        if(!ship.guidance) banner('Fit a targeting computer to choose targets');
+        else {
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].toggle(true);
+            banner('Targeting: ' + __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["d" /* TARGET_MODE_LABEL */][ship.cycleTargetMode()]);
+        }
+    } else if(code === 'KeyV') {
+        state.freeAim = !state.freeAim;
+        banner(state.freeAim ? 'Free aim: the mouse aims without steering' : 'Mouse steering ON');
+    } else if(code === 'KeyB') interact();
+    else if(code === 'KeyM' || code === 'KeyJ') openStarmap();
+    else if(code === 'KeyN' && Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["i" /* isDebug */])()) spawnEnemy(null, null, true);
+    else if(/^Digit[1-5]$/.test(code)) {
+        const weapons = ship.weaponStatus();
+        const w = weapons[parseInt(code.slice(5), 10) - 1];
+        if(w) toggleWeapon(w.kind);
     }
-    ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-    ctx.stroke();
-}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* spriteResolution */])()));
+};
 
-// `effectsOnly`: the 3D view draws the city and its shield dome; only the docking ring,
-// shield impacts, lights and label are drawn here.
-const drawStation = (ctx, time, canDock, effectsOnly) => {
-    const key = canDock ? 'dock' : 'idle';
-    const R = STATION.shieldRadius;
+const toggleShields = () => {
+    const ship = state.ship;
+    if(!ship.alive) return;
+    if(ship.maxShield <= 0) {
+        banner('No shield emitter fitted');
+        return;
+    }
+    ship.toggleShields();
+    banner(ship.shieldsEnabled ? 'Shields raised' : 'Shields lowered: ore collection enabled');
+};
 
-    ctx.save();
-    ctx.translate(STATION.x, STATION.y);
-    if(effectsOnly) {
-        ctx.setLineDash([12, 14]);
-        ctx.lineWidth = 1.5;
-        ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
-        ctx.beginPath();
-        ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+const toggleWeapon = (kind) => {
+    const on = state.ship.toggleWeapon(kind);
+    const row = state.ship.weaponStatus().filter(w => w.kind === kind)[0];
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].toggle(on);
+    banner((row ? row.name : kind) + (on ? ' ON' : ' OFF'));
+};
+
+const weaponPanelClick = (x, y) => {
+    if(!state || !state.weaponRows) return false;
+    const row = state.weaponRows.filter(r => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)[0];
+    if(!row) return false;
+    toggleWeapon(row.kind);
+    return true;
+};
+
+// Keyboard + mouse to flight controls: the mouse both aims and (outside a small dead zone
+// in the middle) steers the nose; W/S thrust, A/D strafe, R/F up/down, Q/E roll.
+const playerControls = () => {
+    const k = (code) => !!keys[code];
+    const c = state.controls;
+    c.thrust = (k('KeyW') ? 1 : 0) - (k('KeyS') ? 1 : 0);
+    c.strafe = (k('KeyD') ? 1 : 0) - (k('KeyA') ? 1 : 0);
+    c.lift = (k('KeyR') || k('Space') ? 1 : 0) - (k('KeyF') || k('ControlLeft') ? 1 : 0);
+    c.roll = (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0);
+    const half = Math.min(width, height) * 0.42;
+    let dx = (mouse.x - width / 2) / half;
+    let dy = (mouse.y - height / 2) / half;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if(state.freeAim || d < STEER_DEAD_ZONE) {
+        c.yaw = c.pitch = 0;
     } else {
-        if(!sprites[key]) sprites[key] = buildCity(canDock);
-        ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+        const k2 = Math.min(1, (d - STEER_DEAD_ZONE) / (1 - STEER_DEAD_ZONE)) / d;
+        c.yaw = Math.max(-1, Math.min(1, dx * k2));
+        c.pitch = Math.max(-1, Math.min(1, -dy * k2));
     }
-
-    // Impact ripples and flares, like the ship shields (only while something has just hit).
-    if(STATION.impacts.length) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(0, 0, R + 2, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.globalCompositeOperation = 'lighter';
-        STATION.impacts.forEach(impact => {
-            const ix = Math.cos(impact.angle) * R;
-            const iy = Math.sin(impact.angle) * R;
-            const age = 1 - impact.life;
-            const size = (50 + 90 * impact.strength) * impact.life;
-            ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('140,200,255'), ix, iy, size, size);
-            ctx.globalAlpha = 0.7 * impact.life;
-            ctx.strokeStyle = 'rgb(150, 215, 255)';
-            ctx.lineWidth = 2.5 * impact.life + 0.5;
-            ctx.beginPath();
-            ctx.arc(ix, iy, 6 + age * R * 0.7, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.globalAlpha = 0.9 * impact.life;
-            ctx.lineWidth = 3 * impact.life;
-            ctx.beginPath();
-            ctx.arc(0, 0, R, impact.angle - 0.2 * impact.strength, impact.angle + 0.2 * impact.strength);
-            ctx.stroke();
-        });
-        ctx.restore();
-    }
-
-    // Gate room glow.
-    ctx.globalCompositeOperation = 'lighter';
-    const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
-    ctx.globalAlpha = 0.8 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
-
-    // Beacons on the main pier tips.
-    const blink = Math.sin(time * 4) > 0;
-    if(blink) {
-        ctx.globalAlpha = 1;
-        const color = canDock ? '140,255,160' : '255,120,100';
-        for(let i = 0; i < 6; i += 2) {
-            const angle = i * Math.PI / 3 - Math.PI / 2;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
-        }
-    }
-    ctx.restore();
-
-    ctx.save();
-    ctx.font = '16px Bungee, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(200, 220, 255, 0.85)';
-    ctx.fillText('ATLANTIS · SHIPYARD', STATION.x, STATION.y - STATION.dockRadius - 14);
-    ctx.restore();
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = drawStation;
-
-
-
-/***/ }),
-/* 25 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
-// DHD (dial-home device) panel: enter six constellation symbols and this gate's point of
-// origin, then press the dome to dial.
-
-
-
-
-
-const SIZE = 520;
-const OUTER = [205, 250];   // inner / outer radius of the outer key ring
-const INNER = [140, 200];
-const DOME = 75;
-
-const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if(className) node.className = className;
-    if(text !== undefined) node.textContent = text;
-    return node;
+    // Arrow keys steer too.
+    if(k('ArrowLeft')) c.yaw = -1;
+    if(k('ArrowRight')) c.yaw = 1;
+    if(k('ArrowUp')) c.pitch = -1;
+    if(k('ArrowDown')) c.pitch = 1;
+    c.fire = mouse.left;
+    c.missiles = mouse.right || k('ShiftLeft');
+    // Aim along the ray from the camera through the mouse.
+    const aim = aimRay();
+    c.aimPoint = aim.point;
+    c.aimTarget = aim.object;
 };
 
-// Key layout in glyph-chart order: glyphs 2-20 on the outer ring, 21-39 and the point of
-// origin on the inner ring.
-const KEYS = [];
-for(let i = 0; i < 19; i++) KEYS.push({ glyph: __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][i], ring: OUTER, slot: i, count: 19 });
-for(let i = 0; i < 20; i++) KEYS.push({ glyph: i < 19 ? __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["b" /* GLYPH_ORDER */][19 + i] : 'origin', ring: INNER, slot: i, count: 20 });
+const raycaster = () => state.raycaster || (state.raycaster = new T.Raycaster());
 
-class DHD {
-
-    constructor() {
-        this.isOpen = false;
-        this.entered = [];
-        this.hover = -1;
-        this.build();
-    }
-
-    build() {
-        const root = el('div', 'dhd-overlay');
-        const panel = el('div', 'dhd-panel');
-        const header = el('div', 'dhd-header');
-        this.title = el('div', 'dhd-title', 'Dial-home device');
-        header.appendChild(this.title);
-        const close = el('button', 'sy-button small', 'Close (Esc)');
-        close.addEventListener('click', () => this.close());
-        header.appendChild(close);
-        panel.appendChild(header);
-
-        this.addressBar = el('canvas', 'dhd-address');
-        panel.appendChild(this.addressBar);
-
-        this.canvas = el('canvas', 'dhd-canvas');
-        panel.appendChild(this.canvas);
-
-        this.status = el('div', 'dhd-status');
-        panel.appendChild(this.status);
-
-        const actions = el('div', 'dhd-actions');
-        const clear = el('button', 'sy-button small', 'Clear');
-        clear.addEventListener('click', () => {
-            this.entered = [];
-            this.say('Address cleared.');
-            this.render();
-        });
-        actions.appendChild(clear);
-        actions.appendChild(el('span', 'dhd-hint', 'Enter 6 symbols, then the point of origin, then press the dome. Addresses are on the starmap (M).'));
-        panel.appendChild(actions);
-
-        root.appendChild(panel);
-        document.body.appendChild(root);
-        this.root = root;
-
-        const ratio = window.devicePixelRatio || 1;
-        this.canvas.width = SIZE * ratio;
-        this.canvas.height = SIZE * ratio;
-        this.canvas.style.width = SIZE + 'px';
-        this.canvas.style.height = SIZE + 'px';
-        this.ctx = this.canvas.getContext('2d');
-        this.ctx.scale(ratio, ratio);
-        this.addressBar.width = 520 * ratio;
-        this.addressBar.height = 70 * ratio;
-        this.addressBar.style.width = '520px';
-        this.addressBar.style.height = '70px';
-        this.barCtx = this.addressBar.getContext('2d');
-        this.barCtx.scale(ratio, ratio);
-
-        this.canvas.addEventListener('mousemove', (event) => {
-            const k = this.keyAt(event);
-            if(k !== this.hover) {
-                this.hover = k;
-                this.render();
-            }
-        });
-        this.canvas.addEventListener('mouseleave', () => {
-            this.hover = -1;
-            this.render();
-        });
-        this.canvas.addEventListener('click', (event) => this.click(event));
-        window.addEventListener('keydown', (event) => {
-            if(!this.isOpen) return;
-            if(event.code === 'Escape') {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                this.close();
-            }
-        }, true);
-    }
-
-    // options: { originIndex, originName, systemId, onDial(targetSystem, symbols), onClose }
-    open(options) {
-        this.options = options;
-        this.entered = [];
-        this.isOpen = true;
-        this.root.classList.add('open');
-        this.title.textContent = 'Dial-home device · ' + options.systemName;
-        this.say(options.busy ? 'The gate is active. Press the dome to shut it down.' : 'Ready.');
-        this.render();
-    }
-
-    close() {
-        if(!this.isOpen) return;
-        this.isOpen = false;
-        this.root.classList.remove('open');
-        if(this.options && this.options.onClose) this.options.onClose();
-    }
-
-    say(text, error) {
-        this.status.textContent = text;
-        this.status.classList.toggle('error', !!error);
-    }
-
-    keyGeometry(key) {
-        const step = Math.PI * 2 / key.count;
-        const a1 = -Math.PI / 2 + key.slot * step - step / 2 + 0.01;
-        const a2 = a1 + step - 0.02;
-        return { a1: a1, a2: a2, mid: (a1 + a2) / 2, r1: key.ring[0], r2: key.ring[1] };
-    }
-
-    keyAt(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        // The canvas may be scaled down by CSS on small screens.
-        const sx = SIZE / (rect.width || SIZE);
-        const sy = SIZE / (rect.height || SIZE);
-        const x = (event.clientX - rect.left) * sx - SIZE / 2;
-        const y = (event.clientY - rect.top) * sy - SIZE / 2;
-        const r = Math.sqrt(x * x + y * y);
-        if(r < DOME) return 'dome';
-        let a = Math.atan2(y, x);
-        for(let i = 0; i < KEYS.length; i++) {
-            const g = this.keyGeometry(KEYS[i]);
-            if(r < g.r1 || r > g.r2) continue;
-            let rel = a - g.a1;
-            while(rel < 0) rel += Math.PI * 2;
-            while(rel > Math.PI * 2) rel -= Math.PI * 2;
-            if(rel <= g.a2 - g.a1) return i;
+const aimRay = () => {
+    const ndc = new T.Vector2((mouse.x / width) * 2 - 1, -(mouse.y / height) * 2 + 1);
+    const rc = raycaster();
+    rc.setFromCamera(ndc, camera);
+    const origin = rc.ray.origin;
+    const dir = rc.ray.direction;
+    let best = null;
+    let bestT = 4000;
+    const test = (obj, r) => {
+        const ox = obj.x - origin.x, oy = obj.y - origin.y, oz = obj.z - origin.z;
+        const along = ox * dir.x + oy * dir.y + oz * dir.z;
+        if(along < 0 || along - r > bestT) return;
+        const d2 = ox * ox + oy * oy + oz * oz - along * along;
+        if(d2 > r * r) return;
+        const t = along - Math.sqrt(r * r - d2);
+        if(t < bestT && t > 0) {
+            bestT = t;
+            best = obj;
         }
-        return -1;
-    }
-
-    glyphOf(key) {
-        return key.glyph === 'origin' ? 'origin:' + this.options.originIndex : key.glyph;
-    }
-
-    click(event) {
-        const k = this.keyAt(event);
-        if(k === -1) return;
-        if(k === 'dome') {
-            this.pressDome();
-            return;
-        }
-        if(this.options.busy) {
-            this.say('The gate is active. Press the dome to shut it down first.', true);
-            return;
-        }
-        const glyph = this.glyphOf(KEYS[k]);
-        if(this.entered.indexOf(glyph) !== -1) return;
-        if(this.entered.length >= 7) {
-            this.say('Seven symbols entered. Press the dome to dial.');
-            return;
-        }
-        this.entered.push(glyph);
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdPress(k);
-        this.say(this.entered.length < 7 ? 'Symbol ' + this.entered.length + ' entered.' : 'Address complete. Press the dome.');
-        this.render();
-    }
-
-    pressDome() {
-        // With the gate dialling or open, the dome shuts it down so a new address can be
-        // entered.
-        if(this.options.busy) {
-            __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();
-            if(this.options.onCancel) this.options.onCancel();
-            this.options.busy = false;
-            this.entered = [];
-            this.say('Gate shut down. Enter a new address.');
-            this.render();
-            return;
-        }
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dhdDome();
-        const origin = 'origin:' + this.options.originIndex;
-        const symbols = this.entered.slice(0, 6);
-        const fail = (message) => {
-            setTimeout(() => __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].dialFail(), 250);
-            this.say(message, true);
-            this.entered = [];
-            this.render();
-        };
-        if(this.entered.length < 7) return fail('Incomplete address: enter six symbols and the point of origin.');
-        if(this.entered[6] !== origin || symbols.some(g => typeof g === 'string')) return fail('The seventh symbol must be this gate\'s point of origin.');
-        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["h" /* systemForAddress */])(symbols);
-        if(!target) return fail('Dialling failed: no Stargate at that address.');
-        if(target.id === this.options.systemId) return fail('You cannot dial the gate you are standing at.');
-        this.options.onDial(target, this.entered.slice());
-        this.close();
-    }
-
-    render() {
-        const ctx = this.ctx;
-        const c = SIZE / 2;
-        ctx.clearRect(0, 0, SIZE, SIZE);
-        ctx.save();
-        ctx.translate(c, c);
-
-        // Pedestal: weathered stone-grey metal with a raised rim between the rings.
-        const base = ctx.createRadialGradient(-60, -80, 20, 0, 0, 262);
-        base.addColorStop(0, 'rgb(96, 92, 86)');
-        base.addColorStop(0.7, 'rgb(62, 59, 55)');
-        base.addColorStop(1, 'rgb(34, 32, 30)');
-        ctx.fillStyle = base;
-        ctx.beginPath();
-        ctx.arc(0, 0, 258, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(20, 18, 16, 0.9)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        [OUTER[0] - 2.5, INNER[0] - 2.5, DOME + 9].forEach(r => {
-            ctx.strokeStyle = 'rgba(150, 142, 130, 0.35)';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(0, 0, r, 0, Math.PI * 2);
-            ctx.stroke();
-        });
-        // Collar around the dome.
-        const collar = ctx.createRadialGradient(0, 0, DOME, 0, 0, DOME + 16);
-        collar.addColorStop(0, 'rgb(30, 28, 26)');
-        collar.addColorStop(1, 'rgb(80, 76, 70)');
-        ctx.fillStyle = collar;
-        ctx.beginPath();
-        ctx.arc(0, 0, DOME + 14, 0, Math.PI * 2);
-        ctx.fill();
-
-        KEYS.forEach((key, i) => {
-            const g = this.keyGeometry(key);
-            const glyph = this.glyphOf(key);
-            const lit = this.entered.indexOf(glyph) !== -1;
-            const hovered = this.hover === i;
-            const r = (g.r1 + g.r2) / 2;
-            const kx = Math.cos(g.mid) * r;
-            const ky = Math.sin(g.mid) * r;
-            ctx.beginPath();
-            ctx.arc(0, 0, g.r2, g.a1, g.a2);
-            ctx.arc(0, 0, g.r1, g.a2, g.a1, true);
-            ctx.closePath();
-            // Each key is a slightly domed tile lit from the top-left.
-            const tile = ctx.createRadialGradient(kx - 10, ky - 12, 2, kx, ky, 40);
-            if(lit) {
-                tile.addColorStop(0, 'rgb(255, 214, 150)');
-                tile.addColorStop(0.5, 'rgb(240, 130, 40)');
-                tile.addColorStop(1, 'rgb(150, 60, 15)');
-            } else {
-                tile.addColorStop(0, hovered ? 'rgb(176, 168, 152)' : 'rgb(150, 143, 130)');
-                tile.addColorStop(1, hovered ? 'rgb(110, 104, 94)' : 'rgb(88, 83, 76)');
-            }
-            ctx.fillStyle = tile;
-            if(lit) {
-                ctx.shadowColor = 'rgba(255, 150, 50, 0.9)';
-                ctx.shadowBlur = 14;
-            }
-            ctx.fill();
-            ctx.shadowBlur = 0;
-            ctx.strokeStyle = 'rgb(28, 25, 22)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            // Engraved glyph: dark groove with a light lower edge (or glowing when lit).
-            const size = key.ring === OUTER ? 30 : 34;
-            if(lit) {
-                ctx.shadowColor = 'rgba(255, 240, 200, 0.9)';
-                ctx.shadowBlur = 8;
-                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(255, 250, 230)', 2.6, 'rgba(170, 70, 10, 0.9)');
-                ctx.shadowBlur = 0;
-            } else {
-                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx + 0.8, ky + 1, size, 'rgba(210, 200, 180, 0.35)', 3);
-                Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, glyph, kx, ky, size, 'rgb(38, 34, 30)', 2.4);
-            }
-        });
-
-        // Dome: the big red crystal. It glows once a full address is entered.
-        const ready = this.entered.length === 7;
-        const dome = ctx.createRadialGradient(-22, -26, 4, 0, 0, DOME);
-        dome.addColorStop(0, ready ? 'rgb(255, 210, 170)' : 'rgb(240, 130, 110)');
-        dome.addColorStop(0.35, ready ? 'rgb(255, 80, 40)' : 'rgb(200, 40, 30)');
-        dome.addColorStop(0.85, ready ? 'rgb(190, 30, 15)' : 'rgb(120, 18, 12)');
-        dome.addColorStop(1, 'rgb(60, 8, 6)');
-        if(ready) {
-            ctx.shadowColor = 'rgba(255, 70, 30, 0.9)';
-            ctx.shadowBlur = 30;
-        }
-        ctx.fillStyle = dome;
-        ctx.beginPath();
-        ctx.arc(0, 0, DOME, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        // Facets inside the crystal.
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(0, 0, DOME - 2, 0, Math.PI * 2);
-        ctx.clip();
-        ctx.strokeStyle = 'rgba(255, 190, 170, 0.18)';
-        ctx.lineWidth = 1.2;
-        for(let i = 0; i < 12; i++) {
-            const a = i * Math.PI / 6;
-            ctx.beginPath();
-            ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
-            ctx.lineTo(Math.cos(a) * DOME, Math.sin(a) * DOME);
-            ctx.stroke();
-        }
-        [18, 42].forEach(rr => {
-            ctx.beginPath();
-            ctx.arc(0, 0, rr, 0, Math.PI * 2);
-            ctx.stroke();
-        });
-        // Specular highlight.
-        const shine = ctx.createRadialGradient(-26, -30, 0, -26, -30, 30);
-        shine.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
-        shine.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = shine;
-        ctx.fillRect(-60, -64, 70, 70);
-        ctx.restore();
-        if(this.hover === 'dome' || ready) {
-            ctx.strokeStyle = 'rgba(255, 200, 150, 0.7)';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.arc(0, 0, DOME, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        ctx.restore();
-
-        // Hovered key name.
-        if(typeof this.hover === 'number' && this.hover >= 0) {
-            const key = KEYS[this.hover];
-            const name = key.glyph === 'origin' ? 'Point of origin · ' + this.options.originName : __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][key.glyph];
-            ctx.font = '14px Bungee, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = '#fff';
-            ctx.fillText(name, c, SIZE - 6);
-        }
-
-        // Address bar: seven slots.
-        const bar = this.barCtx;
-        bar.clearRect(0, 0, 520, 70);
-        for(let i = 0; i < 7; i++) {
-            const x = 30 + i * 70;
-            bar.fillStyle = i < this.entered.length ? 'rgba(240, 140, 50, 0.25)' : 'rgba(255, 255, 255, 0.06)';
-            bar.strokeStyle = i === 6 ? 'rgba(255, 120, 90, 0.7)' : 'rgba(200, 210, 230, 0.4)';
-            bar.lineWidth = 1.5;
-            bar.fillRect(x, 8, 56, 56);
-            bar.strokeRect(x, 8, 56, 56);
-            if(i < this.entered.length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(bar, this.entered[i], x + 28, 36, 38, 'rgb(255, 214, 160)', 3, 'rgba(150, 60, 15, 0.9)');
-            else {
-                bar.font = '10px Bungee, sans-serif';
-                bar.textAlign = 'center';
-                bar.fillStyle = 'rgba(200, 210, 230, 0.5)';
-                bar.fillText(i === 6 ? 'ORIGIN' : String(i + 1), x + 28, 40);
-            }
-        }
-    }
-}
-
-let instance = null;
-const getDHD = () => {
-    if(!instance) instance = new DHD();
-    return instance;
-};
-/* harmony export (immutable) */ __webpack_exports__["a"] = getDHD;
-
-const isDHDOpen = () => !!(instance && instance.isOpen);
-/* harmony export (immutable) */ __webpack_exports__["b"] = isDHDOpen;
-
-
-
-
-
-/***/ }),
-/* 26 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_systems__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-// Starmap: a rotatable 3D map of the constellations (gate symbols) and known worlds.
-// Selecting a world draws the three lines of its gate address meeting at it, and shows
-// the address (plus your current gate's point of origin), the distance and, if your ship
-// has a hyperdrive, the travel time and an "Engage hyperdrive" button.
-
-
-
-
-const LINE_COLORS = ['255,140,90', '120,220,255', '190,255,140'];
-const PLANET_COLORS = { ocean: '90,150,255', earth: '110,170,255', desert: '235,190,120', jungle: '120,210,140',
-    rocky: '230,130,100', industrial: '200,170,230', ice: '170,235,255' };
-
-const el = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if(className) node.className = className;
-    if(text !== undefined) node.textContent = text;
-    return node;
+    };
+    state.enemies.forEach(e => { if(e.alive) test(e, e.radius * 0.9); });
+    state.rocks.forEach(r => { if(!r.dead) test(r, r.radius * 0.85); });
+    const point = origin.clone().addScaledVector(dir, best ? bestT : 1600);
+    return { point: point, object: best };
 };
 
-// Hyperspace travel time in seconds for a distance (light years) and drive speed.
-const hyperTravelTime = (distance, speed) => Math.max(5, Math.min(45, distance / (90 * speed)));
-/* harmony export (immutable) */ __webpack_exports__["b"] = hyperTravelTime;
+// ------------------------------------------------------------ state
 
+const createState = () => {
+    const stats = Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["g" /* getProfile */])().hull);
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship3d__["c" /* default */](T, stats, 'player', effects.texture);
+    scene.add(ship.group);
+    return {
+        ship: ship, enemies: [], rocks: [], ores: [], bullets: [], missiles: [], beamHits: [], floats: [],
+        controls: { thrust: 0, strafe: 0, lift: 0, pitch: 0, yaw: 0, roll: 0, fire: false, missiles: false, aimPoint: null },
+        combat: makeCombat(), time: 0, paused: false, docked: false, transition: null, freeAim: false,
+        cameraDistance: 1, bannerText: '', bannerTimer: 0, enemyTimer: 25 + Math.random() * 15, fieldTimer: 0,
+        gameOverTimer: 0, tractorCount: 0
+    };
+};
 
-class Starmap {
+const makeCombat = () => ({
+    enemies: [], player: [], missiles: { player: [], enemy: [] },
+    refresh() {
+        this.enemies = state.enemies.filter(e => e.alive);
+        const ship = state.ship;
+        this.player = ship.alive && !ship.hidden && !state.transition ? [ship] : [];
+        this.missiles.player = state.missiles.filter(m => !m.dead && m.side === 'player');
+        this.missiles.enemy = state.missiles.filter(m => !m.dead && m.side === 'enemy');
+    },
+    hostileShips(side) { return side === 'player' ? this.enemies : this.player; },
+    hostileMissiles(side, kind) {
+        const list = side === 'player' ? this.missiles.enemy : this.missiles.player;
+        return kind ? list.filter(m => m.kind === kind && !m.dead) : list;
+    }
+});
 
-    constructor() {
-        this.isOpen = false;
-        this.yaw = 0.6;
-        this.pitch = 0.35;
-        this.zoom = 1;
-        this.selected = null;
-        this.build();
-        // Decorative background stars on a far sphere.
-        this.stars = [];
-        for(let i = 0; i < 500; i++) {
-            const y = Math.random() * 2 - 1;
-            const r = Math.sqrt(1 - y * y);
-            const a = Math.random() * Math.PI * 2;
-            this.stars.push([Math.cos(a) * r * 5200, y * 5200, Math.sin(a) * r * 5200, Math.random()]);
+// Load a star system: its asteroid fields, Atlantis (Lantea), the gate, DHD and planet.
+const enterSystem = (system, how) => {
+    clearSystem();
+    state.system = system;
+    state.gate = new __WEBPACK_IMPORTED_MODULE_9__world_stargate__["e" /* default */](system.gate.x, system.gate.y);
+    state.gatePos = new T.Vector3(system.gate.x, system.gate.y, 0);
+    state.dhdPos = new T.Vector3(system.gate.x + 260, system.gate.y, -20);
+    state.stationPos = system.station ? new T.Vector3(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 0) : null;
+    const safe = [{ x: state.gatePos.x, y: state.gatePos.y, z: 0 }];
+    if(state.stationPos) safe.push({ x: 0, y: 0, z: 0 });
+    state.field = new __WEBPACK_IMPORTED_MODULE_2__rocks3d__["a" /* Field3D */](systemSeed(system.id), system.materials, safe);
+
+    if(system.station) {
+        state.station = Object(__WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["b" /* buildAtlantis */])(T, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */]);
+        scene.add(state.station);
+    }
+    state.gateModel = Object(__WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["d" /* buildGate */])(T, __WEBPACK_IMPORTED_MODULE_9__world_stargate__["d" /* GATE_RADIUS */], __WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */], Object(__WEBPACK_IMPORTED_MODULE_9__world_stargate__["f" /* gateSymbolSprite */])(), __WEBPACK_IMPORTED_MODULE_9__world_stargate__["a" /* CHEVRON_ANGLES */]);
+    state.gateModel.group.position.copy(state.gatePos);
+    scene.add(state.gateModel.group);
+    horizon.position.set(state.gatePos.x, state.gatePos.y, -9);
+    kawoosh.position.set(state.gatePos.x, state.gatePos.y, -9);
+    state.dhd = Object(__WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["c" /* buildDHD */])(T);
+    state.dhd.group.position.copy(state.dhdPos);
+    scene.add(state.dhd.group);
+    const planet = Object(__WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["f" /* buildPlanet */])(T, system, __WEBPACK_IMPORTED_MODULE_13__render_planets__["a" /* PALETTES */][system.planet.type] || __WEBPACK_IMPORTED_MODULE_13__render_planets__["a" /* PALETTES */].rocky);
+    planet.holder.traverse(o => { if(o.material) o.material.fog = false; });
+    const dir = new T.Vector3(system.planet.x, -system.planet.y, -14000).normalize();
+    planet.holder.position.copy(dir.multiplyScalar(42000));
+    planet.holder.scale.setScalar(4);
+    sky.add(planet.holder);
+    state.planet = planet;
+
+    const ship = state.ship;
+    ship.velocity.set(0, 0, 0);
+    ship.angular.set(0, 0, 0);
+    if(how === 'gate') {
+        ship.position.copy(state.gatePos).add(new T.Vector3(0, 0, 30));
+        ship.quaternion.setFromUnitVectors(new T.Vector3(1, 0, 0), new T.Vector3(0, 0, 1));
+        ship.velocity.set(0, 0, 160);
+        state.gate.incoming();
+    } else if(how === 'hyper') {
+        const a = Math.random() * Math.PI * 2;
+        ship.position.set(state.gatePos.x + Math.cos(a) * 1400, state.gatePos.y + Math.sin(a) * 1400, 200);
+        const toward = state.gatePos.clone().sub(ship.position).normalize();
+        ship.quaternion.setFromUnitVectors(new T.Vector3(1, 0, 0), toward);
+        ship.velocity.copy(toward).multiplyScalar(240);
+    } else {
+        // Launch from Atlantis.
+        ship.position.set(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + 520, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 60);
+        ship.quaternion.identity();
+    }
+    state.rocks = state.field.update(ship.x, ship.y, ship.z, []);
+    state.enemyTimer = 20 + Math.random() * 15;
+    banner(how ? 'Arrived at ' + system.name : 'Undocked from Atlantis. Happy mining!', 2.5);
+};
+
+const clearSystem = () => {
+    ['station'].forEach(key => { if(state[key]) { scene.remove(state[key]); state[key] = null; } });
+    if(state.gateModel) scene.remove(state.gateModel.group);
+    if(state.dhd) scene.remove(state.dhd.group);
+    if(state.planet) {
+        sky.remove(state.planet.holder);
+        state.planet.textures.map.dispose();
+        state.planet.textures.clouds.dispose();
+        state.planet = null;
+    }
+    state.enemies.forEach(e => scene.remove(e.group));
+    state.enemies = [];
+    state.rocks = [];
+    state.ores = [];
+    state.bullets = [];
+    state.missiles = [];
+    effects.clear();
+};
+
+// ------------------------------------------------------------ helpers
+
+const banner = (text, duration) => {
+    state.bannerText = text;
+    state.bannerTimer = duration || 1.6;
+};
+
+const floatText = (p, text, color) => {
+    state.floats.push({ p: new T.Vector3(p.x, p.y, p.z), text: text, color: color || '255,225,120', life: 1.4 });
+};
+
+const dist = (a, b) => Math.sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z));
+
+// First point along segment a->b inside a sphere (center c, radius r): 0..1, or -1.
+const segmentSphere = (ax, ay, az, bx, by, bz, cx, cy, cz, r) => {
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const fx = ax - cx, fy = ay - cy, fz = az - cz;
+    const a = dx * dx + dy * dy + dz * dz;
+    const b = 2 * (fx * dx + fy * dy + fz * dz);
+    const c = fx * fx + fy * fy + fz * fz - r * r;
+    if(c < 0) return 0;
+    const disc = b * b - 4 * a * c;
+    if(disc < 0 || a === 0) return -1;
+    const t = (-b - Math.sqrt(disc)) / (2 * a);
+    return t >= 0 && t <= 1 ? t : -1;
+};
+
+// Does a point touch a ship (its shield bubble when raised, otherwise its hull)?
+const shipHit = (ship, p, pad) => {
+    const broad = ship.radius * 1.6 + pad;
+    if(dist(ship, p) > broad) return null;
+    if(ship.shieldUp) return ship.shieldContact(p, pad) ? { shield: true } : null;
+    const colliders = ship.worldColliders();
+    for(let i = 0; i < colliders.length; i++) {
+        if(colliders[i].p.distanceTo(p) < colliders[i].r + pad) return { shield: false };
+    }
+    return null;
+};
+
+// Beam / ray against asteroids and hostile ships.
+const raycast = (origin, dir, range, side) => {
+    let best = null;
+    let bestT = range;
+    const test = (obj, r) => {
+        const ox = obj.x - origin.x, oy = obj.y - origin.y, oz = obj.z - origin.z;
+        const along = ox * dir.x + oy * dir.y + oz * dir.z;
+        if(along < 0 || along - r > bestT) return;
+        const d2 = ox * ox + oy * oy + oz * oz - along * along;
+        if(d2 > r * r) return;
+        const t = Math.max(0, along - Math.sqrt(r * r - d2));
+        if(t < bestT) {
+            bestT = t;
+            best = obj;
         }
+    };
+    state.rocks.forEach(r => { if(!r.dead) test(r, r.radius * 0.85); });
+    state.combat.hostileShips(side).forEach(s => test(s, s.shieldUp ? Math.max(s.shieldShape.rx, s.shieldShape.ry) * 0.9 : s.radius * 0.7));
+    return { distance: bestT, object: best };
+};
+
+// ------------------------------------------------------------ mining
+
+const spawnOre = (p, material, vx, vy, vz) => {
+    state.ores.push({ x: p.x, y: p.y, z: p.z, vx: vx, vy: vy, vz: vz, material: material, life: ORE_LIFETIME,
+        angle: Math.random() * 6, spin: (Math.random() - 0.5) * 4, phase: Math.random() * 6,
+        radius: material === 'rock' ? 2.8 : 3.4, dead: false, eject: 0 });
+};
+
+// A hit on an asteroid: dust and sparks, ore knocked loose, the rock worn down, and big
+// rocks split in two once they've taken enough.
+const hitRock = (rock, damage, point, dir, kind) => {
+    if(rock.dead) return;
+    rock.flash = 0.08;
+    const tint = (rock.tint || [0.5, 0.48, 0.45]).map(v => Math.round(v * 255)).join(',');
+    const out = new T.Vector3(point.x - rock.x, point.y - rock.y, point.z - rock.z).normalize();
+    const rv = new T.Vector3(rock.vx, rock.vy, rock.vz);
+    effects.burst(point, rv, Math.min(10, 2 + Math.round(damage)), { minSpeed: 10, maxSpeed: 60, minLife: 0.8, maxLife: 1.8, size: 7 + damage * 0.4, grow: 6, color: tint, alpha: 0.45, drag: 0.8, dust: true, dir: out, cone: 0.9 });
+    effects.burst(point, rv, kind === 'plasma' ? 14 : 3, { minSpeed: 60, maxSpeed: 220, minLife: 0.15, maxLife: 0.5, size: kind === 'plasma' ? 4 : 2, color: kind === 'plasma' ? '255,170,60' : '255,220,160', drag: 1, dir: out, cone: 1 });
+    if(kind === 'plasma') __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].plasmaImpact();
+    else if(kind !== 'beam') __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].rockHit(rock.radius < 40);
+
+    rock.oreProgress += damage / (6 + rock.radius * 0.12);
+    while(rock.oreProgress >= 1) {
+        rock.oreProgress -= 1;
+        const speed = 30 + Math.random() * 60;
+        spawnOre(point, rock.pickOre(), rock.vx + out.x * speed + (Math.random() - 0.5) * 30,
+            rock.vy + out.y * speed + (Math.random() - 0.5) * 30, rock.vz + out.z * speed + (Math.random() - 0.5) * 30);
     }
 
-    build() {
-        const root = el('div', 'starmap-overlay');
-        this.canvas = el('canvas', 'starmap-canvas');
-        root.appendChild(this.canvas);
+    // Wear the rock down (more material comes off big rocks per hit, like chipping a face).
+    const volume = rock.radius * rock.radius * rock.radius - damage * (30 + rock.radius * 6);
+    rock.wear += damage;
+    if(volume <= 7 * 7 * 7) {
+        rock.dead = true;
+        effects.burst(new T.Vector3(rock.x, rock.y, rock.z), rv, 18, { minSpeed: 10, maxSpeed: 70, minLife: 1, maxLife: 2.4, size: 12, grow: 8, color: tint, alpha: 0.4, drag: 0.6, dust: true });
+        spawnOre(point, rock.pickOre(), rock.vx, rock.vy, rock.vz);
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].rockCrack();
+        return;
+    }
+    rock.radius = Math.cbrt(volume);
+    if(rock.radius > 28 && rock.wear > rock.radius * 2.5) splitRock(rock, out);
+};
 
-        const side = el('div', 'starmap-side');
-        side.appendChild(el('div', 'starmap-title', 'Starmap'));
-        side.appendChild(el('div', 'starmap-hint', (('ontouchstart' in window) ? 'Drag to rotate, pinch to zoom, tap a world to see its gate address.' : 'Drag to rotate, wheel to zoom, click a world to see its gate address.')));
-        this.info = el('div', 'starmap-info');
-        side.appendChild(this.info);
-        const close = el('button', 'sy-button small', 'Close (M / Esc)');
-        close.addEventListener('click', () => this.close());
-        side.appendChild(close);
-        root.appendChild(side);
+const splitRock = (rock, hitDir) => {
+    rock.dead = true;
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].rockCrack();
+    const pieces = rock.radius > 90 ? 3 : 2;
+    const r = rock.radius * Math.cbrt(1 / pieces);
+    // Pieces drift apart sideways from the line of the cut.
+    const side = new T.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).cross(hitDir).normalize();
+    for(let i = 0; i < pieces; i++) {
+        const a = (i / pieces) * Math.PI * 2;
+        const offset = side.clone().applyAxisAngle(hitDir, a).multiplyScalar(r * 0.9);
+        const speed = 18 + Math.random() * 18;
+        state.rocks.push(new __WEBPACK_IMPORTED_MODULE_2__rocks3d__["b" /* Rock3D */]({
+            x: rock.x + offset.x, y: rock.y + offset.y, z: rock.z + offset.z,
+            vx: rock.vx + offset.x / r * speed, vy: rock.vy + offset.y / r * speed, vz: rock.vz + offset.z / r * speed,
+            radius: r, composition: rock.composition, grace: 0.6
+        }));
+    }
+    effects.burst(new T.Vector3(rock.x, rock.y, rock.z), null, 22, { minSpeed: 10, maxSpeed: 80, minLife: 1, maxLife: 2.5, size: 14, grow: 10, color: '150,140,130', alpha: 0.35, drag: 0.6, dust: true });
+};
 
-        document.body.appendChild(root);
-        this.root = root;
-        this.ctx = this.canvas.getContext('2d');
-
-        // Pointer events cover mouse and touch: one pointer drags to rotate (a tap picks a
-        // world), two pointers pinch to zoom.
-        let drag = null;
-        const pointers = {};
-        let pinch = null;
-        const pinchDistance = () => {
-            const ids = Object.keys(pointers);
-            const a = pointers[ids[0]], b = pointers[ids[1]];
-            return Math.hypot(a.x - b.x, a.y - b.y) || 1;
-        };
-        this.canvas.style.touchAction = 'none';
-        this.canvas.addEventListener('pointerdown', (event) => {
-            event.preventDefault();
-            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
-            if(this.canvas.setPointerCapture) {
-                try { this.canvas.setPointerCapture(event.pointerId); } catch(e) { /* ignore */ }
+const updateOres = (dt) => {
+    const ship = state.ship;
+    let tractored = 0;
+    const canCollect = ship.alive && !ship.hidden && !state.transition;
+    state.ores.forEach(ore => {
+        ore.life -= dt;
+        if(ore.life <= 0) ore.dead = true;
+        if(ore.eject > 0) ore.eject -= dt;
+        ore.tractored = false;
+        if(canCollect && ore.eject <= 0) {
+            const dx = ship.x - ore.x, dy = ship.y - ore.y, dz = ship.z - ore.z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+            if(ship.shieldUp && ship.shieldContact(new T.Vector3(ore.x, ore.y, ore.z), 2)) {
+                // Ore burns up on raised shields.
+                ore.dead = true;
+                ship.shield = Math.max(0, ship.shield - 0.25);
+                effects.burst(new T.Vector3(ore.x, ore.y, ore.z), ship.velocity, 5, { minSpeed: 20, maxSpeed: 80, minLife: 0.15, maxLife: 0.4, size: 3, color: ship.hullDef.shieldColor || '120,210,255' });
+                __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].shieldHit(0.3);
+            } else if(!ship.shieldUp && d < ship.magnetRange) {
+                tractored++;
+                ore.tractored = true;
+                const pull = 260 + (1 - d / ship.magnetRange) * 500;
+                ore.vx += (dx / d * pull + (ship.vx - ore.vx) * 3) * dt;
+                ore.vy += (dy / d * pull + (ship.vy - ore.vy) * 3) * dt;
+                ore.vz += (dz / d * pull + (ship.vz - ore.vz) * 3) * dt;
+                if(d < ship.collectRadius) {
+                    if(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["u" /* storeOre */])(ore.material, ship.cargoCapacity)) {
+                        ore.dead = true;
+                        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].pickup(__WEBPACK_IMPORTED_MODULE_12__world_materials__["b" /* default */][ore.material].price);
+                        floatText(ore, '+' + __WEBPACK_IMPORTED_MODULE_12__world_materials__["b" /* default */][ore.material].name, __WEBPACK_IMPORTED_MODULE_12__world_materials__["b" /* default */][ore.material].color);
+                    } else if(!state.holdFullWarned) {
+                        state.holdFullWarned = true;
+                        banner('Cargo hold full: sell at Atlantis');
+                    }
+                }
             }
-            if(Object.keys(pointers).length === 2) {
-                drag = null;
-                pinch = { distance: pinchDistance(), zoom: this.zoom };
-            } else if(!pinch) {
-                drag = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: this.yaw, pitch: this.pitch, moved: false };
+        }
+        ore.x += ore.vx * dt; ore.y += ore.vy * dt; ore.z += ore.vz * dt;
+        ore.angle += ore.spin * dt;
+    });
+    if(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["d" /* cargoUsed */])() < ship.cargoCapacity) state.holdFullWarned = false;
+    state.tractorCount = tractored;
+    state.ores = state.ores.filter(o => !o.dead);
+};
+
+// ------------------------------------------------------------ combat
+
+const updateBullets = (dt) => {
+    const combat = state.combat;
+    state.bullets.forEach(b => {
+        if(b.dead) return;
+        const ax = b.x, ay = b.y, az = b.z;
+        b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+        b.age += dt;
+        b.life -= dt;
+        if(b.life <= 0) {
+            b.dead = true;
+            return;
+        }
+        // Hostile ships first.
+        const targets = combat.hostileShips(b.side);
+        const p = new T.Vector3(b.x, b.y, b.z);
+        for(let i = 0; i < targets.length; i++) {
+            const ship = targets[i];
+            const hit = shipHit(ship, p, b.kind === 'plasma' ? Math.max(8, (b.splash || 30) * 0.4) : 3);
+            if(!hit) continue;
+            b.dead = true;
+            ship.takeDamage(b.damage * __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["b" /* SHIP_DAMAGE */][b.kind], __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["a" /* DAMAGE_TYPE */][b.kind]);
+            const dir = new T.Vector3(b.vx, b.vy, b.vz).normalize();
+            ship.velocity.addScaledVector(dir, b.mass * 6 / ship.stats.mass);
+            effects.burst(p, ship.velocity, b.kind === 'plasma' ? 16 : 5, { minSpeed: 40, maxSpeed: b.kind === 'plasma' ? 220 : 160, minLife: 0.15, maxLife: 0.45, size: b.kind === 'plasma' ? 4 : 2.2,
+                color: hit.shield ? (ship.hullDef.shieldColor || '120,210,255') : (b.kind === 'plasma' ? '255,170,60' : '255,220,160'), drag: 0.8 });
+            if(b.kind === 'plasma') __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].plasmaImpact();
+            return;
+        }
+        // Asteroids (swept, so fast rounds don't skip through small rocks).
+        for(let i = 0; i < state.rocks.length; i++) {
+            const rock = state.rocks[i];
+            if(rock.dead) continue;
+            const r = rock.radius * 0.85;
+            if(Math.abs(rock.x - b.x) > r + 30 || Math.abs(rock.y - b.y) > r + 30 || Math.abs(rock.z - b.z) > r + 30) continue;
+            const t = segmentSphere(ax, ay, az, b.x, b.y, b.z, rock.x, rock.y, rock.z, r);
+            if(t < 0) continue;
+            b.dead = true;
+            const hp = new T.Vector3(ax + (b.x - ax) * t, ay + (b.y - ay) * t, az + (b.z - az) * t);
+            const dir = new T.Vector3(b.vx, b.vy, b.vz).normalize();
+            const kick = Math.min(20, 1100 * b.mass / rock.mass);
+            rock.vx += dir.x * kick; rock.vy += dir.y * kick; rock.vz += dir.z * kick;
+            hitRock(rock, b.damage, hp, dir, b.kind);
+            if(b.kind === 'plasma') {
+                state.rocks.forEach(other => {
+                    if(other === rock || other.dead) return;
+                    if(dist(other, hp) < (b.splash || 30) + other.radius) hitRock(other, b.damage * 0.5, hp, dir, 'plasma');
+                });
             }
-        });
-        this.canvas.addEventListener('pointermove', (event) => {
-            if(!this.isOpen || !pointers[event.pointerId]) return;
-            pointers[event.pointerId] = { x: event.clientX, y: event.clientY };
-            if(pinch && Object.keys(pointers).length >= 2) {
-                this.zoom = Math.max(0.5, Math.min(3, pinch.zoom * pinchDistance() / pinch.distance));
+            return;
+        }
+        // Kinetic rounds can shoot down missiles (never drones).
+        if(b.kind === 'bullet') {
+            const incoming = combat.hostileMissiles(b.side, 'missile');
+            for(let i = 0; i < incoming.length; i++) {
+                const m = incoming[i];
+                if(m.dead) continue;
+                if(segmentSphere(ax, ay, az, b.x, b.y, b.z, m.x, m.y, m.z, 12) < 0) continue;
+                b.dead = true;
+                m.damage *= 0.3;
+                detonate(m);
                 return;
             }
-            if(!drag || drag.id !== event.pointerId) return;
-            const dx = event.clientX - drag.x;
-            const dy = event.clientY - drag.y;
-            if(Math.abs(dx) + Math.abs(dy) > (event.pointerType === 'mouse' ? 4 : 10)) drag.moved = true;
-            this.yaw = drag.yaw + dx * 0.008;
-            this.pitch = Math.max(-1.4, Math.min(1.4, drag.pitch + dy * 0.008));
-        });
-        const release = (event) => {
-            if(drag && drag.id === event.pointerId && !drag.moved && this.isOpen && event.type === 'pointerup') this.pick(event);
-            if(drag && drag.id === event.pointerId) drag = null;
-            delete pointers[event.pointerId];
-            if(Object.keys(pointers).length === 0) pinch = null;
-        };
-        this.canvas.addEventListener('pointerup', release);
-        this.canvas.addEventListener('pointercancel', release);
-        this.canvas.addEventListener('wheel', (event) => {
-            event.preventDefault();
-            this.zoom = Math.max(0.5, Math.min(3, this.zoom * Math.exp(-event.deltaY * 0.0012)));
-        }, { passive: false });
-        window.addEventListener('keydown', (event) => {
-            if(!this.isOpen) return;
-            if(event.code === 'KeyJ') {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                this.engage();
+        }
+    });
+    state.bullets = state.bullets.filter(b => !b.dead);
+};
+
+const MISSILE_PROFILE = {
+    missile: { accel: 560, max: 680, trail: '255,150,70' },
+    drone: { accel: 950, max: 820, trail: '255,220,120' }
+};
+
+const updateMissiles = (dt) => {
+    const combat = state.combat;
+    state.missiles.forEach(m => {
+        if(m.dead) return;
+        m.life -= dt;
+        if(m.life <= 0) {
+            detonate(m);
+            return;
+        }
+        const profile = MISSILE_PROFILE[m.kind];
+        // Targets: drones hunt hostile drones first; then ships (unless set to asteroids).
+        m.retarget = (m.retarget || 0) - dt;
+        if(m.homing > 0 && (m.retarget <= 0 || !m.target || m.target.dead)) {
+            m.retarget = 0.25;
+            const near = (list, range) => {
+                let best = null;
+                let bestD = range;
+                list.forEach(o => {
+                    if(o.dead) return;
+                    const d = dist(o, m);
+                    if(d < bestD) { bestD = d; best = o; }
+                });
+                return best;
+            };
+            const drone = m.kind === 'drone' ? near(combat.hostileMissiles(m.side, 'drone'), 1000) : null;
+            if(drone) m.target = drone;
+            else if(!m.target || m.target.dead || (!m.target.hullDef && m.targetMode !== 'asteroids')) {
+                const ship = m.targetMode !== 'asteroids' ? near(combat.hostileShips(m.side), 1400) : null;
+                if(ship) m.target = ship;
+                else if(!m.target || m.target.dead) m.target = m.targetMode !== 'ships' ? near(state.rocks, 700) : null;
+            }
+        }
+        if(m.homing > 0 && m.target && !m.target.dead) {
+            const want = new T.Vector3(m.target.x - m.x, m.target.y - m.y, m.target.z - m.z);
+            const d = want.length();
+            want.normalize();
+            const terminal = d < 320 ? 1 + 2.5 * (1 - d / 320) : 1;
+            const angle = m.dir.angleTo(want);
+            const maxTurn = m.homing * terminal * dt;
+            if(angle > 1e-4) {
+                const axis = new T.Vector3().crossVectors(m.dir, want).normalize();
+                if(axis.lengthSq() > 0) m.dir.applyAxisAngle(axis, Math.min(angle, maxTurn)).normalize();
+            }
+        }
+        m.vx += m.dir.x * profile.accel * dt; m.vy += m.dir.y * profile.accel * dt; m.vz += m.dir.z * profile.accel * dt;
+        if(m.homing > 0) {
+            // Side thrust bleeds off drift so it flies where it points.
+            const forward = m.vx * m.dir.x + m.vy * m.dir.y + m.vz * m.dir.z;
+            const k = Math.min(1, m.homing * 0.8 * dt);
+            m.vx += (m.dir.x * forward - m.vx) * k; m.vy += (m.dir.y * forward - m.vy) * k; m.vz += (m.dir.z * forward - m.vz) * k;
+        }
+        const speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy + m.vz * m.vz);
+        if(speed > profile.max) { m.vx *= profile.max / speed; m.vy *= profile.max / speed; m.vz *= profile.max / speed; }
+        m.x += m.vx * dt; m.y += m.vy * dt; m.z += m.vz * dt;
+        m.trail = (m.trail || 0) - dt;
+        if(m.trail <= 0) {
+            m.trail = 0.02;
+            effects.spawn({ x: m.x - m.dir.x * 4, y: m.y - m.dir.y * 4, z: m.z - m.dir.z * 4, vx: m.vx * 0.15, vy: m.vy * 0.15, vz: m.vz * 0.15,
+                life: 0.35, size: m.kind === 'drone' ? 4 : 5, color: profile.trail, alpha: 0.8 });
+            if(m.kind === 'missile' && Math.random() < 0.5) {
+                effects.spawn({ x: m.x - m.dir.x * 6, y: m.y - m.dir.y * 6, z: m.z - m.dir.z * 6, life: 1.2, size: 7, grow: 8, color: '190,185,180', alpha: 0.25 }, true);
+            }
+        }
+        // Contact or proximity fuse.
+        const p = new T.Vector3(m.x, m.y, m.z);
+        const ships = combat.hostileShips(m.side);
+        for(let i = 0; i < ships.length; i++) {
+            if(shipHit(ships[i], p, Math.max(4, m.blast * 0.45))) {
+                detonate(m);
                 return;
             }
-            if(event.code === 'Escape' || event.code === 'KeyM') {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                this.close();
+        }
+        for(let i = 0; i < state.rocks.length; i++) {
+            const rock = state.rocks[i];
+            if(!rock.dead && dist(rock, m) < rock.radius * 0.85 + 3) {
+                detonate(m);
+                return;
             }
-        }, true);
-        window.addEventListener('resize', () => { if(this.isOpen) this.resize(); });
-    }
-
-    // options: { systemId, originIndex, hyperdrive: { speed } | null, onEngage(system), onClose }
-    open(options) {
-        this.options = options;
-        this.isOpen = true;
-        this.root.classList.add('open');
-        if(!this.selected || this.selected === options.systemId) this.selected = null;
-        this.resize();
-        this.renderInfo();
-        const loop = () => {
-            if(!this.isOpen) return;
-            this.render();
-            this.frame = requestAnimationFrame(loop);
-        };
-        loop();
-    }
-
-    close() {
-        if(!this.isOpen) return;
-        this.isOpen = false;
-        this.root.classList.remove('open');
-        cancelAnimationFrame(this.frame);
-        if(this.options.onClose) this.options.onClose();
-    }
-
-    resize() {
-        const rect = this.canvas.getBoundingClientRect();
-        const ratio = window.devicePixelRatio || 1;
-        this.width = rect.width;
-        this.height = rect.height;
-        this.canvas.width = rect.width * ratio;
-        this.canvas.height = rect.height * ratio;
-        this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    }
-
-    project(p) {
-        const cy = Math.cos(this.yaw);
-        const sy = Math.sin(this.yaw);
-        const cp = Math.cos(this.pitch);
-        const sp = Math.sin(this.pitch);
-        const x1 = p[0] * cy - p[2] * sy;
-        const z1 = p[0] * sy + p[2] * cy;
-        const y2 = p[1] * cp - z1 * sp;
-        const z2 = p[1] * sp + z1 * cp;
-        const camera = 9000 / this.zoom;
-        const scale = Math.min(this.width, this.height) * 0.9 / (camera + z2) * this.zoom * 0.95;
-        return { x: this.width / 2 + x1 * scale, y: this.height / 2 + y2 * scale, depth: z2, scale: scale };
-    }
-
-    pick(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        let best = null;
-        const reach = event.pointerType && event.pointerType !== 'mouse' ? 34 : 22;
-        let bestDist = reach * reach;
-        __WEBPACK_IMPORTED_MODULE_0__world_systems__["b" /* SYSTEMS */].forEach(system => {
-            const p = this.project(system.map);
-            const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
-            if(d < bestDist) {
-                bestDist = d;
-                best = system.id;
+        }
+        if(m.kind === 'drone') {
+            const drones = combat.hostileMissiles(m.side, 'drone');
+            for(let i = 0; i < drones.length; i++) {
+                if(!drones[i].dead && dist(drones[i], m) < 16) {
+                    detonate(m);
+                    detonate(drones[i]);
+                    return;
+                }
             }
-        });
-        if(best) {
-            this.selected = best;
-            this.renderInfo();
         }
-    }
+    });
+    state.missiles = state.missiles.filter(m => !m.dead);
+};
 
-    renderInfo() {
-        const box = this.info;
-        box.innerHTML = '';
-        const here = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.options.systemId);
-        box.appendChild(el('div', 'starmap-here', 'You are at ' + here.name + ' (' + here.galaxy + ')'));
-        if(!this.selected) {
-            box.appendChild(el('p', 'muted', 'Select a world on the map.'));
-            return;
-        }
-        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected);
-        box.appendChild(el('div', 'starmap-name', target.name));
-        box.appendChild(el('div', 'starmap-galaxy', target.galaxy + ' galaxy'));
-        box.appendChild(el('p', '', target.description));
-        if(target.id === here.id) {
-            box.appendChild(el('p', 'muted', 'This is your current location.'));
-            return;
-        }
+// Explosion: damage to asteroids and ships of the other side, and missile blasts stop
+// missiles, drone blasts stop drones.
+const detonate = (m) => {
+    if(m.handled) return;
+    m.handled = true;
+    m.dead = true;
+    const p = new T.Vector3(m.x, m.y, m.z);
+    const drone = m.kind === 'drone';
+    effects.explosion(p, new T.Vector3(m.vx * 0.1, m.vy * 0.1, m.vz * 0.1), m.blast, drone ? '255,220,140' : '255,170,90');
+    if(drone) __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].droneImpact();
+    else __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].missileExplosion();
+    state.rocks.forEach(rock => {
+        if(rock.dead) return;
+        const d = dist(rock, p);
+        const reach = m.blast + rock.radius;
+        if(d > reach) return;
+        const falloff = 1 - d / reach;
+        const dir = new T.Vector3(rock.x - p.x, rock.y - p.y, rock.z - p.z).normalize();
+        const push = Math.min(50, 60000 * falloff / rock.mass);
+        rock.vx += dir.x * push; rock.vy += dir.y * push; rock.vz += dir.z * push;
+        hitRock(rock, m.damage * (0.35 + 0.65 * falloff), new T.Vector3(rock.x, rock.y, rock.z).addScaledVector(dir, -rock.radius * 0.8), dir, m.kind);
+    });
+    const type = __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["a" /* DAMAGE_TYPE */][m.kind];
+    state.combat.hostileShips(m.side).forEach(ship => {
+        const d = dist(ship, p);
+        const reach = m.blast + ship.radius * 0.8;
+        if(d > reach) return;
+        const falloff = 1 - d / reach;
+        ship.takeDamage(m.damage * __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["b" /* SHIP_DAMAGE */][m.kind] * (0.4 + 0.6 * falloff), type);
+        const dir = new T.Vector3(ship.x - p.x, ship.y - p.y, ship.z - p.z).normalize();
+        ship.velocity.addScaledVector(dir, Math.min(40, 24000 * falloff / ship.mass));
+    });
+    state.combat.hostileMissiles(m.side, m.kind).forEach(other => {
+        if(other.dead || dist(other, p) > m.blast * 1.1) return;
+        other.damage *= 0.3;
+        detonate(other);
+    });
+};
 
-        box.appendChild(el('div', 'starmap-label', 'Gate address (dial at the DHD)'));
-        const glyphs = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["d" /* addressOf */])(target.id).concat(['origin:' + this.options.originIndex]);
-        const strip = el('canvas', 'starmap-glyphs');
-        const ratio = window.devicePixelRatio || 1;
-        strip.width = 7 * 40 * ratio;
-        strip.height = 58 * ratio;
-        strip.style.width = 7 * 40 + 'px';
-        strip.style.height = '58px';
-        const sctx = strip.getContext('2d');
-        sctx.scale(ratio, ratio);
-        glyphs.forEach((g, i) => {
-            const color = i < 6 ? 'rgb(' + LINE_COLORS[Math.floor(i / 2)] + ')' : 'rgb(255, 140, 120)';
-            sctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-            sctx.strokeRect(i * 40 + 2, 2, 36, 36);
-            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(sctx, g, i * 40 + 20, 20, 28, color, 2.6, 'rgba(10, 20, 50, 0.9)');
-            sctx.font = '7px sans-serif';
-            sctx.textAlign = 'center';
-            sctx.fillStyle = 'rgba(220, 230, 255, 0.8)';
-            const name = i < 6 ? __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */][g] : here.origin;
-            sctx.fillText(name.length > 10 ? name.slice(0, 9) + '.' : name, i * 40 + 20, 50);
-        });
-        box.appendChild(strip);
-        box.appendChild(el('p', 'muted', 'Symbols 1-2, 3-4 and 5-6 are the three lines meeting at ' + target.name +
-            '. The last is the point of origin of the gate you dial from (' + here.origin + ').'));
-
-        const distance = Math.round(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["f" /* distanceBetween */])(here.id, target.id));
-        box.appendChild(el('div', 'starmap-label', 'Distance: ' + distance.toLocaleString('en-US') + ' light years'));
-        const drive = this.options.hyperdrive;
-        if(drive) {
-            const time = hyperTravelTime(distance, drive.speed);
-            box.appendChild(el('p', '', 'Hyperspace travel time: ' + time.toFixed(1) + ' s'));
-            const engage = el('button', 'sy-button primary', 'Engage hyperdrive (J)');
-            engage.addEventListener('click', () => this.engage());
-            box.appendChild(engage);
+const applyBeamHits = () => {
+    state.beamHits.forEach(h => {
+        if(h.object.hullDef) {
+            h.object.takeDamage(h.damage * __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["b" /* SHIP_DAMAGE */].beam, 'energy', true);
         } else {
-            box.appendChild(el('p', 'muted', 'No hyperdrive fitted: use the Stargate. Fly to the DHD and press B.'));
+            h.object.vx += h.dir.x * 0.4; h.object.vy += h.dir.y * 0.4; h.object.vz += h.dir.z * 0.4;
+            hitRock(h.object, h.damage, h.point, h.dir, 'beam');
         }
-    }
+        if(Math.random() < 0.4) effects.burst(h.point, null, 1, { minSpeed: 40, maxSpeed: 160, minLife: 0.15, maxLife: 0.4, size: 3, color: '190,230,255' });
+        if(Math.random() < 0.3) __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].beamImpact();
+    });
+    state.beamHits = [];
+};
 
-    engage() {
-        if(!this.selected || !this.options.hyperdrive || this.selected === this.options.systemId) return;
-        const target = Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected);
-        this.options.onEngage(target);
-        this.close();
-    }
-
-    render() {
-        const ctx = this.ctx;
-        const w = this.width;
-        const h = this.height;
-        ctx.fillStyle = 'rgb(3, 6, 14)';
-        ctx.fillRect(0, 0, w, h);
-        this.yaw += 0.0008;
-
-        // Background stars.
-        this.stars.forEach(s => {
-            const p = this.project(s);
-            if(p.scale <= 0) return;
-            ctx.fillStyle = 'rgba(200, 215, 255, ' + (0.15 + s[3] * 0.4) + ')';
-            ctx.fillRect(p.x, p.y, 1.2, 1.2);
-        });
-
-        const selectedGlyphs = this.selected && this.selected !== this.options.systemId ? Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["d" /* addressOf */])(this.selected) : [];
-
-        // Address lines for the selected world.
-        if(selectedGlyphs.length) {
-            Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["c" /* addressLines */])(this.selected).forEach((line, i) => {
-                const a = this.project(line[0]);
-                const b = this.project(line[1]);
-                ctx.strokeStyle = 'rgba(' + LINE_COLORS[i] + ', 0.75)';
-                ctx.lineWidth = 1.8;
-                ctx.beginPath();
-                ctx.moveTo(a.x, a.y);
-                ctx.lineTo(b.x, b.y);
-                ctx.stroke();
-            });
-        }
-
-        // Constellations.
-        __WEBPACK_IMPORTED_MODULE_0__world_systems__["a" /* CONSTELLATIONS */].forEach((name, i) => {
-            const p = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["e" /* constellationPosition */])(i));
-            const inAddress = selectedGlyphs.indexOf(i);
-            const near = Math.max(0.25, Math.min(1, 0.65 - p.depth / 8000));
-            const color = inAddress !== -1 ? 'rgba(' + LINE_COLORS[Math.floor(inAddress / 2)] + ', 1)' : 'rgba(170, 190, 230, ' + near + ')';
-            // The constellation's star figure; constellations in the selected address also
-            // show their gate glyph beside it.
-            const size = (inAddress !== -1 ? 40 : 26) * Math.max(0.7, Math.min(1.4, p.scale * 12));
-            Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["c" /* drawConstellation */])(ctx, i, p.x, p.y, size, inAddress !== -1 ? color : 'rgba(150, 175, 230, ' + (near * 0.55) + ')',
-                inAddress !== -1 ? '#fff' : 'rgba(225, 235, 255, ' + near + ')');
-            if(inAddress !== -1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, i, p.x + size * 0.75, p.y - size * 0.45, 20, color, 2.4, 'rgba(5, 10, 30, 0.9)');
-            ctx.font = (inAddress !== -1 ? '11px' : '9px') + ' sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = color;
-            ctx.fillText(name, p.x, p.y + size * 0.5 + (inAddress !== -1 ? 13 : 10));
-        });
-
-        // Worlds.
-        __WEBPACK_IMPORTED_MODULE_0__world_systems__["b" /* SYSTEMS */].forEach(system => {
-            const p = this.project(system.map);
-            const color = PLANET_COLORS[system.planet.type];
-            const current = system.id === this.options.systemId;
-            const selected = system.id === this.selected;
-            ctx.fillStyle = 'rgb(' + color + ')';
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, selected ? 7 : 5, 0, Math.PI * 2);
-            ctx.fill();
-            if(current || selected) {
-                ctx.strokeStyle = current ? 'rgba(140, 255, 160, 0.9)' : 'rgba(255, 255, 255, 0.9)';
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
-                ctx.stroke();
+// Ships against asteroids (shield bubble or hull), and against each other.
+const collide = (ship) => {
+    if(!ship.alive || ship.hidden) return;
+    state.rocks.forEach(rock => {
+        if(rock.dead || rock.grace > 0) return;
+        const d = dist(ship, rock);
+        if(d > ship.radius * 1.6 + rock.radius) return;
+        const rp = new T.Vector3(rock.x, rock.y, rock.z);
+        let normal = null;
+        let overlap = 0;
+        if(ship.shieldUp) {
+            const c = ship.shieldContact(rp, rock.radius * 0.8);
+            if(c) { normal = c.normal; overlap = c.overlap; }
+        } else {
+            const colliders = ship.worldColliders();
+            for(let i = 0; i < colliders.length; i++) {
+                const cd = colliders[i].p.distanceTo(rp);
+                const o = colliders[i].r + rock.radius * 0.8 - cd;
+                if(o > 0) {
+                    normal = rp.clone().sub(colliders[i].p).normalize();
+                    overlap = o;
+                    break;
+                }
             }
-            ctx.font = '12px Bungee, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillStyle = 'rgb(' + color + ')';
-            ctx.fillText(system.name + (current ? ' (you)' : ''), p.x + 14, p.y + 4);
-        });
+        }
+        if(!normal) return;
+        // Push apart and bounce (by mass).
+        const inv1 = 1 / ship.mass, inv2 = 1 / rock.mass;
+        const total = inv1 + inv2;
+        ship.position.addScaledVector(normal, -overlap * inv1 / total);
+        rock.x += normal.x * overlap * inv2 / total; rock.y += normal.y * overlap * inv2 / total; rock.z += normal.z * overlap * inv2 / total;
+        const rel = (rock.vx - ship.vx) * normal.x + (rock.vy - ship.vy) * normal.y + (rock.vz - ship.vz) * normal.z;
+        if(rel >= 0) return;
+        const impulse = -1.3 * rel / total;
+        ship.velocity.addScaledVector(normal, -impulse * inv1);
+        rock.vx += normal.x * impulse * inv2; rock.vy += normal.y * impulse * inv2; rock.vz += normal.z * impulse * inv2;
+        if(-rel > 20) {
+            ship.takeDamage(3 + (-rel) * rock.mass / 60000);
+            effects.burst(rp.clone().addScaledVector(normal, -rock.radius * 0.8), ship.velocity, 8, { minSpeed: 30, maxSpeed: 120, minLife: 0.2, maxLife: 0.5, size: 2.5, color: ship.shieldUp ? (ship.hullDef.shieldColor || '120,210,255') : '255,200,140' });
+            if(!ship.shieldUp) __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].explosion(0.5);
+        }
+    });
+};
 
-        // Hyperspace route from here to the selection.
-        if(this.selected && this.selected !== this.options.systemId) {
-            const a = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.options.systemId).map);
-            const b = this.project(Object(__WEBPACK_IMPORTED_MODULE_0__world_systems__["g" /* systemById */])(this.selected).map);
-            ctx.setLineDash([6, 6]);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-            ctx.setLineDash([]);
+const shipBumps = () => {
+    const ships = state.combat.player.concat(state.combat.enemies);
+    for(let i = 0; i < ships.length; i++) {
+        for(let j = i + 1; j < ships.length; j++) {
+            const a = ships[i], b = ships[j];
+            const n = b.position.clone().sub(a.position);
+            const d = n.length() || 0.001;
+            const overlap = (a.radius + b.radius) * 0.7 - d;
+            if(overlap <= 0) continue;
+            n.divideScalar(d);
+            const total = 1 / a.mass + 1 / b.mass;
+            a.position.addScaledVector(n, -overlap * (1 / a.mass) / total);
+            b.position.addScaledVector(n, overlap * (1 / b.mass) / total);
+            const rel = b.velocity.clone().sub(a.velocity).dot(n);
+            if(rel < 0) {
+                const impulse = -1.3 * rel / total;
+                a.velocity.addScaledVector(n, -impulse / a.mass);
+                b.velocity.addScaledVector(n, impulse / b.mass);
+            }
         }
     }
-}
-
-let instance = null;
-const getStarmap = () => {
-    if(!instance) instance = new Starmap();
-    return instance;
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = getStarmap;
 
-const isStarmapOpen = () => !!(instance && instance.isOpen);
-/* harmony export (immutable) */ __webpack_exports__["c"] = isStarmapOpen;
+// ------------------------------------------------------------ enemies
 
-
-
-/***/ }),
-/* 27 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-// Visuals for travelling between star systems: the wormhole ride through a Stargate,
-// the hyperspace window that opens in front of a ship, and the hyperspace tunnel.
-
-
-
-// Streaks for the tunnels, created once.
-const STREAKS = [];
-for(let i = 0; i < 160; i++) {
-    STREAKS.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), speed: 0.6 + Math.random() * 0.8, width: 0.5 + Math.random() * 2 });
-}
-
-// Wormhole: a rushing, twisting tunnel of blue-white bands. `progress` 0..1 over the trip.
-const drawWormhole = (ctx, w, h, time, progress) => {
-    const cx = w / 2 + Math.sin(time * 1.7) * w * 0.06;
-    const cy = h / 2 + Math.cos(time * 1.3) * h * 0.05;
-    const max = Math.sqrt(w * w + h * h) * 0.6;
-
-    ctx.fillStyle = 'rgb(4, 10, 30)';
-    ctx.fillRect(0, 0, w, h);
-
-    // Banded walls rushing past.
-    for(let i = 14; i >= 0; i--) {
-        const z = ((i / 14) + time * 1.6) % 1;
-        const r = Math.pow(z, 2.2) * max;
-        const twist = time * 2 + i * 0.4;
-        const g = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r);
-        const hue = i % 3 === 0 ? '170,210,255' : i % 3 === 1 ? '80,130,255' : '140,110,255';
-        g.addColorStop(0, 'rgba(' + hue + ', 0)');
-        g.addColorStop(1, 'rgba(' + hue + ', ' + (0.12 + 0.1 * z) + ')');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, r, r * (0.85 + 0.1 * Math.sin(twist)), twist * 0.2, 0, Math.PI * 2);
-        ctx.fill();
+const spawnEnemy = (hullId, level, near) => {
+    const ship = state.ship;
+    for(let attempt = 0; attempt < 12; attempt++) {
+        const dir = new T.Vector3(Math.random() - 0.5, Math.random() - 0.5, (Math.random() - 0.5) * 0.6).normalize();
+        const p = ship.position.clone().addScaledVector(dir, near ? 800 + Math.random() * 300 : 2200 + Math.random() * 700);
+        if(state.stationPos && p.distanceTo(state.stationPos) < 3200 && !near) continue;
+        const id = hullId || Object(__WEBPACK_IMPORTED_MODULE_8__components_ship_enemy__["e" /* pickEnemyHull */])(state.system.id);
+        const enemy = Object(__WEBPACK_IMPORTED_MODULE_3__ai3d__["a" /* createEnemy3D */])(T, id, level || (Math.random() < 0.35 ? 3 : 2), p, effects.texture);
+        enemy.quaternion.setFromUnitVectors(new T.Vector3(1, 0, 0), ship.position.clone().sub(p).normalize());
+        state.enemies.push(enemy);
+        scene.add(enemy.group);
+        if(id === 'glider' && !hullId) {
+            const wing = Object(__WEBPACK_IMPORTED_MODULE_3__ai3d__["a" /* createEnemy3D */])(T, 'glider', enemy.level, p.clone().add(new T.Vector3(80, 60, 40)), effects.texture);
+            wing.quaternion.copy(enemy.quaternion);
+            state.enemies.push(wing);
+            scene.add(wing.group);
+        }
+        banner('Hostile ' + enemy.hullDef.name + (id === 'glider' && !hullId ? ' pair' : '') + ' detected (Mk ' + (enemy.level === 3 ? 'III' : 'II') + ')', 2.5);
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].scanPing();
+        return enemy;
     }
+    return null;
+};
 
-    // Streaks spiralling outwards.
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.lineCap = 'round';
-    STREAKS.forEach(s => {
-        const z = (s.depth + time * s.speed * 0.9) % 1;
-        const a = s.angle + time * 1.2 + z * 1.5;
-        const r1 = Math.pow(z, 2.4) * max;
-        const r2 = Math.pow(Math.min(1, z + 0.05), 2.4) * max;
-        ctx.strokeStyle = 'rgba(210, 230, 255, ' + (0.15 + 0.7 * z) + ')';
-        ctx.lineWidth = s.width * (0.5 + z * 2);
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-        ctx.lineTo(cx + Math.cos(a + 0.08) * r2, cy + Math.sin(a + 0.08) * r2);
-        ctx.stroke();
-    });
-    // Bright light at the end of the tunnel, growing as you arrive.
-    const end = 60 + progress * 260;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('190,220,255'), cx, cy, end, end);
-    ctx.restore();
-
-    // Flash in and out.
-    const flash = Math.max(0, 1 - progress * 6) + Math.max(0, (progress - 0.85) / 0.15);
-    if(flash > 0) {
-        ctx.fillStyle = 'rgba(230, 240, 255, ' + Math.min(1, flash) + ')';
-        ctx.fillRect(0, 0, w, h);
+const updateEnemies = (dt) => {
+    const ship = state.ship;
+    if(!state.transition) {
+        state.enemyTimer -= dt;
+        if(state.enemyTimer <= 0) {
+            state.enemyTimer = 35 + Math.random() * 35;
+            if(state.enemies.length < Object(__WEBPACK_IMPORTED_MODULE_8__components_ship_enemy__["c" /* enemyConfig */])(state.system.id).max) spawnEnemy();
+        }
     }
+    const target = state.combat.player[0] || null;
+    const avoid = state.stationPos ? { position: state.stationPos, radius: __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].shieldRadius + 260 } : null;
+    state.enemies.forEach(enemy => {
+        const inRange = target && enemy.position.distanceTo(ship.position) < 4000;
+        Object(__WEBPACK_IMPORTED_MODULE_3__ai3d__["b" /* updateEnemyAI3D */])(T, enemy, dt, { target: inRange ? target : null, rocks: state.rocks, incoming: state.combat.missiles.player,
+            friends: state.combat.enemies, avoid: avoid });
+        enemy.update(dt, enemy.ai.controls, world());
+    });
 };
-/* harmony export (immutable) */ __webpack_exports__["c"] = drawWormhole;
 
+const updateEnemyLosses = () => {
+    state.enemies.forEach(enemy => {
+        if(enemy.alive || enemy.counted) return;
+        enemy.counted = true;
+        Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["b" /* addCredits */])(enemy.bounty);
+        floatText(enemy, '+' + enemy.bounty + ' cr', '255,215,120');
+        banner(enemy.hullDef.name + ' destroyed  +' + enemy.bounty + ' credits', 2.2);
+        effects.explosion(enemy.position, enemy.velocity, enemy.radius * 2.2, '255,180,110');
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].missileExplosion();
+        scene.remove(enemy.group);
+    });
+    state.enemies = state.enemies.filter(e => {
+        if(!e.alive) return false;
+        if(e.position.distanceTo(state.ship.position) > 8000) {
+            scene.remove(e.group);
+            return false;
+        }
+        return true;
+    });
+};
 
-// Hyperspace: a deep blue tunnel with streaming light clouds and star streaks.
-const drawHyperspace = (ctx, w, h, time, progress, label) => {
-    const cx = w / 2;
-    const cy = h / 2;
-    const max = Math.sqrt(w * w + h * h) * 0.6;
+// What ships see of the world when they update.
+const world = () => ({
+    combat: state.combat, rocks: state.rocks, bullets: state.bullets, missiles: state.missiles,
+    beamHits: state.beamHits, effects: effects, raycast: raycast
+});
 
-    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, max);
-    bg.addColorStop(0, 'rgb(200, 225, 255)');
-    bg.addColorStop(0.12, 'rgb(60, 110, 220)');
-    bg.addColorStop(0.5, 'rgb(15, 35, 110)');
-    bg.addColorStop(1, 'rgb(5, 10, 40)');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+// ------------------------------------------------------------ places
 
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    // Light clouds rushing past.
-    for(let i = 0; i < 24; i++) {
-        const z = ((i / 24) + time * 0.7) % 1;
-        const a = i * 2.4 + time * 0.3;
-        const r = Math.pow(z, 2) * max;
-        const size = 40 + z * 380;
-        ctx.globalAlpha = 0.12 + 0.25 * z;
-        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
+const stationDistance = () => (state.stationPos ? state.ship.position.distanceTo(state.stationPos) : Infinity);
+
+const interact = () => {
+    const ship = state.ship;
+    if(state.canDock) {
+        if(ship.velocity.length() > __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].maxDockSpeed) banner('Too fast to dock: slow down (X stabilizer)');
+        else dock();
+        return;
     }
-    ctx.globalAlpha = 1;
-    // Long star streaks.
-    ctx.lineCap = 'round';
-    STREAKS.forEach(s => {
-        const z = (s.depth + time * s.speed * 1.4) % 1;
-        const r1 = Math.pow(z, 2.6) * max;
-        const r2 = Math.pow(Math.min(1, z + 0.1), 2.6) * max;
-        ctx.strokeStyle = 'rgba(235, 245, 255, ' + (0.1 + 0.8 * z) + ')';
-        ctx.lineWidth = s.width * (0.4 + z * 1.6);
-        ctx.beginPath();
-        ctx.moveTo(cx + Math.cos(s.angle) * r1, cy + Math.sin(s.angle) * r1);
-        ctx.lineTo(cx + Math.cos(s.angle) * r2, cy + Math.sin(s.angle) * r2);
-        ctx.stroke();
-    });
-    ctx.restore();
-
-    // Progress and destination.
-    ctx.save();
-    ctx.font = '18px Bungee, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(230, 240, 255, 0.9)';
-    ctx.fillText(label, cx, h - 80);
-    ctx.strokeStyle = 'rgba(230, 240, 255, 0.6)';
-    ctx.strokeRect(cx - 150, h - 64, 300, 8);
-    ctx.fillStyle = 'rgba(160, 210, 255, 0.9)';
-    ctx.fillRect(cx - 149, h - 63, 298 * progress, 6);
-    ctx.restore();
+    if(state.nearDHD) openDHD();
 };
-/* harmony export (immutable) */ __webpack_exports__["b"] = drawHyperspace;
 
-
-// Hyperspace window, in world space: a swirling, wispy cloud of pale blue-white light with
-// a bright heart (no hard edge). `open` 0..1 is how far it has opened.
-const WISPS = [];
-for(let i = 0; i < 14; i++) {
-    WISPS.push({ angle: Math.random() * Math.PI * 2, dist: 0.15 + Math.random() * 0.55, size: 0.5 + Math.random() * 0.9,
-        spin: (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.9), phase: Math.random() * 10 });
-}
-
-const drawHyperWindow = (ctx, x, y, radius, time, open) => {
-    if(open <= 0) return;
-    const r = radius * open;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.globalCompositeOperation = 'lighter';
-    // Faint outer haze.
-    ctx.globalAlpha = Math.min(1, open * 1.2) * 0.35;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('90,150,150'), 0, 0, r * 2.6, r * 2.4);
-    // Cloudy, turning wisps.
-    WISPS.forEach(wisp => {
-        const a = wisp.angle + time * wisp.spin;
-        const d = r * wisp.dist * (0.85 + 0.15 * Math.sin(time * 1.7 + wisp.phase));
-        const size = r * wisp.size * (0.8 + 0.25 * Math.sin(time * 2.3 + wisp.phase));
-        ctx.globalAlpha = Math.min(1, open * 1.5) * (0.14 + 0.1 * Math.sin(time * 3 + wisp.phase));
-        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(wisp.spin > 0 ? '150,215,215' : '190,235,235'), Math.cos(a) * d, Math.sin(a) * d, size * 1.4, size * 0.8);
+const dock = () => {
+    const ship = state.ship;
+    state.paused = true;
+    state.docked = true;
+    freeze(true);
+    ship.velocity.set(0, 0, 0);
+    ship.angular.set(0, 0, 0);
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].dock();
+    Object(__WEBPACK_IMPORTED_MODULE_17__shipyard_shipyard__["a" /* getShipyard */])().open({
+        tab: Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["d" /* cargoUsed */])() > 0 ? 'market' : 'ship',
+        closeLabel: 'Undock',
+        canTrade: true,
+        hullStatus: () => ({ hp: ship.hp, max: Math.round(ship.maxHull) }),
+        repair: (points) => { ship.hp = Math.min(ship.maxHull, ship.hp + points); },
+        onClose: () => {
+            if(!state) return;
+            scene.remove(ship.group);
+            ship.applyStats(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["f" /* computeShipStats */])(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["g" /* getProfile */])().hull));
+            scene.add(ship.group);
+            ship.shield = ship.maxShield;
+            ship.immunity = 1.5;
+            ship.position.set(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x + 520, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 60);
+            ship.quaternion.identity();
+            state.paused = false;
+            state.docked = false;
+            freeze(false);
+            banner('Undocked', 1.2);
+        }
     });
-    // Bright heart.
-    ctx.globalAlpha = Math.min(1, open * 2);
-    const flicker = 0.85 + 0.15 * Math.sin(time * 9) * Math.sin(time * 5.3);
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('210,245,240'), r * 0.05, -r * 0.04, r * 0.75 * flicker, r * 0.65 * flicker);
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,255,255'), 0, 0, r * 0.3, r * 0.3);
-    ctx.restore();
 };
-/* harmony export (immutable) */ __webpack_exports__["a"] = drawHyperWindow;
 
+const openDHD = () => {
+    const gate = state.gate;
+    state.paused = true;
+    freeze(true);
+    Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["a" /* getDHD */])().open({
+        systemId: state.system.id,
+        systemName: state.system.name,
+        originIndex: __WEBPACK_IMPORTED_MODULE_11__world_systems__["b" /* SYSTEMS */].indexOf(state.system),
+        originName: state.system.origin,
+        busy: gate.busy,
+        onDial: (target, symbols) => {
+            gate.dial(target.id, symbols);
+            banner('Dialling ' + target.name + '...', 2.5);
+        },
+        onCancel: () => {
+            gate.close();
+            banner('Stargate shut down', 1.5);
+        },
+        onClose: () => {
+            if(!state) return;
+            state.paused = false;
+            freeze(false);
+        }
+    });
+};
 
+const openStarmap = () => {
+    if(!state || state.transition || state.docked || Object(__WEBPACK_IMPORTED_MODULE_15__ui_dhd__["b" /* isDHDOpen */])() || Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["c" /* isStarmapOpen */])()) return;
+    state.paused = true;
+    freeze(true);
+    let engageTarget = null;
+    Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["a" /* getStarmap */])().open({
+        systemId: state.system.id,
+        originIndex: __WEBPACK_IMPORTED_MODULE_11__world_systems__["b" /* SYSTEMS */].indexOf(state.system),
+        hyperdrive: state.ship.hyperdrive,
+        onEngage: (target) => { engageTarget = target; },
+        onClose: () => {
+            if(!state) return;
+            state.paused = false;
+            freeze(false);
+            if(engageTarget) startHyperjump(engageTarget);
+        }
+    });
+};
 
-/***/ }),
-/* 28 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+const startHyperjump = (target) => {
+    const ship = state.ship;
+    const distance = Object(__WEBPACK_IMPORTED_MODULE_11__world_systems__["f" /* distanceBetween */])(state.system.id, target.id);
+    const duration = Object(__WEBPACK_IMPORTED_MODULE_16__ui_starmap__["b" /* hyperTravelTime */])(distance, ship.hyperdrive.speed);
+    state.transition = { type: 'hyper', phase: 'window', t: 0, target: target, duration: duration, distance: distance,
+        window: ship.position.clone().addScaledVector(ship.forward(), ship.radius * 3 + 150) };
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].hyperOpen();
+    banner('Hyperdrive engaged: ' + target.name, 2);
+};
 
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world3d__ = __webpack_require__(29);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_stargate__ = __webpack_require__(13);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_planets__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__world_materials__ = __webpack_require__(1);
-// WebGL (Three.js) layer that draws the world in 3D on the graphics card.
-//
-// The game itself stays on a flat plane: physics, collisions and aiming are unchanged. A
-// perspective camera looks straight down at that plane, so a point on the plane lands on
-// exactly the same pixel as in the 2D view. That lets the 2D canvas above keep drawing
-// effects (particles, shots, beams, shields, line art, HUD) perfectly lined up, while
-// asteroids, ship hulls and the starfield underneath are real lit 3D geometry with depth
-// and parallax.
-//
-// Coordinates: game (x, y) with y pointing down the screen becomes Three.js (x, -y, z) with
-// z towards the camera. A game angle `a` becomes a rotation of -a about z.
+const startGateTravel = () => {
+    state.transition = { type: 'gate', phase: 'tunnel', t: 0, target: Object(__WEBPACK_IMPORTED_MODULE_11__world_systems__["g" /* systemById */])(state.gate.target) };
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].gateEnter();
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].stopAll();
+    state.gate.close(true);
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].wormhole();
+    state.ship.hidden = true;
+};
 
-
-
-
-
-
-const FOV = 35;
-const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
-
-// Same light direction the asteroid surface art is painted with (upper left), lifted up.
-const LIGHT = { x: -0.55, y: 0.65, z: 0.85 };
-
-const webglAvailable = () => {
-    if(!window.THREE) return false;
-    try {
-        const canvas = document.createElement('canvas');
-        return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
-    } catch(e) {
+const updateTransition = (dt) => {
+    const tr = state.transition;
+    const ship = state.ship;
+    tr.t += dt;
+    if(tr.type === 'gate') {
+        if(tr.t >= 3.4) {
+            ship.hidden = false;
+            state.transition = null;
+            enterSystem(tr.target, 'gate');
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].startEngine();
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].gateArrive();
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].horizon(true);
+        }
+        return tr.t < 3.4;
+    }
+    // Hyperspace: a window opens ahead, the ship is pulled in, then the tunnel.
+    if(tr.phase === 'window') {
+        const glow = Math.min(1, tr.t);
+        for(let i = 0; i < 3; i++) {
+            effects.spawn({ x: tr.window.x + (Math.random() - 0.5) * 120 * glow, y: tr.window.y + (Math.random() - 0.5) * 120 * glow, z: tr.window.z + (Math.random() - 0.5) * 120 * glow,
+                life: 0.4, size: 60 + 120 * glow, color: Math.random() < 0.5 ? '170,225,235' : '220,245,250', alpha: 0.25 });
+        }
+        if(tr.t > 1) {
+            const pull = tr.window.clone().sub(ship.position);
+            ship.velocity.addScaledVector(pull.normalize(), 900 * dt);
+            if(ship.position.distanceTo(tr.window) < ship.radius + 40 || tr.t > 3) {
+                tr.phase = 'travel';
+                tr.t = 0;
+                ship.hidden = true;
+                __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].hyperTravel(true);
+            }
+        }
         return false;
     }
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = webglAvailable;
-
-
-const parseRgb = (text) => text.split(',').map(v => parseFloat(v) / 255);
-
-// Small deterministic noise for lumps on the asteroid surfaces.
-const hash = (a, b, seed) => {
-    let h = (a * 374761393 + b * 668265263 + seed * 2246822519) >>> 0;
-    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    if(tr.phase === 'travel' && tr.t >= tr.duration) {
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].hyperTravel(false);
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].hyperExit();
+        ship.hidden = false;
+        state.transition = null;
+        enterSystem(tr.target, 'hyper');
+        return false;
+    }
+    return tr.phase === 'travel';
 };
 
-// ------------------------------------------------------------ asteroids
+// The ship passing through an open, outgoing event horizon.
+const checkGateTravel = (prevZ) => {
+    const gate = state.gate;
+    const ship = state.ship;
+    if(state.transition || !ship.alive || !gate.isOpen || !gate.outgoing) return;
+    const planeZ = state.gatePos.z - 9;
+    if((prevZ - planeZ) * (ship.z - planeZ) > 0) return;
+    const dx = ship.x - state.gatePos.x, dy = ship.y - state.gatePos.y;
+    if(Math.sqrt(dx * dx + dy * dy) > __WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */] * 0.85) return;
+    if(ship.radius > __WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */] * 0.95) {
+        banner('Ship too large for the Stargate: use a hyperdrive.', 2.5);
+        return;
+    }
+    startGateTravel();
+};
 
-// Rings of latitude for the rock body, from the bottom pole to the top pole.
-const LATITUDES = [-0.82, -0.55, -0.27, 0, 0.27, 0.55, 0.82];
+// ------------------------------------------------------------ loop
 
-// A lumpy rock body built from the asteroid's own outline (so chipping, carving and splits
-// show in 3D), unit radius. UVs map the asteroid's painted surface straight down onto it.
-const buildRockGeometry = (THREE, rock) => {
-    const shape = rock.shape;
-    const n = shape.length;
-    const thickness = 0.5 + hash(rock.id, 1, 7) * 0.25;
-    const k = rock.spriteRadius / (2 * rock.spriteExtent);   // unit radius -> sprite UV
-    const positions = [];
-    const uvs = [];
-    const indices = [];
-
-    const push = (x, y, z) => {
-        positions.push(x, -y, z);
-        uvs.push(0.5 + x * k, 0.5 - y * k);
-    };
-
-    LATITUDES.forEach((lat, j) => {
-        const phi = lat * Math.PI / 2;
-        const ring = Math.cos(phi);
-        const z = Math.sin(phi) * thickness;
-        for(let i = 0; i < n; i++) {
-            const a = i * Math.PI * 2 / n;
-            const lump = 1 + (hash(rock.id, i * 16 + j, 3) - 0.5) * 0.12 * (j === 3 ? 0.3 : 1);
-            const r = shape[i] * ring * lump;
-            push(Math.cos(a) * r, Math.sin(a) * r, z * (0.9 + hash(rock.id, i + j * 64, 11) * 0.2));
+const step = (dt) => {
+    const ship = state.ship;
+    state.time += dt;
+    state.combat.refresh();
+    const prevZ = ship.z;
+    if(!state.transition || state.transition.type === 'hyper') {
+        playerControls();
+        if(state.transition) {
+            state.controls.fire = state.controls.missiles = false;
+            state.controls.thrust = 0;
         }
+        ship.update(dt, state.controls, world());
+    }
+    updateEnemies(dt);
+    applyBeamHits();
+    state.rocks.forEach(r => r.update(dt));
+    updateBullets(dt);
+    updateMissiles(dt);
+    updateOres(dt);
+    state.combat.refresh();
+    collide(ship);
+    state.enemies.forEach(e => collide(e));
+    shipBumps();
+    updateEnemyLosses();
+    // Atlantis city shield keeps asteroids out.
+    if(state.stationPos) {
+        state.rocks.forEach(r => {
+            const d = dist(r, state.stationPos);
+            const R = __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].shieldRadius + 60 + r.radius;
+            if(d < R) {
+                const n = new T.Vector3(r.x, r.y, r.z).sub(state.stationPos).normalize();
+                r.x = state.stationPos.x + n.x * R; r.y = state.stationPos.y + n.y * R; r.z = state.stationPos.z + n.z * R;
+                const vn = r.vx * n.x + r.vy * n.y + r.vz * n.z;
+                if(vn < 0) { r.vx -= 1.6 * vn * n.x; r.vy -= 1.6 * vn * n.y; r.vz -= 1.6 * vn * n.z; }
+            }
+        });
+    }
+    state.rocks = state.rocks.filter(r => !r.dead);
+    state.gate.update(dt);
+    checkGateTravel(prevZ);
+    state.fieldTimer -= dt;
+    if(state.fieldTimer <= 0) {
+        state.fieldTimer = 0.5;
+        state.rocks = state.field.update(ship.x, ship.y, ship.z, state.rocks);
+        state.ores = state.ores.filter(o => dist(o, ship) < 6000);
+    }
+    state.canDock = !!state.stationPos && ship.alive && stationDistance() < __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius;
+    state.nearDHD = ship.alive && ship.position.distanceTo(state.dhdPos) < __WEBPACK_IMPORTED_MODULE_9__world_stargate__["b" /* DHD_RANGE */] * 1.4;
+    state.floats.forEach(f => { f.life -= dt; f.p.z += 20 * dt; });
+    state.floats = state.floats.filter(f => f.life > 0);
+    if(state.bannerTimer > 0) state.bannerTimer -= dt;
+    if(!ship.alive) {
+        if(state.gameOverTimer === 0) effects.explosion(ship.position, ship.velocity, ship.radius * 2.5, '255,180,110');
+        state.gameOverTimer += dt;
+    }
+};
+
+const updateCamera = (dt) => {
+    const ship = state.ship;
+    const back = ship.radius * 3.2 + 60;
+    const k = state.cameraDistance;
+    const forward = ship.forward();
+    const up = ship.up();
+    const want = ship.position.clone().addScaledVector(forward, -back * k).addScaledVector(up, (ship.radius * 0.85 + 18) * k);
+    const look = ship.position.clone().addScaledVector(forward, ship.radius * 4 + 200);
+    const follow = 1 - Math.exp(-dt * 7);
+    camera.position.lerp(want, state.cameraSnap ? 1 : follow);
+    const m = new T.Matrix4().lookAt(camera.position, look, up);
+    const q = new T.Quaternion().setFromRotationMatrix(m);
+    if(state.cameraSnap) camera.quaternion.copy(q);
+    else camera.quaternion.slerp(q, 1 - Math.exp(-dt * 9));
+    state.cameraSnap = false;
+    sky.position.copy(camera.position);
+};
+
+const project = (p) => {
+    const v = new T.Vector3(p.x, p.y, p.z);
+    const toP = v.clone().sub(camera.position);
+    const camDir = new T.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const behind = toP.dot(camDir) < 0;
+    v.project(camera);
+    return { x: (v.x + 1) / 2 * width, y: (1 - v.y) / 2 * height, behind: behind };
+};
+
+// Screen size of a sphere of radius r at p.
+const screenSize = (p, r) => {
+    const d = Math.max(1, camera.position.distanceTo(new T.Vector3(p.x, p.y, p.z)));
+    return r / (d * Math.tan(FOV * Math.PI / 360)) * height / 2;
+};
+
+const render = (frameDt) => {
+    const ship = state.ship;
+    updateCamera(frameDt);
+    ship.syncModel();
+    state.enemies.forEach(e => e.syncModel());
+
+    // Plasma bolts and missile heads glow; beams and tractor lines.
+    state.bullets.forEach(b => {
+        if(b.kind !== 'plasma') return;
+        effects.spawn({ x: b.x, y: b.y, z: b.z, life: 0.04, size: 20, color: '255,150,50', alpha: 0.9 });
+        effects.spawn({ x: b.x, y: b.y, z: b.z, life: 0.25, size: 9, color: '255,200,110', alpha: 0.6, vx: b.vx * 0.05, vy: b.vy * 0.05, vz: b.vz * 0.05 });
     });
-    const bottom = positions.length / 3;
-    push(0, 0, -thickness);
-    const top = positions.length / 3;
-    push(0, 0, thickness * (0.95 + hash(rock.id, 5, 5) * 0.1));
+    state.missiles.forEach(m => {
+        effects.spawn({ x: m.x, y: m.y, z: m.z, life: 0.04, size: m.kind === 'drone' ? 14 : 9, color: m.kind === 'drone' ? '255,210,100' : '255,240,220', alpha: 1 });
+    });
+    // Engine exhaust.
+    [ship].concat(state.enemies).forEach(s => {
+        if(!s.alive || s.hidden || s.thrustLevel < 0.1 || Math.random() > 0.6) return;
+        const back = s.forward().multiplyScalar(-1);
+        s.hullDef.engines.forEach(e => {
+            const p = s.localToWorld(new T.Vector3(e.x - 2 * e.size, -e.y, s.radius * 0.08));
+            effects.spawn({ x: p.x, y: p.y, z: p.z, vx: s.vx + back.x * 120, vy: s.vy + back.y * 120, vz: s.vz + back.z * 120,
+                life: 0.25 + Math.random() * 0.2, size: 5 * e.size * s.thrustLevel + 2, color: s.hullDef.exhaust || '255,150,60', alpha: 0.6 });
+        });
+    });
+    const P = beamLines.geometry.attributes.position.array;
+    const C = beamLines.geometry.attributes.color.array;
+    let n = 0;
+    [ship].concat(state.enemies).forEach(s => {
+        s.turrets.forEach(t => {
+            if(!t.beam || n >= MAX_BEAMS) return;
+            P.set([t.beam.from.x, t.beam.from.y, t.beam.from.z, t.beam.to.x, t.beam.to.y, t.beam.to.z], n * 6);
+            C.set([0.6, 0.85, 1, 0.9, 0.97, 1], n * 6);
+            n++;
+            // Glowing energy along the beam.
+            const steps = Math.min(30, Math.ceil(t.beam.from.distanceTo(t.beam.to) / 30));
+            for(let i = 0; i <= steps; i++) {
+                const k = i / steps;
+                effects.spawn({ x: t.beam.from.x + (t.beam.to.x - t.beam.from.x) * k, y: t.beam.from.y + (t.beam.to.y - t.beam.from.y) * k,
+                    z: t.beam.from.z + (t.beam.to.z - t.beam.from.z) * k, life: 0.03, size: 10, color: '120,190,255', alpha: 0.7 });
+            }
+        });
+    });
+    if(ship.alive && state.tractorCount) {
+        const p = ship.position;
+        state.ores.forEach(o => {
+            if(!o.tractored || n >= MAX_BEAMS) return;
+            P.set([p.x, p.y, p.z, o.x, o.y, o.z], n * 6);
+            C.set([0.1, 0.5, 0.45, 0.45, 1, 0.9], n * 6);
+            n++;
+        });
+    }
+    beamLines.geometry.setDrawRange(0, n * 2);
+    beamLines.geometry.attributes.position.needsUpdate = true;
+    beamLines.geometry.attributes.color.needsUpdate = true;
 
-    for(let j = 0; j < LATITUDES.length - 1; j++) {
-        for(let i = 0; i < n; i++) {
-            const a = j * n + i;
-            const b = j * n + (i + 1) % n;
-            const c = (j + 1) * n + i;
-            const d = (j + 1) * n + (i + 1) % n;
-            indices.push(a, c, b, b, c, d);
+    effects.setTracers(state.bullets);
+    effects.update(frameDt);
+    rockRenderer.render(state.rocks, camera.position, VIEW_DISTANCE);
+    renderOres();
+    renderGate();
+    if(state.planet) {
+        state.planet.body.rotation.y = state.time * 0.01;
+        state.planet.clouds.rotation.y = state.time * 0.016;
+    }
+    renderer.render(scene, camera);
+    drawHud();
+};
+
+const renderOres = () => {
+    let count = 0;
+    const m = new T.Matrix4();
+    const q = new T.Quaternion();
+    const e = new T.Euler();
+    const p = new T.Vector3();
+    const s = new T.Vector3();
+    const c = new T.Color();
+    state.ores.forEach(o => {
+        if(count >= __WEBPACK_IMPORTED_MODULE_5__render3d_world3d__["a" /* ORE_LIMIT */]) return;
+        p.set(o.x, o.y, o.z);
+        e.set(o.angle * 0.7 + o.phase, o.phase, o.angle);
+        q.setFromEuler(e);
+        s.setScalar(o.radius * 1.5);
+        m.compose(p, q, s);
+        oreMesh.setMatrixAt(count, m);
+        const col = __WEBPACK_IMPORTED_MODULE_12__world_materials__["b" /* default */][o.material].color.split(',');
+        c.setRGB(col[0] / 255, col[1] / 255, col[2] / 255, T.SRGBColorSpace);
+        oreMesh.setColorAt(count, c);
+        count++;
+    });
+    oreMesh.count = count;
+    oreMesh.instanceMatrix.needsUpdate = true;
+    if(oreMesh.instanceColor) oreMesh.instanceColor.needsUpdate = true;
+};
+
+const renderGate = () => {
+    const gate = state.gate;
+    const model = state.gateModel;
+    model.symbolRing.rotation.z = -gate.spin;
+    model.chevrons.forEach((mat, i) => {
+        const lit = gate.chevronLit(i);
+        mat.emissive.setRGB(lit ? 1 : 0, lit ? 0.45 : 0, lit ? 0.12 : 0);
+        mat.color.setRGB(lit ? 1 : 0.31, lit ? 0.55 : 0.16, lit ? 0.25 : 0.12);
+    });
+    const glow = gate.busy ? 1 : state.nearDHD ? 0.55 + 0.25 * Math.sin(state.time * 3) : 0.3;
+    state.dhd.dome.emissive.setRGB(glow, glow * 0.25, glow * 0.12);
+    const u = horizon.material.uniforms;
+    u.uTime.value = state.time;
+    let alpha = 0;
+    let hole = 0;
+    if(gate.state === 'opening') {
+        alpha = 0.9;
+        hole = Math.max(0, gate.timer / 0.8) * 0.95;
+    } else if(gate.state === 'kawoosh') alpha = 0.95;
+    else if(gate.state === 'open') alpha = 0.95;
+    else if(gate.state === 'closing' && gate.wasOpen) alpha = 0.95 * Math.max(0, gate.timer / 0.9);
+    u.uAlpha.value = alpha;
+    u.uHole.value = hole;
+    horizon.visible = alpha > 0.01;
+    if(gate.state === 'kawoosh') {
+        const burst = Math.sin(Math.min(1, gate.kawoosh / 0.75) * Math.PI);
+        kawoosh.visible = burst > 0.02;
+        kawoosh.scale.set(1 + burst * 0.4, 1 + burst * 0.4, Math.max(1, __WEBPACK_IMPORTED_MODULE_9__world_stargate__["c" /* GATE_INNER */] * 3 * burst));
+        kawoosh.material.opacity = 0.75 * burst;
+    } else kawoosh.visible = false;
+};
+
+// ------------------------------------------------------------ HUD
+
+const drawHud = () => {
+    const ctx = hud;
+    const ship = state.ship;
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    const tr = state.transition;
+    if(tr && tr.type === 'gate') {
+        Object(__WEBPACK_IMPORTED_MODULE_14__gameboard_travel__["c" /* drawWormhole */])(ctx, width, height, state.time, Math.min(1, tr.t / 3.4));
+        updateDomHud();
+        return;
+    }
+    if(tr && tr.type === 'hyper' && tr.phase === 'travel') {
+        Object(__WEBPACK_IMPORTED_MODULE_14__gameboard_travel__["b" /* drawHyperspace */])(ctx, width, height, state.time, Math.min(1, tr.t / tr.duration),
+            'Hyperspace · ' + tr.target.name + ' · ' + Math.round(tr.distance).toLocaleString('en-US') + ' ly · ' + Math.max(0, tr.duration - tr.t).toFixed(1) + ' s');
+        updateDomHud();
+        return;
+    }
+
+    // Markers: enemies, Atlantis, the gate and DHD.
+    state.enemies.forEach(e => {
+        if(!e.alive) return;
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["b" /* drawMarker */])(ctx, width, height, { p: project(e.position), size: screenSize(e.position, e.radius) + 6, color: '255,90,70',
+            label: e.hullDef.name + ' Mk ' + (e.level === 3 ? 'III' : 'II'), distance: e.position.distanceTo(ship.position),
+            hull: e.hp / e.maxHull, shield: e.maxShield > 0 ? e.shield / e.maxShield : undefined });
+    });
+    if(state.stationPos) {
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["b" /* drawMarker */])(ctx, width, height, { p: project(state.stationPos), size: screenSize(state.stationPos, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius), color: state.canDock ? '140,255,160' : '140,200,255',
+            label: 'ATLANTIS', distance: stationDistance(), shape: 'circle' });
+    }
+    Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["b" /* drawMarker */])(ctx, width, height, { p: project(state.gatePos), size: screenSize(state.gatePos, __WEBPACK_IMPORTED_MODULE_9__world_stargate__["d" /* GATE_RADIUS */]) + 4, color: '255,170,110',
+        label: 'GATE', distance: ship.position.distanceTo(state.gatePos), shape: 'circle' });
+    if(state.nearDHD || ship.position.distanceTo(state.dhdPos) < 900) {
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["b" /* drawMarker */])(ctx, width, height, { p: project(state.dhdPos), size: screenSize(state.dhdPos, 34), color: state.nearDHD ? '140,255,160' : '200,210,230',
+            label: state.nearDHD ? 'DHD · press B' : 'DHD', shape: 'circle' });
+    }
+    // Missile lock.
+    if(ship.missileLock && !ship.missileLock.dead && ship.guidance) {
+        const p = project(ship.missileLock);
+        if(!p.behind) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(140, 255, 160, 0.9)';
+            ctx.lineWidth = 1.5;
+            const r = screenSize(ship.missileLock, ship.missileLock.radius || 10) + 10;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x + r, p.y); ctx.lineTo(p.x, p.y + r); ctx.lineTo(p.x - r, p.y);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
         }
     }
-    const last = (LATITUDES.length - 1) * n;
-    for(let i = 0; i < n; i++) {
-        indices.push(bottom, i, (i + 1) % n);
-        indices.push(top, last + (i + 1) % n, last + i);
+    state.floats.forEach(f => {
+        const p = project(f.p);
+        if(!p.behind) Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["e" /* drawText */])(ctx, f.text, p.x, p.y, 12, 'rgba(' + f.color + ',' + Math.min(1, f.life) + ')');
+    });
+
+    // Radar contacts in the ship's frame.
+    const inv = ship.invQuat();
+    const local = (o) => new T.Vector3(o.x - ship.x, o.y - ship.y, o.z - ship.z).applyQuaternion(inv);
+    const contacts = [];
+    state.rocks.forEach(r => {
+        if(r.radius > 35 && dist(r, ship) < 3000) contacts.push({ local: local(r), color: '150,150,160', size: r.radius > 80 ? 3 : 2 });
+    });
+    state.enemies.forEach(e => contacts.push({ local: local(e), color: '255,80,60', size: 3.5, triangle: true }));
+    state.missiles.forEach(m => { if(m.side === 'enemy') contacts.push({ local: local(m), color: '255,160,80', size: 2 }); });
+    if(state.stationPos) contacts.push({ local: local(state.stationPos), color: '140,200,255', size: 5 });
+    contacts.push({ local: local(state.gatePos), color: '255,170,110', size: 4 });
+    Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["d" /* drawRadar */])(ctx, width, height, contacts);
+
+    state.weaponRows = Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["f" /* drawWeapons */])(ctx, width, height, ship.weaponStatus());
+    // Speed and prompts.
+    Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["e" /* drawText */])(ctx, Math.round(ship.velocity.length()) + ' m/s' + (ship.stabilizer ? '  STAB' : ''), width / 2, height - 24, 13, 'rgba(200, 220, 255, 0.85)');
+    if(state.canDock) {
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["e" /* drawText */])(ctx, ship.velocity.length() > __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].maxDockSpeed ? 'Slow down to dock (X: stabilizer)' : 'Press B to dock at Atlantis', width / 2, height - 60, 16, 'rgba(140, 255, 160, 0.95)');
+    }
+    if(tr && tr.type === 'hyper' && tr.phase === 'window') {
+        const p = project(tr.window);
+        if(!p.behind) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            const r = screenSize(tr.window, 40 + 140 * Math.min(1, tr.t));
+            const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+            g.addColorStop(0, 'rgba(240, 252, 255, 0.95)');
+            g.addColorStop(0.4, 'rgba(170, 225, 235, 0.5)');
+            g.addColorStop(1, 'rgba(90, 150, 160, 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+            ctx.restore();
+        }
+    }
+    if(!state.paused && ship.alive) {
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["c" /* drawNose */])(ctx, width, height, project(ship.position.clone().addScaledVector(ship.forward(), 2000)), Math.min(width, height) * 0.42 * STEER_DEAD_ZONE);
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["a" /* drawCrosshair */])(ctx, mouse.x, mouse.y, !state.freeAim, !!(state.controls.aimTarget && state.controls.aimTarget.hullDef));
+    }
+    if(state.bannerTimer > 0) {
+        Object(__WEBPACK_IMPORTED_MODULE_4__hud3d__["e" /* drawText */])(ctx, state.bannerText, width / 2, height * 0.24, 22, 'rgba(255, 255, 255, ' + Math.min(1, state.bannerTimer) + ')');
+    }
+    updateDomHud();
+};
+
+const setText = (id, text) => {
+    const el = domHud[id];
+    if(el && el.textContent !== text) el.textContent = text;
+};
+
+const setBar = (id, fraction) => {
+    const el = domHud[id];
+    const w = Math.round(Math.max(0, Math.min(1, fraction)) * 100) + '%';
+    if(el && el.style.width !== w) el.style.width = w;
+};
+
+const updateDomHud = () => {
+    const ship = state.ship;
+    const used = Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["d" /* cargoUsed */])();
+    setText('credits', 'Credits: ' + Math.round(Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["g" /* getProfile */])().credits).toLocaleString('en-US'));
+    setText('location', state.system.name + (state.stationPos ? ' · Atlantis ' + (stationDistance() / 1000).toFixed(1) + 'k' : '') + ' · 3D');
+    setText('fps', 'Fps: ' + Math.round(fps) + ' (3D)');
+    setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + ' (X)' +
+        (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + ' (G) · Targets: ' + __WEBPACK_IMPORTED_MODULE_7__components_ship_ship__["d" /* TARGET_MODE_LABEL */][ship.targetMode] + ' (T)' : ''));
+    setBar('hullBar', ship.hp / ship.maxHull);
+    setText('hullText', Math.ceil(ship.hp) + ' / ' + Math.round(ship.maxHull));
+    setBar('shieldBar', ship.maxShield ? ship.shield / ship.maxShield : 0);
+    setText('shieldText', ship.maxShield ? Math.ceil(ship.shield) + ' / ' + Math.round(ship.maxShield) : 'none');
+    setBar('cargoBar', used / ship.cargoCapacity);
+    setText('cargoText', used + ' / ' + ship.cargoCapacity);
+    const sb = domHud.shieldButton;
+    const label = ship.maxShield <= 0 ? 'No shields' : ship.shieldsEnabled ? (ship.shieldUp ? 'Shields: UP (H)' : 'Shields: DEPLETED') : 'Shields: DOWN (H)';
+    if(sb && sb.textContent !== label) {
+        sb.textContent = label;
+        sb.className = 'shield-button ' + (ship.maxShield <= 0 ? 'none' : ship.shieldsEnabled ? (ship.shieldUp ? 'up' : 'depleted') : 'down');
+    }
+};
+
+// ------------------------------------------------------------ game flow
+
+const freeze = (frozen) => {
+    document.body.classList.toggle('playing', !frozen);
+    Object.keys(keys).forEach(k => { keys[k] = false; });
+    mouse.left = mouse.right = false;
+    domHud.shieldButton.style.display = !frozen ? '' : 'none';
+    domHud.starmapButton.style.display = !frozen ? '' : 'none';
+    domHud.cargoButton.style.display = 'none';
+    if(frozen) __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].stopAll();
+    else {
+        __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].startEngine();
+        lastTime = performance.now();
+        accumulator = 0;
+    }
+};
+
+const setPaused = (paused) => {
+    state.paused = paused;
+    document.getElementById('pauseMenu').style.visibility = paused ? 'visible' : 'hidden';
+    freeze(paused);
+};
+
+const endGame = (message) => {
+    cancelAnimationFrame(frameId);
+    frameId = null;
+    freeze(true);
+    clearSystem();
+    scene.remove(state.ship.group);
+    state = null;
+    renderer.domElement.style.display = 'none';
+    hudCanvas.style.display = 'none';
+    document.getElementById('pauseMenu').style.visibility = 'hidden';
+    const menuMessage = document.getElementById('menuMessage');
+    if(menuMessage) menuMessage.textContent = message || '';
+    document.getElementById('menu').style.visibility = 'visible';
+    if(onExit) onExit();
+};
+
+const frame = (now) => {
+    let elapsed = Math.min(0.25, (now - lastTime) / 1000);
+    lastTime = now;
+    if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
+    try {
+        let tunnel = false;
+        if(state.transition && !state.paused) tunnel = updateTransition(elapsed);
+        if(!state.paused) {
+            accumulator += elapsed;
+            let steps = 0;
+            while(accumulator >= STEP && steps < MAX_STEPS) {
+                step(STEP);
+                accumulator -= STEP;
+                steps++;
+            }
+            if(steps === MAX_STEPS) accumulator = 0;
+            const ship = state.ship;
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].setThrust(ship.alive && ship.thrusting && !tunnel);
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].setFiring(ship.alive && ship.minigunFiring);
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].setBeam(ship.alive && ship.beaming);
+            __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].setTractor(ship.alive && state.tractorCount > 0, Math.min(1, state.tractorCount / 6));
+        } else {
+            elapsed = 0;
+        }
+        render(elapsed);
+        if(state.gameOverTimer >= GAME_OVER_DELAY) {
+            Object(__WEBPACK_IMPORTED_MODULE_18__shipyard_profile__["k" /* loseCargo */])();
+            endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
+            return;
+        }
+    } catch(error) {
+        if(window.console) console.error('3D frame error:', error);
+        if(state) banner('Error: ' + ((error && error.message) || error), 4);
+    }
+    if(state) frameId = requestAnimationFrame(frame);
+};
+
+// Launch the 3D game from the menu. `exit` is called when it returns to the menu.
+const start3D = (exit) => {
+    onExit = exit || null;
+    if(!initialized) initialize();
+    __WEBPACK_IMPORTED_MODULE_19__audio_audio__["a" /* default */].unlock();
+    renderer.domElement.style.display = '';
+    hudCanvas.style.display = '';
+    resize();
+    state = createState();
+    state.system = Object(__WEBPACK_IMPORTED_MODULE_11__world_systems__["g" /* systemById */])('lantea');
+    enterSystem(state.system, null);
+    state.cameraSnap = true;
+    mouse.x = width / 2;
+    mouse.y = height / 2;
+    document.getElementById('pauseMenu').style.visibility = 'hidden';
+    freeze(false);
+    lastTime = performance.now();
+    frameId = requestAnimationFrame(frame);
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = start3D;
+
+
+// For tests and debugging.
+const game3dState = () => state;
+/* unused harmony export game3dState */
+
+const game3dProject = (p) => project(p);
+/* unused harmony export game3dProject */
+
+const spawnEnemy3D = (hullId, level) => (state ? spawnEnemy(hullId, level, true) : null);
+/* unused harmony export spawnEnemy3D */
+
+
+
+/***/ }),
+/* 32 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// GPU particles and tracers for the 3D game: sparks, fire, plasma, engine exhaust, dust and
+// smoke, shockwaves, and the minigun tracer lines. Particles live in big preallocated
+// buffers (no allocation per particle) and are drawn as soft round points that shrink with
+// distance like real objects.
+
+const MAX_GLOW = 6000;
+const MAX_DUST = 2500;
+const MAX_TRACERS = 3000;
+
+const VERTEX = [
+    'attribute float size;',
+    'attribute float alpha;',
+    'attribute vec3 tint;',
+    'uniform float uScale;',
+    'varying float vAlpha;',
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+    '    gl_PointSize = clamp(size * uScale / max(1.0, -mv.z), 0.0, 512.0);',
+    '    vAlpha = alpha;',
+    '    vTint = tint;',
+    '    gl_Position = projectionMatrix * mv;',
+    '}'
+].join('\n');
+
+const FRAGMENT = [
+    'uniform sampler2D uMap;',
+    'varying float vAlpha;',
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec4 t = texture2D(uMap, gl_PointCoord);',
+    '    gl_FragColor = vec4(vTint * t.rgb, t.a * vAlpha);',
+    '}'
+].join('\n');
+
+const glowTexture = (THREE) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.25, 'rgba(255,255,255,0.75)');
+    g.addColorStop(0.6, 'rgba(255,255,255,0.18)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(canvas);
+};
+/* unused harmony export glowTexture */
+
+
+class ParticlePool {
+
+    constructor(THREE, scene, max, additive, texture) {
+        this.max = max;
+        this.count = 0;
+        this.px = new Float32Array(max);
+        this.py = new Float32Array(max);
+        this.pz = new Float32Array(max);
+        this.vx = new Float32Array(max);
+        this.vy = new Float32Array(max);
+        this.vz = new Float32Array(max);
+        this.life = new Float32Array(max);
+        this.maxLife = new Float32Array(max);
+        this.size0 = new Float32Array(max);
+        this.grow = new Float32Array(max);
+        this.alpha0 = new Float32Array(max);
+        this.drag = new Float32Array(max);
+        this.cr = new Float32Array(max);
+        this.cg = new Float32Array(max);
+        this.cb = new Float32Array(max);
+
+        this.positions = new Float32Array(max * 3);
+        this.sizes = new Float32Array(max);
+        this.alphas = new Float32Array(max);
+        this.tints = new Float32Array(max * 3);
+        const geometry = new THREE.BufferGeometry();
+        this.positionAttr = new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage);
+        this.sizeAttr = new THREE.BufferAttribute(this.sizes, 1).setUsage(THREE.DynamicDrawUsage);
+        this.alphaAttr = new THREE.BufferAttribute(this.alphas, 1).setUsage(THREE.DynamicDrawUsage);
+        this.tintAttr = new THREE.BufferAttribute(this.tints, 3).setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('position', this.positionAttr);
+        geometry.setAttribute('size', this.sizeAttr);
+        geometry.setAttribute('alpha', this.alphaAttr);
+        geometry.setAttribute('tint', this.tintAttr);
+        geometry.setDrawRange(0, 0);
+        this.geometry = geometry;
+        this.material = new THREE.ShaderMaterial({
+            uniforms: { uMap: { value: texture }, uScale: { value: 500 } },
+            vertexShader: VERTEX,
+            fragmentShader: FRAGMENT,
+            transparent: true,
+            depthWrite: false,
+            blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending
+        });
+        this.points = new THREE.Points(geometry, this.material);
+        this.points.frustumCulled = false;
+        this.points.renderOrder = additive ? 5 : 4;
+        scene.add(this.points);
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
+    spawn(o) {
+        let i = this.count;
+        if(i >= this.max) i = Math.floor(Math.random() * this.max);   // full: recycle one
+        else this.count++;
+        this.px[i] = o.x; this.py[i] = o.y; this.pz[i] = o.z;
+        this.vx[i] = o.vx || 0; this.vy[i] = o.vy || 0; this.vz[i] = o.vz || 0;
+        this.life[i] = this.maxLife[i] = o.life;
+        this.size0[i] = o.size;
+        this.grow[i] = o.grow || 0;
+        this.alpha0[i] = o.alpha === undefined ? 1 : o.alpha;
+        this.drag[i] = o.drag || 0;
+        this.cr[i] = o.color[0]; this.cg[i] = o.color[1]; this.cb[i] = o.color[2];
+    }
+
+    update(dt) {
+        let n = this.count;
+        for(let i = 0; i < n; i++) {
+            this.life[i] -= dt;
+            if(this.life[i] <= 0) {
+                // Swap the last live particle into this slot.
+                n--;
+                this.copy(n, i);
+                i--;
+                continue;
+            }
+            const d = this.drag[i];
+            if(d > 0) {
+                const k = Math.max(0, 1 - d * dt);
+                this.vx[i] *= k; this.vy[i] *= k; this.vz[i] *= k;
+            }
+            this.px[i] += this.vx[i] * dt;
+            this.py[i] += this.vy[i] * dt;
+            this.pz[i] += this.vz[i] * dt;
+            this.size0[i] += this.grow[i] * dt;
+        }
+        this.count = n;
+        for(let i = 0; i < n; i++) {
+            const t = this.life[i] / this.maxLife[i];
+            this.positions[i * 3] = this.px[i];
+            this.positions[i * 3 + 1] = this.py[i];
+            this.positions[i * 3 + 2] = this.pz[i];
+            this.sizes[i] = this.size0[i];
+            this.alphas[i] = this.alpha0[i] * Math.min(1, t * 1.6);
+            this.tints[i * 3] = this.cr[i];
+            this.tints[i * 3 + 1] = this.cg[i];
+            this.tints[i * 3 + 2] = this.cb[i];
+        }
+        this.geometry.setDrawRange(0, n);
+        this.positionAttr.needsUpdate = true;
+        this.sizeAttr.needsUpdate = true;
+        this.alphaAttr.needsUpdate = true;
+        this.tintAttr.needsUpdate = true;
+    }
+
+    copy(from, to) {
+        const arrays = [this.px, this.py, this.pz, this.vx, this.vy, this.vz, this.life, this.maxLife, this.size0,
+            this.grow, this.alpha0, this.drag, this.cr, this.cg, this.cb];
+        for(let k = 0; k < arrays.length; k++) arrays[k][to] = arrays[k][from];
+    }
+
+    clear() {
+        this.count = 0;
+        this.geometry.setDrawRange(0, 0);
+    }
+}
+
+const rgb = (text) => {
+    const parts = text.split(',');
+    return [parseFloat(parts[0]) / 255, parseFloat(parts[1]) / 255, parseFloat(parts[2]) / 255];
+};
+
+class Effects3D {
+
+    constructor(THREE, scene) {
+        this.THREE = THREE;
+        this.texture = glowTexture(THREE);
+        this.glow = new ParticlePool(THREE, scene, MAX_GLOW, true, this.texture);
+        this.dust = new ParticlePool(THREE, scene, MAX_DUST, false, this.texture);
+
+        // Tracers: one line segment per kinetic round (tail -> head), additive.
+        this.tracerPositions = new Float32Array(MAX_TRACERS * 6);
+        this.tracerColors = new Float32Array(MAX_TRACERS * 6);
+        const geometry = new THREE.BufferGeometry();
+        this.tracerPosAttr = new THREE.BufferAttribute(this.tracerPositions, 3).setUsage(THREE.DynamicDrawUsage);
+        this.tracerColAttr = new THREE.BufferAttribute(this.tracerColors, 3).setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('position', this.tracerPosAttr);
+        geometry.setAttribute('color', this.tracerColAttr);
+        geometry.setDrawRange(0, 0);
+        this.tracerGeometry = geometry;
+        this.tracers = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
+            vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+        }));
+        this.tracers.frustumCulled = false;
+        this.tracers.renderOrder = 6;
+        scene.add(this.tracers);
+    }
+
+    // Point size scale so `size` is in world units at any distance.
+    resize(viewportHeight, fovDegrees) {
+        const scale = viewportHeight / (2 * Math.tan(fovDegrees * Math.PI / 360));
+        this.glow.material.uniforms.uScale.value = scale;
+        this.dust.material.uniforms.uScale.value = scale;
+    }
+
+    // One particle. `color` is 'r,g,b' (0-255) or an [r, g, b] array in 0-1.
+    spawn(o, dusty) {
+        const color = typeof o.color === 'string' ? rgb(o.color) : o.color;
+        (dusty ? this.dust : this.glow).spawn(Object.assign({}, o, { color: color }));
+    }
+
+    // A spray of particles from `p` (Vector3) carrying base velocity `v` (Vector3 or null).
+    burst(p, v, count, o) {
+        const color = typeof o.color === 'string' ? rgb(o.color) : o.color;
+        const pool = o.dust ? this.dust : this.glow;
+        for(let i = 0; i < count; i++) {
+            // Random direction on a sphere (or within a cone around o.dir).
+            let dx, dy, dz;
+            do {
+                dx = Math.random() * 2 - 1;
+                dy = Math.random() * 2 - 1;
+                dz = Math.random() * 2 - 1;
+            } while(dx * dx + dy * dy + dz * dz > 1 || dx * dx + dy * dy + dz * dz < 0.01);
+            const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            dx /= len; dy /= len; dz /= len;
+            if(o.dir) {
+                const c = o.cone === undefined ? 0.6 : o.cone;
+                dx = o.dir.x + dx * c; dy = o.dir.y + dy * c; dz = o.dir.z + dz * c;
+                const l2 = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+                dx /= l2; dy /= l2; dz /= l2;
+            }
+            const speed = o.minSpeed + Math.random() * (o.maxSpeed - o.minSpeed);
+            pool.spawn({
+                x: p.x, y: p.y, z: p.z,
+                vx: (v ? v.x : 0) + dx * speed, vy: (v ? v.y : 0) + dy * speed, vz: (v ? v.z : 0) + dz * speed,
+                life: o.minLife + Math.random() * (o.maxLife - o.minLife),
+                size: o.size * (0.7 + Math.random() * 0.6),
+                grow: o.grow || 0,
+                alpha: o.alpha === undefined ? 1 : o.alpha,
+                drag: o.drag || 0,
+                color: color
+            });
+        }
+    }
+
+    // Fiery explosion with sparks, a flash, smoke and an expanding shockwave.
+    explosion(p, v, size, color) {
+        const c = color || '255,170,90';
+        this.burst(p, v, Math.round(12 + size * 0.6), { minSpeed: 30, maxSpeed: 60 + size * 5, minLife: 0.3, maxLife: 0.9, size: 6 + size * 0.12, color: c, drag: 1.2 });
+        this.burst(p, v, Math.round(10 + size * 0.4), { minSpeed: 80, maxSpeed: 180 + size * 6, minLife: 0.3, maxLife: 1, size: 2.2, color: '255,220,160', drag: 0.6 });
+        this.spawn({ x: p.x, y: p.y, z: p.z, life: 0.35, size: size * 1.6 + 20, grow: size * 2, color: '255,240,215', alpha: 0.9 });
+        this.spawn({ x: p.x, y: p.y, z: p.z, life: 0.6, size: size * 0.6, grow: size * 5, color: c, alpha: 0.35 });
+        this.burst(p, v, Math.round(4 + size * 0.15), { minSpeed: 5, maxSpeed: 40, minLife: 1.4, maxLife: 2.6, size: 14 + size * 0.25, grow: 12, color: '110,104,100', alpha: 0.35, drag: 0.5, dust: true });
+    }
+
+    // Kinetic rounds as glowing streaks behind each bullet.
+    setTracers(bullets) {
+        let n = 0;
+        const P = this.tracerPositions;
+        const C = this.tracerColors;
+        for(let i = 0; i < bullets.length && n < MAX_TRACERS; i++) {
+            const b = bullets[i];
+            if(b.dead || b.kind !== 'bullet') continue;
+            const k = Math.min(1, (b.age || 0) * 14) * 0.028;
+            const o = n * 6;
+            P[o] = b.x - b.vx * k; P[o + 1] = b.y - b.vy * k; P[o + 2] = b.z - b.vz * k;
+            P[o + 3] = b.x; P[o + 4] = b.y; P[o + 5] = b.z;
+            const enemy = b.side === 'enemy';
+            C[o] = 0.6; C[o + 1] = enemy ? 0.25 : 0.32; C[o + 2] = enemy ? 0.2 : 0.08;
+            C[o + 3] = 1; C[o + 4] = enemy ? 0.75 : 0.92; C[o + 5] = enemy ? 0.7 : 0.6;
+            n++;
+        }
+        this.tracerGeometry.setDrawRange(0, n * 2);
+        this.tracerPosAttr.needsUpdate = true;
+        this.tracerColAttr.needsUpdate = true;
+    }
+
+    update(dt) {
+        this.glow.update(dt);
+        this.dust.update(dt);
+    }
+
+    clear() {
+        this.glow.clear();
+        this.dust.clear();
+        this.tracerGeometry.setDrawRange(0, 0);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (Effects3D);
+
+
+/***/ }),
+/* 33 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world_materials__ = __webpack_require__(1);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render3d_world3d__ = __webpack_require__(16);
+// Asteroids in 3D: faceted rock bodies tumbling through space, generated in endless cubic
+// sectors around the ship. Mining chips them smaller and splits the big ones; ore is
+// spawned by the game when they are hit.
+
+
+
+
+const SECTOR = 2000;
+/* unused harmony export SECTOR */
+
+const ACTIVE = 1;                // sectors in each direction that are simulated
+const SAFE_RADIUS = 1100;        // no asteroids this close to the station or the gate
+const VARIANTS = 18;
+const CAPACITY = 500;            // instances per shape variant
+
+const random = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+let nextId = 1;
+
+class Rock3D {
+
+    constructor(o) {
+        this.id = nextId++;
+        this.x = o.x; this.y = o.y; this.z = o.z;
+        this.vx = o.vx || 0; this.vy = o.vy || 0; this.vz = o.vz || 0;
+        this.radius = o.radius;
+        this.variant = o.variant === undefined ? Math.floor(Math.random() * VARIANTS) : o.variant;
+        this.composition = o.composition || { rock: 1 };
+        this.material = Object(__WEBPACK_IMPORTED_MODULE_0__world_materials__["c" /* dominantMaterial */])(this.composition);
+        const rnd = o.random || Math.random;
+        // Tumbling: a random axis and a spin rate that is slower for bigger rocks.
+        let ax = rnd() * 2 - 1, ay = rnd() * 2 - 1, az = rnd() * 2 - 1;
+        const l = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+        this.axis = [ax / l, ay / l, az / l];
+        this.spin = (rnd() - 0.5) * 30 / (this.radius + 10);
+        this.angle = rnd() * Math.PI * 2;
+        this.wear = 0;               // damage absorbed since the last split
+        this.oreProgress = 0;
+        this.flash = 0;
+        this.grace = o.grace || 0;   // fresh fragments don't collide straight away
+        this.dead = false;
+    }
+
+    get mass() {
+        return this.radius * this.radius * this.radius * 0.05;
+    }
+
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.z += this.vz * dt;
+        this.angle += this.spin * dt;
+        if(this.flash > 0) this.flash -= dt;
+        if(this.grace > 0) this.grace -= dt;
+    }
+
+    // Material that comes off when mined.
+    pickOre() {
+        return Object(__WEBPACK_IMPORTED_MODULE_0__world_materials__["d" /* pickFromComposition */])(this.composition, Math.random);
+    }
+}
+/* harmony export (immutable) */ __webpack_exports__["b"] = Rock3D;
+
+
+// ------------------------------------------------------------ sectors
+
+const sectorKey = (sx, sy, sz) => sx + ',' + sy + ',' + sz;
+const sectorOf3 = (x, y, z) => ({ sx: Math.floor(x / SECTOR), sy: Math.floor(y / SECTOR), sz: Math.floor(z / SECTOR) });
+/* unused harmony export sectorOf3 */
+
+
+class Field3D {
+
+    constructor(seed, bias, safePoints) {
+        this.seed = seed;
+        this.bias = bias || {};
+        this.safePoints = safePoints || [];
+        this.dormant = {};
+        this.seen = {};
+        this.active = {};
+    }
+
+    generate(sx, sy, sz) {
+        const rnd = random((this.seed * 73856093) ^ (sx * 19349663) ^ (sy * 83492791) ^ (sz * 50331653));
+        const distance = Math.max(Math.abs(sx), Math.abs(sy), Math.abs(sz));
+        const rocks = [];
+        // Some sectors hold a dense cluster, some are almost empty.
+        const dense = rnd() < 0.18;
+        const count = dense ? 9 + Math.floor(rnd() * 8) : 2 + Math.floor(rnd() * 6);
+        const cx = (sx + 0.2 + rnd() * 0.6) * SECTOR;
+        const cy = (sy + 0.2 + rnd() * 0.6) * SECTOR;
+        const cz = (sz + 0.2 + rnd() * 0.6) * SECTOR;
+        for(let i = 0; i < count; i++) {
+            const spread = dense ? 450 : SECTOR * 0.5;
+            const x = dense ? cx + (rnd() - 0.5) * 2 * spread : (sx + rnd()) * SECTOR;
+            const y = dense ? cy + (rnd() - 0.5) * 2 * spread : (sy + rnd()) * SECTOR;
+            const z = dense ? cz + (rnd() - 0.5) * 2 * spread : (sz + rnd()) * SECTOR;
+            if(this.safePoints.some(p => Math.sqrt((x - p.x) * (x - p.x) + (y - p.y) * (y - p.y) + (z - p.z) * (z - p.z)) < SAFE_RADIUS)) continue;
+            const giant = rnd() < 0.05;
+            const radius = giant ? 110 + rnd() * 110 : 14 + rnd() * rnd() * 95;
+            const main = Object(__WEBPACK_IMPORTED_MODULE_0__world_materials__["e" /* rollMaterial */])(rnd, distance, this.bias);
+            const composition = main === 'rock' ? { rock: 1 } : { rock: 0.45 + rnd() * 0.25 };
+            if(main !== 'rock') composition[main] = 1 - composition.rock;
+            rocks.push(new Rock3D({
+                x: x, y: y, z: z,
+                vx: (rnd() - 0.5) * 16, vy: (rnd() - 0.5) * 16, vz: (rnd() - 0.5) * 16,
+                radius: radius, variant: Math.floor(rnd() * VARIANTS), composition: composition, random: rnd
+            }));
+        }
+        return rocks;
+    }
+
+    // Wake the sectors around (x, y, z) and put far ones to sleep. Returns the active rocks.
+    update(x, y, z, rocks) {
+        const c = sectorOf3(x, y, z);
+        const wanted = {};
+        for(let dx = -ACTIVE; dx <= ACTIVE; dx++) {
+            for(let dy = -ACTIVE; dy <= ACTIVE; dy++) {
+                for(let dz = -ACTIVE; dz <= ACTIVE; dz++) {
+                    wanted[sectorKey(c.sx + dx, c.sy + dy, c.sz + dz)] = [c.sx + dx, c.sy + dy, c.sz + dz];
+                }
+            }
+        }
+        const keep = [];
+        rocks.forEach(rock => {
+            if(rock.dead) return;
+            const s = sectorOf3(rock.x, rock.y, rock.z);
+            const key = sectorKey(s.sx, s.sy, s.sz);
+            if(wanted[key]) keep.push(rock);
+            else (this.dormant[key] = this.dormant[key] || []).push(rock);
+        });
+        Object.keys(this.active).forEach(key => { if(!wanted[key]) delete this.active[key]; });
+        Object.keys(wanted).forEach(key => {
+            if(this.active[key]) return;
+            this.active[key] = true;
+            if(!this.seen[key]) {
+                this.seen[key] = true;
+                const s = wanted[key];
+                this.generate(s[0], s[1], s[2]).forEach(r => keep.push(r));
+            }
+            if(this.dormant[key]) {
+                this.dormant[key].forEach(r => keep.push(r));
+                delete this.dormant[key];
+            }
+        });
+        return keep;
+    }
+}
+/* harmony export (immutable) */ __webpack_exports__["a"] = Field3D;
+
+
+// ------------------------------------------------------------ rendering
+
+// Faceted rock shapes: a subdivided icosahedron pushed in and out by noise and craters,
+// squashed a little, with darker cavities and lighter ridges.
+const buildVariant = (THREE, index) => {
+    const geometry = new THREE.IcosahedronGeometry(1, 2);
+    const noise = Object(__WEBPACK_IMPORTED_MODULE_1__render3d_world3d__["g" /* makeNoise */])(9000 + index * 131);
+    const rnd = random(4000 + index * 977);
+    const squash = [0.75 + rnd() * 0.3, 0.75 + rnd() * 0.3, 0.7 + rnd() * 0.3];
+    const craters = [];
+    for(let i = 0; i < 5 + Math.floor(rnd() * 5); i++) {
+        let cx = rnd() * 2 - 1, cy = rnd() * 2 - 1, cz = rnd() * 2 - 1;
+        const l = Math.sqrt(cx * cx + cy * cy + cz * cz) || 1;
+        craters.push({ x: cx / l, y: cy / l, z: cz / l, r: 0.25 + rnd() * 0.35, depth: 0.06 + rnd() * 0.12 });
+    }
+    const pos = geometry.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    for(let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const l = Math.sqrt(x * x + y * y + z * z) || 1;
+        x /= l; y /= l; z /= l;
+        let r = 0.82 + noise(x * 1.4 + 5, y * 1.4 + 5, z * 1.4 + 5, 4) * 0.45;
+        craters.forEach(c => {
+            const d = Math.sqrt((x - c.x) * (x - c.x) + (y - c.y) * (y - c.y) + (z - c.z) * (z - c.z));
+            if(d < c.r) r -= c.depth * (1 - (d / c.r) * (d / c.r));
+        });
+        pos.setXYZ(i, x * r * squash[0], y * r * squash[1], z * r * squash[2]);
+        const shade = Math.max(0.45, Math.min(1.15, 0.55 + (r - 0.8) * 1.4));
+        colors[i * 3] = shade;
+        colors[i * 3 + 1] = shade * 0.96;
+        colors[i * 3 + 2] = shade * 0.9;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
     return geometry;
 };
 
-// ------------------------------------------------------------ ship hulls
+const BASE_ROCK = [0.55, 0.5, 0.46];
 
-const partPoints = (part) => {
-    if(part.rect) {
-        const r = part.rect;
-        return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-    }
-    return part.pts;
-};
-
-const polygonArea = (pts) => {
-    let area = 0;
-    for(let i = 0; i < pts.length; i++) {
-        const a = pts[i];
-        const b = pts[(i + 1) % pts.length];
-        area += a[0] * b[1] - b[0] * a[1];
-    }
-    return Math.abs(area) / 2;
-};
-
-// Every closed piece of the hull's line art extruded into a solid plate, its top face on
-// the game plane (where the 2D line art is drawn) and its sides going down into depth.
-// Later pieces (details) sit a hair higher so they never flicker against the plates.
-const buildHullGeometries = (THREE, hull) => {
-    const parts = [];
-    const maxDepth = Math.max(2.5, hull.radius * 0.22);
-    hull.art.forEach((part, index) => {
-        const lift = index * 0.02 * Math.max(1, hull.radius / 40);
-        if(part.circle) {
-            const c = part.circle;
-            const depth = Math.min(maxDepth, Math.max(0.8, c[2] * 0.6));
-            const geometry = new THREE.CylinderGeometry(c[2], c[2], depth, 18);
-            geometry.rotateX(Math.PI / 2);
-            geometry.translate(c[0], -c[1], lift - depth / 2);
-            parts.push(geometry);
-            return;
-        }
-        if(!(part.closed || part.rect)) return;
-        const pts = partPoints(part);
-        if(pts.length < 3) return;
-        const shape = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1])));
-        const area = polygonArea(pts);
-        let perimeter = 0;
-        for(let i = 0; i < pts.length; i++) {
-            const a = pts[i];
-            const b = pts[(i + 1) % pts.length];
-            perimeter += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
-        }
-        const inradius = perimeter > 0 ? 2 * area / perimeter : 1;
-        const depth = Math.min(maxDepth, Math.max(0.8, Math.sqrt(area) * 0.3));
-        // A rounded, inward bevel so plate edges catch the light (the outline stays exactly
-        // on the line art; the bevel slopes in from it).
-        const bevelSize = Math.max(0.2, Math.min(inradius * 0.45, depth * 1.1));
-        const bevelThickness = depth * 0.7;
-        const geometry = new THREE.ExtrudeGeometry(shape, {
-            depth: depth * 0.3, steps: 1, bevelEnabled: true, bevelThickness: bevelThickness,
-            bevelSize: bevelSize, bevelOffset: -bevelSize, bevelSegments: 3
-        });
-        geometry.translate(0, 0, lift - depth * 0.3 - bevelThickness);
-        parts.push(geometry);
+// Rock colour from its composition: dusty grey-brown tinted towards its metals.
+const rockTint = (composition) => {
+    let c = BASE_ROCK.slice();
+    Object.keys(composition).forEach(id => {
+        if(id === 'rock' || !__WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id]) return;
+        const t = __WEBPACK_IMPORTED_MODULE_0__world_materials__["b" /* default */][id].color.split(',').map(v => parseFloat(v) / 255);
+        const share = composition[id] * 0.55;
+        c = c.map((v, i) => v * (1 - share) + t[i] * share);
     });
-    return parts;
+    return c;
 };
 
-// ------------------------------------------------------------ stars
+class RockRenderer {
 
-// Star layers at increasing depth below the play plane. The vertex shader wraps each star
-// into a tile around the camera, so the field is endless; perspective gives the parallax.
-const STAR_LAYERS = [
-    { count: 900, minDepth: 400, maxDepth: 1600, tile: 5000, size: [1.2, 2.4] },
-    { count: 1200, minDepth: 1600, maxDepth: 5000, tile: 11000, size: [1, 2] },
-    { count: 1800, minDepth: 5000, maxDepth: 14000, tile: 24000, size: [0.8, 1.6] }
-];
-
-const STAR_VERTEX = [
-    'attribute float size;',
-    'attribute vec3 tint;',
-    'uniform vec2 uCamera;',
-    'uniform float uTile;',
-    'uniform float uPixelRatio;',
-    'varying vec3 vTint;',
-    'void main() {',
-    '    vec3 p = position;',
-    '    vec2 origin = uCamera - vec2(uTile * 0.5);',
-    '    p.xy = origin + mod(p.xy - origin, uTile);',
-    '    vTint = tint;',
-    '    gl_PointSize = size * uPixelRatio;',
-    '    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
-    '}'
-].join('\n');
-
-const STAR_FRAGMENT = [
-    'varying vec3 vTint;',
-    'void main() {',
-    '    vec2 d = gl_PointCoord - vec2(0.5);',
-    '    float falloff = 1.0 - smoothstep(0.15, 0.5, length(d));',
-    '    gl_FragColor = vec4(vTint * falloff, falloff);',
-    '}'
-].join('\n');
-
-// ------------------------------------------------------------ scene
-
-class Scene3D {
-
-    // `requireHardware`: refuse to start (throw) when the browser would only give us slow
-    // software rendering, so the game uses its 2D view instead of crawling.
-    constructor(container, requireHardware) {
-        const THREE = window.THREE;
+    constructor(THREE, scene) {
         this.THREE = THREE;
-        this.renderer = new THREE.WebGLRenderer({
-            antialias: true, alpha: true, powerPreference: 'high-performance',
-            failIfMajorPerformanceCaveat: !!requireHardware
-        });
-        this.renderer.setClearColor(0x000000, 0);
-        this.canvas = this.renderer.domElement;
-        this.canvas.className = 'gl-layer';
-        container.appendChild(this.canvas);
-
-        this.scene = new THREE.Scene();
-        this.camera = new THREE.PerspectiveCamera(FOV, 1, 10, 40000);
-
-        this.scene.add(new THREE.AmbientLight(0x8a96b0, 0.45));
-        this.scene.add(new THREE.HemisphereLight(0xb8c8e8, 0x1a1c24, 0.55));
-        const sun = new THREE.DirectionalLight(0xfff0dc, 3.4);
-        sun.position.set(LIGHT.x, LIGHT.y, LIGHT.z);
-        this.scene.add(sun);
-        this.scene.add(sun.target);
-        // A faint cool rim light from the opposite side so dark faces keep some shape.
-        const rim = new THREE.DirectionalLight(0x6f8cff, 0.6);
-        rim.position.set(-LIGHT.x, -LIGHT.y, 0.3);
-        this.scene.add(rim);
-
-        this.rockEntries = new Map();
-        this.shipEntries = new Map();
-        this.hullCache = {};
-        this.buildStars();
-        this.ores = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["e" /* buildOreCrystals */])(THREE);
-        this.scene.add(this.ores);
-        this.oreMatrix = new THREE.Matrix4();
-        this.oreQuat = new THREE.Quaternion();
-        this.oreEuler = new THREE.Euler();
-        this.oreColor = new THREE.Color();
-        this.oreScale = new THREE.Vector3();
-        this.orePos = new THREE.Vector3();
-        this.visible = true;
-    }
-
-    // ------------------------------------------------------------ scenery
-
-    // Atlantis, the gate, the DHD and the planet belong to the current star system.
-    syncSystem(view) {
-        const THREE = this.THREE;
-        if(this.systemId === view.system.id && this.gateRef === view.gate) return;
-        this.systemId = view.system.id;
-        this.gateRef = view.gate;
-        ['stationGroup', 'gateGroup', 'dhdGroup', 'planetHolder'].forEach(key => {
-            if(this[key]) {
-                this.scene.remove(this[key]);
-                this[key] = null;
-            }
-        });
-        if(this.planet) {
-            this.planet.textures.map.dispose();
-            this.planet.textures.clouds.dispose();
-            this.planet = null;
+        const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0.08, flatShading: true });
+        this.meshes = [];
+        for(let i = 0; i < VARIANTS; i++) {
+            const mesh = new THREE.InstancedMesh(buildVariant(THREE, i), material, CAPACITY);
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            mesh.count = 0;
+            mesh.frustumCulled = false;
+            scene.add(mesh);
+            this.meshes.push(mesh);
         }
-        if(view.station) {
-            if(!this.atlantis) this.atlantis = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["b" /* buildAtlantis */])(THREE, view.station);
-            this.stationGroup = this.atlantis;
-            this.scene.add(this.stationGroup);
-        }
-        if(!this.gateModel) {
-            this.gateModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["d" /* buildGate */])(THREE, __WEBPACK_IMPORTED_MODULE_1__world_stargate__["d" /* GATE_RADIUS */], __WEBPACK_IMPORTED_MODULE_1__world_stargate__["c" /* GATE_INNER */], Object(__WEBPACK_IMPORTED_MODULE_1__world_stargate__["f" /* gateSymbolSprite */])(), __WEBPACK_IMPORTED_MODULE_1__world_stargate__["a" /* CHEVRON_ANGLES */]);
-            this.dhdModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["c" /* buildDHD */])(THREE);
-        }
-        this.gateGroup = this.gateModel.group;
-        this.gateGroup.position.set(view.gate.x, -view.gate.y, 0);
-        this.scene.add(this.gateGroup);
-        const dhd = view.gate.dhd;
-        this.dhdGroup = this.dhdModel.group;
-        this.dhdGroup.position.set(dhd.x, -dhd.y, 0);
-        this.scene.add(this.dhdGroup);
-        const palette = __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */][view.system.planet.type] || __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */].rocky;
-        this.planet = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["f" /* buildPlanet */])(THREE, view.system, palette);
-        this.planetHolder = this.planet.holder;
-        this.scene.add(this.planetHolder);
+        this.matrix = new THREE.Matrix4();
+        this.quat = new THREE.Quaternion();
+        this.pos = new THREE.Vector3();
+        this.scale = new THREE.Vector3();
+        this.axis = new THREE.Vector3();
+        this.color = new THREE.Color();
     }
 
-    syncScenery(view) {
-        this.syncSystem(view);
-        const gate = view.gate;
-        if(this.stationGroup) this.stationGroup.visible = view.isVisible(view.station.x, view.station.y, 520);
-        const gateOn = view.isVisible(gate.x, gate.y, 320);
-        this.gateGroup.visible = gateOn;
-        this.dhdGroup.visible = gateOn;
-        if(gateOn) {
-            this.gateModel.symbolRing.rotation.z = -gate.spin;
-            this.gateModel.chevrons.forEach((material, i) => {
-                const lit = gate.chevronLit(i);
-                material.emissive.setRGB(lit ? 1 : 0, lit ? 0.45 : 0, lit ? 0.12 : 0);
-                material.color.setRGB(lit ? 1 : 0.31, lit ? 0.55 : 0.16, lit ? 0.25 : 0.12);
-            });
-            const glow = gate.busy ? 1 : view.nearDHD ? 0.55 + 0.25 * Math.sin(view.time * 3) : 0.3;
-            this.dhdModel.dome.emissive.setRGB(glow, glow * 0.25, glow * 0.12);
-        }
-        // Slow planet spin and drifting clouds.
-        if(this.planet) {
-            this.planet.body.rotation.y = view.time * 0.01;
-            this.planet.clouds.rotation.y = view.time * 0.016;
-        }
-    }
-
-    // ------------------------------------------------------------ ore
-
-    syncOres(ores, isVisible) {
-        const mesh = this.ores;
-        let count = 0;
-        for(let i = 0; i < ores.length && count < __WEBPACK_IMPORTED_MODULE_0__world3d__["a" /* ORE_LIMIT */]; i++) {
-            const ore = ores[i];
-            if(ore.dead || !isVisible(ore.x, ore.y, 10)) continue;
-            const size = ore.radius * 1.35;
-            this.orePos.set(ore.x, -ore.y, 1);
-            this.oreEuler.set(ore.angle * 0.7 + ore.phase, ore.phase, -ore.angle);
-            this.oreQuat.setFromEuler(this.oreEuler);
-            this.oreScale.set(size, size, size);
-            this.oreMatrix.compose(this.orePos, this.oreQuat, this.oreScale);
-            mesh.setMatrixAt(count, this.oreMatrix);
-            const color = (__WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */][ore.material] || __WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */].rock).color.split(',');
-            this.oreColor.setRGB(color[0] / 255, color[1] / 255, color[2] / 255, this.THREE.SRGBColorSpace);
-            mesh.setColorAt(count, this.oreColor);
-            count++;
-        }
-        mesh.count = count;
-        mesh.instanceMatrix.needsUpdate = true;
-        if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
-
-    buildStars() {
-        const THREE = this.THREE;
-        this.starMaterials = [];
-        STAR_LAYERS.forEach(layer => {
-            const positions = new Float32Array(layer.count * 3);
-            const sizes = new Float32Array(layer.count);
-            const tints = new Float32Array(layer.count * 3);
-            for(let i = 0; i < layer.count; i++) {
-                positions[i * 3] = Math.random() * layer.tile;
-                positions[i * 3 + 1] = Math.random() * layer.tile;
-                positions[i * 3 + 2] = -(layer.minDepth + Math.random() * (layer.maxDepth - layer.minDepth));
-                sizes[i] = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
-                const warm = Math.random();
-                const b = 0.5 + Math.random() * 0.5;
-                tints[i * 3] = b * (warm < 0.2 ? 1 : 0.85);
-                tints[i * 3 + 1] = b * 0.9;
-                tints[i * 3 + 2] = b * (warm > 0.7 ? 1 : 0.9);
-            }
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-            geometry.setAttribute('tint', new THREE.BufferAttribute(tints, 3));
-            const material = new THREE.ShaderMaterial({
-                uniforms: { uCamera: { value: new THREE.Vector2() }, uTile: { value: layer.tile }, uPixelRatio: { value: 1 } },
-                vertexShader: STAR_VERTEX,
-                fragmentShader: STAR_FRAGMENT,
-                transparent: true,
-                depthWrite: false,
-                blending: THREE.AdditiveBlending
-            });
-            const points = new THREE.Points(geometry, material);
-            points.frustumCulled = false;
-            this.scene.add(points);
-            this.starMaterials.push(material);
-        });
-    }
-
-    resize(width, height, pixelRatio) {
-        this.renderer.setPixelRatio(pixelRatio);
-        this.renderer.setSize(width, height, false);
-        this.canvas.style.width = width + 'px';
-        this.canvas.style.height = height + 'px';
-        this.width = width;
-        this.height = height;
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-        this.starMaterials.forEach(m => { m.uniforms.uPixelRatio.value = pixelRatio; });
-    }
-
-    setVisible(visible) {
-        if(this.visible === visible) return;
-        this.visible = visible;
-        this.canvas.style.display = visible ? '' : 'none';
-    }
-
-    // Camera straight above (cx, cy) at the height where the game plane appears at `zoom`
-    // screen pixels per world unit.
-    placeCamera(cx, cy, zoom) {
-        const height = (this.height / 2) / (zoom * TAN_HALF_FOV);
-        const camera = this.camera;
-        camera.position.set(cx, -cy, height);
-        camera.lookAt(cx, -cy, 0);
-        camera.near = Math.max(5, height * 0.3);
-        camera.far = height + 16000;
-        camera.updateProjectionMatrix();
-        this.starMaterials.forEach(m => { m.uniforms.uCamera.value.set(cx, -cy); });
-    }
-
-    // ------------------------------------------------------------ asteroids
-
-    syncRocks(rocks, isVisible) {
-        const THREE = this.THREE;
-        const seen = new Set();
+    render(rocks, camera, maxDistance) {
+        const counts = new Array(VARIANTS).fill(0);
+        const max2 = maxDistance * maxDistance;
         rocks.forEach(rock => {
             if(rock.dead) return;
-            seen.add(rock);
-            let entry = this.rockEntries.get(rock);
-            const visible = isVisible(rock.x, rock.y, rock.radius * 1.6);
-            if(!visible) {
-                if(entry) {
-                    entry.mesh.visible = false;
-                    // Well off screen: let go of the texture and its canvas (Safari caps
-                    // total canvas memory); it is rebuilt when the rock comes back.
-                    if(entry.texture && !isVisible(rock.x, rock.y, 900)) {
-                        entry.texture.dispose();
-                        entry.texture = null;
-                        entry.canvas = null;
-                        entry.material.map = null;
-                        entry.material.needsUpdate = true;
-                        entry.version = -1;
-                    }
-                }
-                return;
-            }
-            rock.ensureSprite(true);
-            if(!rock.sprite) return;
-            if(!entry) {
-                const material = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.06 });
-                const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
-                this.scene.add(mesh);
-                entry = { mesh: mesh, material: material, texture: null, version: -1, canvas: null };
-                this.rockEntries.set(rock, entry);
-            }
-            // The painted surface (craters, ore, scars) is the texture; rebuild the body
-            // whenever that art is redrawn (after chipping, carving or merging).
-            if(entry.version !== rock.spriteVersion) {
-                entry.version = rock.spriteVersion;
-                entry.mesh.geometry.dispose();
-                entry.mesh.geometry = buildRockGeometry(THREE, rock);
-                if(entry.canvas !== rock.sprite.canvas) {
-                    if(entry.texture) entry.texture.dispose();
-                    entry.texture = new THREE.CanvasTexture(rock.sprite.canvas);
-                    entry.texture.colorSpace = THREE.SRGBColorSpace;
-                    entry.texture.anisotropy = 2;
-                    entry.material.map = entry.texture;
-                    entry.material.needsUpdate = true;
-                    entry.canvas = rock.sprite.canvas;
-                } else {
-                    entry.texture.needsUpdate = true;
-                }
-            }
-            const mesh = entry.mesh;
-            const scale = rock.radius * rock.renderScale;
-            mesh.visible = scale > 0.5;
-            mesh.position.set(rock.x, -rock.y, 0);
-            mesh.rotation.z = -rock.angle;
-            mesh.scale.set(scale, scale, scale);
-            const fading = rock.renderAlpha < 0.999;
-            if(entry.material.transparent !== fading) {
-                entry.material.transparent = fading;
-                entry.material.needsUpdate = true;
-            }
-            entry.material.opacity = rock.renderAlpha;
-            entry.material.emissive.setScalar(rock.flash > 0 ? 0.22 : 0);
+            const dx = rock.x - camera.x, dy = rock.y - camera.y, dz = rock.z - camera.z;
+            if(dx * dx + dy * dy + dz * dz > max2) return;
+            const v = rock.variant;
+            if(counts[v] >= CAPACITY) return;
+            const mesh = this.meshes[v];
+            this.axis.set(rock.axis[0], rock.axis[1], rock.axis[2]);
+            this.quat.setFromAxisAngle(this.axis, rock.angle);
+            this.pos.set(rock.x, rock.y, rock.z);
+            this.scale.setScalar(rock.radius);
+            this.matrix.compose(this.pos, this.quat, this.scale);
+            mesh.setMatrixAt(counts[v], this.matrix);
+            if(!rock.tint) rock.tint = rockTint(rock.composition);
+            const f = rock.flash > 0 ? 1.6 : 1;
+            this.color.setRGB(rock.tint[0] * f, rock.tint[1] * f, rock.tint[2] * f);
+            mesh.setColorAt(counts[v], this.color);
+            counts[v]++;
         });
-        // Forget asteroids that were destroyed or streamed out.
-        this.rockEntries.forEach((entry, rock) => {
-            if(seen.has(rock)) return;
-            this.scene.remove(entry.mesh);
-            entry.mesh.geometry.dispose();
-            entry.material.dispose();
-            if(entry.texture) entry.texture.dispose();
-            this.rockEntries.delete(rock);
+        this.meshes.forEach((mesh, i) => {
+            mesh.count = counts[i];
+            mesh.instanceMatrix.needsUpdate = true;
+            if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
         });
-    }
-
-    // ------------------------------------------------------------ ships
-
-    hullParts(hull) {
-        const key = hull.id;
-        if(!this.hullCache[key]) this.hullCache[key] = buildHullGeometries(this.THREE, hull);
-        return this.hullCache[key];
-    }
-
-    syncShips(ships, isVisible) {
-        const THREE = this.THREE;
-        const seen = new Set();
-        ships.forEach(ship => {
-            seen.add(ship);
-            let entry = this.shipEntries.get(ship);
-            if(entry && entry.hull !== ship.hullDef) {
-                this.removeShip(ship, entry);
-                entry = null;
-            }
-            if(!entry) {
-                const color = parseRgb(ship.hullDef.color);
-                const material = new THREE.MeshStandardMaterial({
-                    color: new THREE.Color(0.08 + color[0] * 0.3, 0.09 + color[1] * 0.3, 0.11 + color[2] * 0.32),
-                    metalness: 0.35,
-                    roughness: 0.42,
-                    emissive: new THREE.Color(color[0] * 0.03, color[1] * 0.03, color[2] * 0.035)
-                });
-                const group = new THREE.Group();
-                this.hullParts(ship.hullDef).forEach(geometry => group.add(new THREE.Mesh(geometry, material)));
-                this.scene.add(group);
-                entry = { group: group, material: material, hull: ship.hullDef, baseEmissive: material.emissive.clone() };
-                this.shipEntries.set(ship, entry);
-            }
-            const blink = ship.immunity > 0 && Math.floor(ship.immunity * 10) % 2 === 0;
-            const visible = ship.alive && !ship.hidden && !blink && isVisible(ship.x, ship.y, ship.radius * 2);
-            entry.group.visible = visible;
-            if(!visible) return;
-            entry.group.position.set(ship.x, -ship.y, 0);
-            entry.group.rotation.z = -ship.angle;
-            if(ship.hullFlash > 0) entry.material.emissive.setRGB(0.5, 0.08, 0.06);
-            else entry.material.emissive.copy(entry.baseEmissive);
-        });
-        this.shipEntries.forEach((entry, ship) => {
-            if(!seen.has(ship)) this.removeShip(ship, entry);
-        });
-    }
-
-    removeShip(ship, entry) {
-        this.scene.remove(entry.group);
-        entry.material.dispose();
-        this.shipEntries.delete(ship);
-    }
-
-    // ------------------------------------------------------------ frame
-
-    render(view) {
-        if(!this.visible) return;
-        this.placeCamera(view.cameraX, view.cameraY, view.zoom);
-        this.syncScenery(view);
-        this.syncOres(view.ores, view.isVisible);
-        this.syncRocks(view.rocks, view.isVisible);
-        this.syncShips(view.ships, view.isVisible);
-        this.renderer.render(this.scene, this.camera);
-    }
-
-    // Drop everything (new game / new star system).
-    clear() {
-        this.syncRocks([], () => false);
-        this.syncShips([], () => false);
     }
 }
+/* harmony export (immutable) */ __webpack_exports__["c"] = RockRenderer;
 
-/* harmony default export */ __webpack_exports__["a"] = (Scene3D);
 
 
 /***/ }),
-/* 29 */
+/* 34 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-// 3D models for the fixed scenery: Atlantis with its city shield, the Stargate and DHD,
-// the system's planet (and moon), and the ore crystals.
-//
-// Everything sits at or below the play plane (z <= 0), so ships, which fly on the plane,
-// always pass over the city and the gate. Game (x, y) -> Three.js (x, -y, z).
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__ship3d__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__ = __webpack_require__(2);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__shipyard_profile__ = __webpack_require__(4);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_ship_enemy__ = __webpack_require__(10);
+// Enemy ships in 3D: the same hulls and faction fits as before, flown by an AI pilot that
+// steers in all three dimensions.
 
-const v2 = (THREE, p) => new THREE.Vector2(p[0], -p[1]);
 
-// A flat-topped prism from a polygon in game coordinates, top face at `top`.
-const prism = (THREE, pts, top, depth, bevel) => {
-    const shape = new THREE.Shape(pts.map(p => v2(THREE, p)));
-    const b = bevel === undefined ? Math.min(2, depth * 0.25) : bevel;
-    const geometry = new THREE.ExtrudeGeometry(shape, {
-        depth: Math.max(0.5, depth - b), steps: 1, bevelEnabled: b > 0, bevelThickness: b,
-        bevelSize: b, bevelOffset: -b, bevelSegments: 2
-    });
-    geometry.translate(0, 0, top - depth);
-    return geometry;
+
+
+
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+const createEnemy3D = (THREE, hullId, level, position, glowTexture) => {
+    const hull = __WEBPACK_IMPORTED_MODULE_1__shipyard_hulls__["b" /* default */][hullId];
+    const ship = new __WEBPACK_IMPORTED_MODULE_0__ship3d__["c" /* default */](THREE, Object(__WEBPACK_IMPORTED_MODULE_2__shipyard_profile__["f" /* computeShipStats */])(hullId, Object(__WEBPACK_IMPORTED_MODULE_3__components_ship_enemy__["d" /* enemyLoadout */])(hull, level)), 'enemy', glowTexture);
+    ship.position.copy(position);
+    ship.damageScale = __WEBPACK_IMPORTED_MODULE_3__components_ship_enemy__["a" /* ENEMY_DAMAGE */];
+    ship.autoTarget = false;
+    ship.stabilizer = true;
+    ship.immunity = 0.6;
+    ship.level = level;
+    const kinds = ship.turrets.map(t => t.kind).concat(ship.launchers.map(l => l.kind));
+    ship.ai = {
+        controls: { thrust: 0, strafe: 0, lift: 0, pitch: 0, yaw: 0, roll: 0, fire: false, missiles: false, aimPoint: null, lockTarget: null },
+        mode: 'attack', modeTimer: 0, orbit: Math.random() < 0.5 ? 1 : -1, orbitTimer: 3 + Math.random() * 3,
+        missileTimer: 1.5 + Math.random() * 2, evadeTimer: 0, aimError: new THREE.Vector3(),
+        range: (kinds.indexOf('beam') !== -1 ? 380 : kinds.indexOf('staff') !== -1 || kinds.indexOf('minigun') !== -1 ? 450 : 700) + hull.radius * 1.2,
+        gunReach: (kinds.indexOf('beam') !== -1 ? 650 : kinds.indexOf('staff') !== -1 ? 750 : 850) + hull.radius * 0.5,
+        projectileSpeed: kinds.indexOf('staff') !== -1 ? __WEBPACK_IMPORTED_MODULE_0__ship3d__["b" /* PLASMA_SPEED */] : __WEBPACK_IMPORTED_MODULE_0__ship3d__["a" /* BULLET_SPEED */]
+    };
+    ship.bounty = Math.round((150 + hull.cost * 0.12) * (level === 3 ? 1.5 : 1));
+    return ship;
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = createEnemy3D;
+
+
+// Turn towards world direction `dir`: yaw / pitch controls proportional to the error in the
+// ship's own frame (the flight model turns them into turn rates). Returns the angle off.
+const steer = (ship, c, dir) => {
+    const local = dir.clone().applyQuaternion(ship.invQuat());
+    const yawError = Math.atan2(-local.y, local.x);
+    const pitchError = Math.atan2(local.z, Math.sqrt(local.x * local.x + local.y * local.y));
+    c.yaw = clamp(yawError * 2.2, -1, 1);
+    c.pitch = clamp(pitchError * 2.2, -1, 1);
+    c.roll = 0;
+    return Math.acos(clamp(local.x / (local.length() || 1), -1, 1));
 };
 
-// A box standing on the deck: footprint centre (x, y), size w x d, from `bottom` up to `top`.
-const tower = (THREE, x, y, w, d, bottom, top, angle) => {
-    const geometry = new THREE.BoxGeometry(w, d, top - bottom);
-    if(angle) geometry.rotateZ(-angle);
-    geometry.translate(x, -y, (top + bottom) / 2);
-    return geometry;
-};
-
-const rotatePts = (pts, angle) => {
-    const c = Math.cos(angle);
-    const s = Math.sin(angle);
-    return pts.map(p => [p[0] * c - p[1] * s, p[0] * s + p[1] * c]);
-};
-
-const hexagon = (r, offset) => {
-    const pts = [];
-    for(let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + (offset || 0);
-        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+// One AI tick. `world` gives the target (player or null), rocks, the player's missiles,
+// the other enemies and an optional { position, radius } to keep out of (Atlantis).
+const updateEnemyAI3D = (THREE, ship, dt, world) => {
+    const ai = ship.ai;
+    const c = ai.controls;
+    c.thrust = c.strafe = c.lift = 0;
+    c.fire = c.missiles = false;
+    c.lockTarget = null;
+    if(!ship.alive) return;
+    const target = world.target;
+    const fighter = ship.radius < 45;
+    ai.modeTimer -= dt;
+    ai.evadeTimer -= dt;
+    ai.orbitTimer -= dt;
+    if(ai.orbitTimer <= 0) {
+        ai.orbit = -ai.orbit;
+        ai.orbitTimer = 3 + Math.random() * 4;
+        ai.aimError.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.05);
     }
-    return pts;
-};
 
-// Lit windows: a dark facade with rows of warm and cool lights (shared by all towers).
-const windowTexture = (THREE) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#1a2230';
-    ctx.fillRect(0, 0, 64, 128);
-    for(let y = 4; y < 128; y += 8) {
-        for(let x = 3; x < 64; x += 7) {
-            const r = Math.random();
-            if(r < 0.45) continue;
-            ctx.fillStyle = r < 0.8 ? 'rgba(255, 225, 160, 0.95)' : 'rgba(170, 215, 255, 0.95)';
-            ctx.fillRect(x, y, 4, 4);
+    if(world.avoid) {
+        const away = ship.position.clone().sub(world.avoid.position);
+        if(away.length() < world.avoid.radius + ship.radius) {
+            steer(ship, c, away.normalize());
+            c.thrust = 1;
+            return;
         }
     }
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    return texture;
-};
-
-// Fresnel glow: bright where the surface turns away from the camera (shield domes, atmospheres).
-const glowMaterial = (THREE, color, strength, power, backSide) => new THREE.ShaderMaterial({
-    uniforms: { uColor: { value: new THREE.Color(color[0] / 255, color[1] / 255, color[2] / 255) }, uStrength: { value: strength } },
-    vertexShader: [
-        'varying vec3 vNormal;',
-        'varying vec3 vView;',
-        'void main() {',
-        '    vec4 mv = modelViewMatrix * vec4(position, 1.0);',
-        '    vNormal = normalize(normalMatrix * normal);',
-        '    vView = normalize(-mv.xyz);',
-        '    gl_Position = projectionMatrix * mv;',
-        '}'
-    ].join('\n'),
-    fragmentShader: [
-        'uniform vec3 uColor;',
-        'uniform float uStrength;',
-        'varying vec3 vNormal;',
-        'varying vec3 vView;',
-        'void main() {',
-        '    float rim = pow(1.0 - abs(dot(vNormal, vView)), ' + power.toFixed(1) + ');',
-        '    gl_FragColor = vec4(uColor * rim * uStrength, rim * uStrength);',
-        '}'
-    ].join('\n'),
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: backSide ? THREE.BackSide : THREE.FrontSide
-});
-
-// ------------------------------------------------------------ Atlantis
-
-// The city sits below the flight plane: deck at DECK, the central spire reaching up to
-// just under the plane.
-const DECK = -70;
-
-const buildAtlantis = (THREE, station) => {
-    const group = new THREE.Group();
-    const metal = new THREE.MeshStandardMaterial({ color: 0x9fb0c8, metalness: 0.55, roughness: 0.4 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x4a5a70, metalness: 0.6, roughness: 0.5 });
-    const windows = windowTexture(THREE);
-    const buildings = new THREE.MeshStandardMaterial({
-        color: 0xb8c6da, metalness: 0.4, roughness: 0.45, map: windows,
-        emissive: 0xffffff, emissiveMap: windows, emissiveIntensity: 0.85
-    });
-    const glass = new THREE.MeshStandardMaterial({ color: 0x6fa8ff, metalness: 0.3, roughness: 0.15, emissive: 0x2a5cff, emissiveIntensity: 0.6 });
-    const add = (geometry, material) => group.add(new THREE.Mesh(geometry, material));
-
-    // Central hub: stepped hexagonal tiers.
-    add(prism(THREE, hexagon(92, Math.PI / 6), DECK + 8, 22), metal);
-    add(prism(THREE, hexagon(70, 0), DECK + 20, 12), dark);
-    add(prism(THREE, hexagon(48, Math.PI / 6), DECK + 32, 12), metal);
-    // The central tower: a tall tapering spire with a glowing crown.
-    const spire = new THREE.CylinderGeometry(7, 18, 62, 12);
-    spire.rotateX(Math.PI / 2);
-    spire.translate(0, 0, DECK + 32 + 31);
-    add(spire, buildings);
-    const crown = new THREE.ConeGeometry(7, 16, 12);
-    crown.rotateX(Math.PI / 2);
-    crown.translate(0, 0, DECK + 32 + 62 + 7);
-    add(crown, glass);
-    // Ring of secondary towers around the spire.
-    for(let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-        const h = 22 + (i % 2) * 14;
-        add(tower(THREE, Math.cos(a) * 62, Math.sin(a) * 62, 11, 11, DECK + 8, DECK + 8 + h, a), buildings);
+    if(!target) {
+        c.yaw = c.pitch = c.roll = 0;
+        return;
     }
 
-    // Six piers: three long main piers with big platforms, three shorter ones.
-    for(let i = 0; i < 6; i++) {
-        const angle = i * Math.PI / 3 - Math.PI / 2;
-        const main = i % 2 === 0;
-        const length = main ? 270 : 215;
-        const half = main ? 22 : 18;
-        const P = (pts) => rotatePts(pts, angle);
-        const at = (x, y) => rotatePts([[x, y]], angle)[0];
+    const toTarget = new THREE.Vector3(target.x - ship.x, target.y - ship.y, target.z - ship.z);
+    const distance = toTarget.length() || 1;
+    const dir = toTarget.clone().divideScalar(distance);
+    const range = ai.range;
 
-        add(prism(THREE, P([[70, -half], [length, -half], [length, half], [70, half]]), DECK + 4, 10), metal);
-        // Raised spine along the pier.
-        add(prism(THREE, P([[80, -half * 0.35], [length - 10, -half * 0.35], [length - 10, half * 0.35], [80, half * 0.35]]), DECK + 9, 5), dark);
-        if(main) {
-            add(prism(THREE, P([[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
-                [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]), DECK + 6, 14), metal);
-            add(prism(THREE, P([[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]), DECK + 12, 6), dark);
-            [[36, -18, 34], [56, 14, 48], [44, 26, 26], [62, -26, 40], [30, 30, 20], [70, 0, 30]].forEach((t, k) => {
-                const p = at(length + t[0], t[1]);
-                add(tower(THREE, p[0], p[1], 12, 12, DECK + 12, DECK + 12 + t[2], angle + k * 0.3), buildings);
-            });
-            add(prism(THREE, P([[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]), DECK + 2, 6), metal);
+    // Badly damaged: withdraw until the shields are back.
+    if(ai.mode !== 'retreat' && ship.hp / ship.maxHull < 0.3 && ship.maxShield > 0 && !ai.retreated) {
+        ai.mode = 'retreat';
+        ai.modeTimer = 8 + Math.random() * 4;
+        ai.retreated = true;
+    }
+    if(ai.mode === 'retreat') {
+        if(ai.modeTimer <= 0 || (ship.shield > ship.maxShield * 0.8 && distance > 1600)) ai.mode = 'attack';
+        else {
+            steer(ship, c, dir.clone().negate());
+            c.thrust = 1;
+            return;
+        }
+    }
+
+    // Threats: the player's missiles and drones closing in.
+    let threat = null;
+    let threatDistance = Infinity;
+    world.incoming.forEach(m => {
+        if(m.dead) return;
+        const mx = ship.x - m.x, my = ship.y - m.y, mz = ship.z - m.z;
+        const d = Math.sqrt(mx * mx + my * my + mz * mz);
+        if(d > 450 + ship.radius) return;
+        if((m.vx * mx + m.vy * my + m.vz * mz) / (d || 1) > 120 && d < threatDistance) {
+            threat = m;
+            threatDistance = d;
+        }
+    });
+    if(threat && fighter && ai.evadeTimer <= 0) {
+        ai.evadeTimer = 0.7;
+        ai.evadeSide = Math.random() < 0.5 ? 1 : -1;
+        ai.evadeLift = Math.random() < 0.5 ? 1 : -1;
+    }
+
+    // Aim: shoot close missiles down if it has guns, otherwise lead the target.
+    const shootDown = threat && threat.kind === 'missile' && threatDistance < 350 && ship.turrets.some(t => t.kind === 'minigun');
+    const aimAt = shootDown ? threat : target;
+    const t = Math.sqrt((aimAt.x - ship.x) * (aimAt.x - ship.x) + (aimAt.y - ship.y) * (aimAt.y - ship.y) + (aimAt.z - ship.z) * (aimAt.z - ship.z)) / ai.projectileSpeed;
+    const lead = new THREE.Vector3(aimAt.x + (aimAt.vx || 0) * t, aimAt.y + (aimAt.vy || 0) * t, aimAt.z + (aimAt.vz || 0) * t);
+    const leadDir = lead.clone().sub(ship.position);
+    const leadDistance = leadDir.length();
+    leadDir.normalize().add(ai.aimError).normalize();
+    c.aimPoint = ship.position.clone().addScaledVector(leadDir, leadDistance);
+
+    if(fighter) {
+        // Attack runs: charge in, break off past the target, swing back round.
+        if(ai.mode === 'attack') {
+            const off = steer(ship, c, lead.clone().sub(ship.position).normalize());
+            c.thrust = off < 0.7 ? 1 : 0.2;
+            if(distance < Math.max(180, range * 0.45)) {
+                ai.mode = 'break';
+                ai.modeTimer = 1.2 + Math.random() * 0.8;
+                // Break away at an angle to the attack line.
+                const side = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).cross(dir).normalize();
+                ai.breakDir = dir.clone().multiplyScalar(0.4).add(side).normalize();
+            }
         } else {
-            add(prism(THREE, P([[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
-                [length + 52, 30], [length + 20, 38], [length, half]]), DECK + 6, 12), metal);
-            const p = at(length + 28, 0);
-            add(tower(THREE, p[0], p[1], 24, 24, DECK + 6, DECK + 30, angle), buildings);
-            const mast = new THREE.CylinderGeometry(4, 5, 18, 10);
-            mast.rotateX(Math.PI / 2);
-            mast.translate(p[0], -p[1], DECK + 30 + 9);
-            add(mast, glass);
+            steer(ship, c, ai.breakDir);
+            c.thrust = 1;
+            if((ai.modeTimer <= 0 && distance > range * 0.9) || ai.modeTimer < -3) ai.mode = 'attack';
         }
+    } else {
+        // Capital ships hold their standoff distance and circle slowly.
+        ai.mode = 'attack';
+        const off = steer(ship, c, dir);
+        if(distance > range * 1.05 && off < 1.2) c.thrust = 1;
+        if(distance < range * 0.7) c.thrust = -1;
+        if(distance < range * 1.2) c.strafe = ai.orbit;
+    }
+    if(ai.evadeTimer > 0) {
+        c.strafe = ai.evadeSide;
+        c.lift = ai.evadeLift;
     }
 
-    // City shield: a shallow dome glowing at its rim.
-    const R = station.shieldRadius;
-    const domeGeometry = new THREE.SphereGeometry(R, 64, 20, 0, Math.PI * 2, 0, Math.PI / 2);
-    domeGeometry.rotateX(Math.PI / 2);
-    const dome = new THREE.Mesh(domeGeometry, glowMaterial(THREE, [140, 205, 255], 0.75, 2.5, false));
-    dome.scale.set(1, 1, 0.4);
-    dome.position.z = DECK;
-    dome.renderOrder = 2;
-    group.add(dome);
-
-    group.position.set(station.x, -station.y, 0);
-    return group;
-};
-/* harmony export (immutable) */ __webpack_exports__["b"] = buildAtlantis;
-
-
-// ------------------------------------------------------------ Stargate and DHD
-
-const GATE_TOP = -4;
-
-const buildGate = (THREE, gateRadius, gateInner, symbolSprite, chevronAngles) => {
-    const group = new THREE.Group();
-    const stone = new THREE.MeshStandardMaterial({ color: 0x8c8e98, metalness: 0.65, roughness: 0.45 });
-
-    // Outer ring.
-    const ring = new THREE.Shape();
-    ring.absarc(0, 0, gateRadius, 0, Math.PI * 2, false);
-    const hole = new THREE.Path();
-    hole.absarc(0, 0, gateInner, 0, Math.PI * 2, true);
-    ring.holes.push(hole);
-    const ringGeometry = new THREE.ExtrudeGeometry(ring, {
-        depth: 8, steps: 1, bevelEnabled: true, bevelThickness: 3, bevelSize: 2.5, bevelOffset: -2.5, bevelSegments: 3, curveSegments: 72
-    });
-    ringGeometry.translate(0, 0, GATE_TOP - 11);
-    group.add(new THREE.Mesh(ringGeometry, stone));
-
-    // The rotating inner ring of symbols, set slightly into the outer ring.
-    const inner = new THREE.RingGeometry(gateInner + 5, gateRadius - 6, 96, 1);
-    const uv = inner.attributes.uv;
-    const pos = inner.attributes.position;
-    for(let i = 0; i < pos.count; i++) {
-        uv.setXY(i, 0.5 + pos.getX(i) / (2 * gateRadius), 0.5 + pos.getY(i) / (2 * gateRadius));
-    }
-    const symbols = new THREE.CanvasTexture(symbolSprite.canvas);
-    symbols.colorSpace = THREE.SRGBColorSpace;
-    const symbolRing = new THREE.Mesh(inner, new THREE.MeshStandardMaterial({ map: symbols, metalness: 0.5, roughness: 0.5 }));
-    symbolRing.position.z = GATE_TOP + 0.6;
-    group.add(symbolRing);
-
-    // Nine chevrons; their lamps light up as they lock.
-    const chevrons = [];
-    const chevronShape = [[-8, -4], [8, -4], [4, 7], [0, 9], [-4, 7]];
-    const lampShape = [[-4, -1], [4, -1], [0, 6]];
-    chevronAngles.forEach(a => {
-        const place = (pts) => pts.map(p => {
-            // Same placement as the 2D drawing: rotate(a + PI/2), then translate(0, -R + 2).
-            const x = p[0];
-            const y = p[1] - gateRadius + 2;
-            const r = a + Math.PI / 2;
-            return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
-        });
-        group.add(new THREE.Mesh(prism(THREE, place(chevronShape), GATE_TOP + 2, 6, 1), stone));
-        const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x502820, emissive: 0x000000, metalness: 0.2, roughness: 0.4 });
-        group.add(new THREE.Mesh(prism(THREE, place(lampShape), GATE_TOP + 3, 2, 0.4), lampMaterial));
-        chevrons.push(lampMaterial);
-    });
-
-    return { group: group, symbolRing: symbolRing, chevrons: chevrons };
-};
-/* harmony export (immutable) */ __webpack_exports__["d"] = buildGate;
-
-
-const buildDHD = (THREE) => {
-    const group = new THREE.Group();
-    const base = new THREE.MeshStandardMaterial({ color: 0x5a5753, metalness: 0.45, roughness: 0.6 });
-    const keys = new THREE.MeshStandardMaterial({ color: 0x9a948a, metalness: 0.3, roughness: 0.5 });
-    const octagon = [];
-    for(let i = 0; i < 8; i++) {
-        const a = i * Math.PI / 4 + Math.PI / 8;
-        octagon.push([Math.cos(a) * 30, Math.sin(a) * 30]);
-    }
-    group.add(new THREE.Mesh(prism(THREE, octagon, -6, 18, 3), base));
-    [[24, 19], [16, 20]].forEach(ring => {
-        for(let i = 0; i < ring[1]; i++) {
-            const a = i * Math.PI * 2 / ring[1];
-            group.add(new THREE.Mesh(tower(THREE, Math.cos(a) * ring[0], Math.sin(a) * ring[0], 4, 4, -6, -3.5, a), keys));
+    // Spacing from the other enemies, and asteroids in the way.
+    world.friends.forEach(other => {
+        if(other === ship || !other.alive) return;
+        const reach = other.radius + ship.radius + 70;
+        if(other.position.distanceToSquared(ship.position) < reach * reach) {
+            c.lift = other.z > ship.z ? -1 : 1;
         }
     });
-    const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x8a1a12, emissive: 0x501008, metalness: 0.1, roughness: 0.2 });
-    const domeGeometry = new THREE.SphereGeometry(9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-    domeGeometry.rotateX(Math.PI / 2);
-    domeGeometry.translate(0, 0, -6);
-    group.add(new THREE.Mesh(domeGeometry, domeMaterial));
-    return { group: group, dome: domeMaterial };
-};
-/* harmony export (immutable) */ __webpack_exports__["c"] = buildDHD;
-
-
-// ------------------------------------------------------------ planets
-
-// Seamless 3D value noise sampled on the sphere, for procedural planet surfaces.
-const makeNoise = (seed) => {
-    const perm = new Uint8Array(512);
-    let s = seed >>> 0;
-    for(let i = 0; i < 256; i++) perm[i] = i;
-    for(let i = 255; i > 0; i--) {
-        s = (s * 1664525 + 1013904223) >>> 0;
-        const j = s % (i + 1);
-        const t = perm[i];
-        perm[i] = perm[j];
-        perm[j] = t;
-    }
-    for(let i = 0; i < 256; i++) perm[256 + i] = perm[i];
-    const values = new Float32Array(256);
-    for(let i = 0; i < 256; i++) {
-        s = (s * 1664525 + 1013904223) >>> 0;
-        values[i] = s / 4294967296;
-    }
-    const fade = t => t * t * (3 - 2 * t);
-    const lerp = (a, b, t) => a + (b - a) * t;
-    const at = (x, y, z) => values[perm[perm[perm[x & 255] + (y & 255)] + (z & 255)]];
-    const noise = (x, y, z) => {
-        const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-        const xf = fade(x - xi), yf = fade(y - yi), zf = fade(z - zi);
-        return lerp(
-            lerp(lerp(at(xi, yi, zi), at(xi + 1, yi, zi), xf), lerp(at(xi, yi + 1, zi), at(xi + 1, yi + 1, zi), xf), yf),
-            lerp(lerp(at(xi, yi, zi + 1), at(xi + 1, yi, zi + 1), xf), lerp(at(xi, yi + 1, zi + 1), at(xi + 1, yi + 1, zi + 1), xf), yf),
-            zf);
-    };
-    return (x, y, z, octaves) => {
-        let total = 0;
-        let amp = 0.5;
-        let freq = 1;
-        for(let o = 0; o < octaves; o++) {
-            total += noise(x * freq, y * freq, z * freq) * amp;
-            amp *= 0.5;
-            freq *= 2.1;
-        }
-        return total;
-    };
-};
-
-// How much of the surface is "land" (vs. the base colour) for each planet type.
-const LAND_LEVEL = { ocean: 0.62, earth: 0.52, desert: 0.47, jungle: 0.4, rocky: 0.5, industrial: 0.5, ice: 0.55 };
-const CLOUDS = { ocean: 0.55, earth: 0.55, jungle: 0.5, ice: 0.6, industrial: 0.62, desert: 0.72, rocky: 0.75 };
-
-const planetTextures = (THREE, type, palette, seed) => {
-    const w = 512;
-    const h = 256;
-    const noise = makeNoise(seed);
-    const surface = document.createElement('canvas');
-    surface.width = w;
-    surface.height = h;
-    const clouds = document.createElement('canvas');
-    clouds.width = w;
-    clouds.height = h;
-    const sctx = surface.getContext('2d');
-    const cctx = clouds.getContext('2d');
-    const simg = sctx.createImageData(w, h);
-    const cimg = cctx.createImageData(w, h);
-    const land = LAND_LEVEL[type] || 0.5;
-    const cloudLevel = CLOUDS[type] || 0.6;
-    for(let y = 0; y < h; y++) {
-        const lat = (y / (h - 1) - 0.5) * Math.PI;
-        const cl = Math.cos(lat);
-        const sl = Math.sin(lat);
-        for(let x = 0; x < w; x++) {
-            const lon = (x / w) * Math.PI * 2;
-            const px = Math.cos(lon) * cl * 2.2 + 10;
-            const py = sl * 2.2 + 10;
-            const pz = Math.sin(lon) * cl * 2.2 + 10;
-            const n = noise(px, py, pz, 5);
-            const detail = noise(px * 4, py * 4, pz * 4, 3);
-            let c;
-            if(n > land) {
-                const k = Math.min(1, (n - land) * 3);
-                c = palette.land.map((v, i) => v * (0.85 + detail * 0.3) * (1 - k * 0.25) + palette.dark[i] * k * 0.25);
-            } else {
-                const k = Math.min(1, (land - n) * 2.5);
-                c = palette.base.map((v, i) => v * (1 - k * 0.45) + palette.dark[i] * k * 0.45);
-            }
-            // Ice caps near the poles for most worlds.
-            // Ice caps near the poles for most worlds, with a soft, ragged edge.
-            if(type !== 'desert' && type !== 'industrial') {
-                const cap = Math.max(0, Math.min(1, (Math.abs(sl) - 0.84 + (n - 0.5) * 0.25) * 12));
-                if(cap > 0) c = c.map((v, i) => v * (1 - cap) + [235, 242, 250][i] * cap);
-            }
-            const o = (y * w + x) * 4;
-            simg.data[o] = c[0];
-            simg.data[o + 1] = c[1];
-            simg.data[o + 2] = c[2];
-            simg.data[o + 3] = 255;
-            const cn = noise(px * 1.7 + 30, py * 3 + 30, pz * 1.7 + 30, 5);
-            const a = Math.max(0, Math.min(1, (cn - cloudLevel) * 5));
-            cimg.data[o] = palette.cloud[0];
-            cimg.data[o + 1] = palette.cloud[1];
-            cimg.data[o + 2] = palette.cloud[2];
-            cimg.data[o + 3] = Math.round(a * 230);
-        }
-    }
-    sctx.putImageData(simg, 0, 0);
-    cctx.putImageData(cimg, 0, 0);
-    const map = new THREE.CanvasTexture(surface);
-    map.colorSpace = THREE.SRGBColorSpace;
-    const cloudMap = new THREE.CanvasTexture(clouds);
-    cloudMap.colorSpace = THREE.SRGBColorSpace;
-    return { map: map, clouds: cloudMap };
-};
-
-// Planet far below the play plane (so it drifts past slowly with real parallax), with a
-// cloud layer, an atmosphere glow and sometimes a moon.
-const PLANET_DEPTH = 9000;
-/* unused harmony export PLANET_DEPTH */
-
-
-const buildPlanet = (THREE, system, palette) => {
-    const p = system.planet;
-    const group = new THREE.Group();
-    const radius = p.radius * 2.2;
-    let seed = 0;
-    for(let i = 0; i < system.id.length; i++) seed = (seed * 31 + system.id.charCodeAt(i)) >>> 0;
-    const textures = planetTextures(THREE, p.type, palette, seed);
-
-    const body = new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 32),
-        new THREE.MeshStandardMaterial({ map: textures.map, roughness: 0.85, metalness: 0 }));
-    group.add(body);
-    const clouds = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.012, 64, 32),
-        new THREE.MeshStandardMaterial({ map: textures.clouds, transparent: true, depthWrite: false, roughness: 1 }));
-    group.add(clouds);
-    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.1, 48, 24),
-        glowMaterial(THREE, palette.atmosphere.split(',').map(Number), 1.4, 3.0, true));
-    group.add(atmosphere);
-    // Tilt the axis a little so the cloud bands and caps read as a globe.
-    group.rotation.z = 0.25;
-    group.rotation.x = 0.35;
-
-    let moon = null;
-    if(p.moon) {
-        const moonTextures = planetTextures(THREE, 'rocky', { base: [150, 150, 155], dark: [60, 60, 70], land: [120, 120, 128], cloud: [0, 0, 0] }, seed + 7);
-        moon = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.24, 32, 16),
-            new THREE.MeshStandardMaterial({ map: moonTextures.map, roughness: 0.95 }));
-        moonTextures.clouds.dispose();
+    const ahead = ship.forward().multiplyScalar(ship.radius + 120).add(ship.position);
+    for(let i = 0; i < world.rocks.length; i++) {
+        const rock = world.rocks[i];
+        if(rock.dead) continue;
+        const reach = rock.radius + ship.radius + 60;
+        const dx = rock.x - ahead.x, dy = rock.y - ahead.y, dz = rock.z - ahead.z;
+        if(dx * dx + dy * dy + dz * dz > reach * reach) continue;
+        const local = new THREE.Vector3(dx, dy, dz).applyQuaternion(ship.invQuat());
+        c.strafe = local.y > 0 ? 1 : -1;     // rock to port: slide to starboard, and vice versa
+        c.lift = local.z > 0 ? -1 : 1;
+        if(fighter) c.thrust = Math.min(c.thrust, 0.3);
+        break;
     }
 
-    const holder = new THREE.Group();
-    holder.add(group);
-    if(moon) {
-        moon.position.set(radius * 1.9, radius * 0.7, radius * 0.3);
-        holder.add(moon);
+    c.fire = !!shootDown || distance - (target.radius || 0) * 0.8 < ai.gunReach;
+    ai.missileTimer -= dt;
+    const playerDrones = world.incoming.some(m => m.kind === 'drone' && !m.dead);
+    if(ship.launchers.length && (ai.missileTimer <= 0 || playerDrones) && distance < 1500 && distance > 150) {
+        c.missiles = true;
+        c.lockTarget = target;
+        if(ship.launchers.every(l => l.cooldown > 0) || Math.random() < 0.02) ai.missileTimer = 2 + Math.random() * 3;
     }
-    holder.position.set(p.x, -p.y, -PLANET_DEPTH);
-    return { holder: holder, body: body, clouds: clouds, textures: textures };
 };
-/* harmony export (immutable) */ __webpack_exports__["f"] = buildPlanet;
-
-
-// ------------------------------------------------------------ ore crystals
-
-const ORE_LIMIT = 800;
-/* harmony export (immutable) */ __webpack_exports__["a"] = ORE_LIMIT;
-
-
-const buildOreCrystals = (THREE) => {
-    const geometry = new THREE.OctahedronGeometry(1, 0);
-    geometry.scale(1, 1, 0.7);
-    const material = new THREE.MeshStandardMaterial({ metalness: 0.55, roughness: 0.3, flatShading: true, emissive: 0x111111 });
-    const mesh = new THREE.InstancedMesh(geometry, material, ORE_LIMIT);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.count = 0;
-    mesh.frustumCulled = false;
-    return mesh;
-};
-/* harmony export (immutable) */ __webpack_exports__["e"] = buildOreCrystals;
+/* harmony export (immutable) */ __webpack_exports__["b"] = updateEnemyAI3D;
 
 
 
 /***/ }),
-/* 30 */
+/* 35 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// Heads-up display for the 3D game, drawn on a 2D canvas over the 3D view: crosshair, nose
+// marker, target brackets, edge arrows, a 3D radar, the weapons panel and messages.
+
+const RADAR_RANGE = 3500;
+
+const drawCrosshair = (ctx, x, y, steering, onTarget) => {
+    ctx.save();
+    ctx.strokeStyle = onTarget ? 'rgba(255, 110, 90, 0.95)' : 'rgba(255, 140, 120, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, onTarget ? 10 : 8, 0, Math.PI * 2);
+    ctx.moveTo(x - 16, y); ctx.lineTo(x - 5, y);
+    ctx.moveTo(x + 5, y); ctx.lineTo(x + 16, y);
+    ctx.moveTo(x, y - 16); ctx.lineTo(x, y - 5);
+    ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 16);
+    ctx.stroke();
+    if(!steering) {
+        ctx.font = '9px Bungee, sans-serif';
+        ctx.fillStyle = 'rgba(255, 180, 150, 0.8)';
+        ctx.textAlign = 'center';
+        ctx.fillText('FREE AIM', x, y + 30);
+    }
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = drawCrosshair;
+
+
+// Where the ship's nose points, and the dead zone of mouse steering around the centre.
+const drawNose = (ctx, w, h, nose, deadZone) => {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(160, 200, 255, 0.25)';
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, deadZone, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if(nose && !nose.behind) {
+        ctx.strokeStyle = 'rgba(170, 220, 255, 0.8)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(nose.x - 7, nose.y); ctx.lineTo(nose.x - 2, nose.y);
+        ctx.moveTo(nose.x + 2, nose.y); ctx.lineTo(nose.x + 7, nose.y);
+        ctx.moveTo(nose.x, nose.y + 2); ctx.lineTo(nose.x, nose.y + 6);
+        ctx.stroke();
+    }
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = drawNose;
+
+
+// A marked object: brackets (with optional bars and label) when on screen, otherwise an
+// arrow at the screen edge pointing towards it.
+//   m: { p: projected {x, y, behind}, size, color, label, distance, hull, shield, shape }
+const drawMarker = (ctx, w, h, m) => {
+    const margin = 36;
+    const p = m.p;
+    const onScreen = !p.behind && p.x > -20 && p.x < w + 20 && p.y > -20 && p.y < h + 20;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(' + m.color + ', 0.9)';
+    ctx.fillStyle = 'rgba(' + m.color + ', 0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.textAlign = 'center';
+    if(onScreen) {
+        const r = Math.max(10, Math.min(220, m.size));
+        if(m.shape === 'circle') {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.stroke();
+        } else {
+            const c = r * 0.4;
+            [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(k => {
+                ctx.beginPath();
+                ctx.moveTo(p.x + k[0] * r, p.y + k[1] * (r - c));
+                ctx.lineTo(p.x + k[0] * r, p.y + k[1] * r);
+                ctx.lineTo(p.x + k[0] * (r - c), p.y + k[1] * r);
+                ctx.stroke();
+            });
+        }
+        let y = p.y - r - 8;
+        if(m.hull !== undefined) {
+            const bw = Math.max(36, r * 1.4);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+            ctx.fillRect(p.x - bw / 2, y - 3, bw, 3.5);
+            ctx.fillStyle = 'rgb(255, 110, 80)';
+            ctx.fillRect(p.x - bw / 2, y - 3, bw * Math.max(0, m.hull), 3.5);
+            if(m.shield !== undefined) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                ctx.fillRect(p.x - bw / 2, y - 8.5, bw, 3.5);
+                ctx.fillStyle = 'rgb(110, 200, 255)';
+                ctx.fillRect(p.x - bw / 2, y - 8.5, bw * Math.max(0, m.shield), 3.5);
+                y -= 6;
+            }
+            y -= 7;
+        }
+        ctx.fillStyle = 'rgba(' + m.color + ', 0.9)';
+        if(m.label) ctx.fillText(m.label, p.x, y);
+        if(m.distance !== undefined) ctx.fillText((m.distance / 1000).toFixed(1) + 'k', p.x, p.y + r + 14);
+    } else {
+        // Direction on screen (flipped when behind the camera).
+        let dx = p.x - w / 2;
+        let dy = p.y - h / 2;
+        if(p.behind) { dx = -dx; dy = -dy; }
+        const angle = Math.atan2(dy, dx);
+        const scale = Math.min(Math.abs((w / 2 - margin) / Math.cos(angle) || Infinity), Math.abs((h / 2 - margin) / Math.sin(angle) || Infinity));
+        ctx.translate(w / 2 + Math.cos(angle) * scale, h / 2 + Math.sin(angle) * scale);
+        if(m.distance !== undefined) ctx.fillText((m.label ? m.label + ' ' : '') + (m.distance / 1000).toFixed(1) + 'k', -Math.cos(angle) * 30, -Math.sin(angle) * 30 + 4);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(10, 0); ctx.lineTo(-5, -7); ctx.lineTo(-2, 0); ctx.lineTo(-5, 7);
+        ctx.closePath();
+        ctx.fill();
+    }
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = drawMarker;
+
+
+// 3D radar: contacts relative to the ship, seen from above its own deck (forward = up on
+// the scope). A stalk shows how far above (solid) or below (dashed) each contact is.
+//   contacts: [{ local: {x, y, z} (ship frame: x forward, y port, z up), color, size }]
+const drawRadar = (ctx, w, h, contacts, compact) => {
+    const size = compact ? 120 : 190;
+    const cx = w - size / 2 - 16;
+    const cy = h - size / 2 - 16;
+    const r = size / 2;
+    const scale = r / RADAR_RANGE;
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 12, 26, 0.88)';
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.15)';
+    [0.33, 0.66].forEach(k => {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r * k, r * 0.62 * k, 0, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy - r * 0.62); ctx.lineTo(cx, cy + r * 0.62);
+    ctx.stroke();
+    contacts.forEach(c => {
+        const l = c.local;
+        const d = Math.sqrt(l.x * l.x + l.y * l.y + l.z * l.z);
+        let k = scale;
+        if(d * scale > r * 0.95) k = r * 0.95 / d;
+        // Plane position (tilted ellipse) and height stalk.
+        const px = cx - l.y * k;
+        const py = cy - l.x * k * 0.62;
+        const top = py - l.z * k * 0.62;
+        ctx.strokeStyle = 'rgba(' + c.color + ', 0.6)';
+        ctx.lineWidth = 1;
+        if(l.z < 0) ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(px, top);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgb(' + c.color + ')';
+        const s = c.size || 2;
+        if(c.triangle) {
+            ctx.beginPath();
+            ctx.moveTo(px, top - s * 1.4); ctx.lineTo(px - s, top + s); ctx.lineTo(px + s, top + s);
+            ctx.closePath();
+            ctx.fill();
+        } else {
+            ctx.fillRect(px - s / 2, top - s / 2, s, s);
+        }
+    });
+    // The ship itself.
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 6); ctx.lineTo(cx - 4, cy + 4); ctx.lineTo(cx + 4, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+    ctx.fillText('RADAR ' + (RADAR_RANGE / 1000).toFixed(1) + 'k', cx - r + 6, cy - r * 0.62 - 6);
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = drawRadar;
+
+
+const LABELS = { ready: 'READY', hot: 'HOT', overheated: 'OVERHEAT', firing: 'FIRING', charging: 'CHARGING', reloading: 'RELOAD', off: 'OFF' };
+
+// Weapons panel (bottom left). Returns the clickable row rectangles.
+const drawWeapons = (ctx, w, h, weapons) => {
+    const rows = [];
+    if(!weapons.length) return rows;
+    const rowHeight = 22;
+    const left = 16;
+    const top = h - 16 - weapons.length * rowHeight - 18;
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 12, 26, 0.85)';
+    ctx.strokeStyle = 'rgba(140, 180, 255, 0.4)';
+    ctx.fillRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.strokeRect(left, top, 230, weapons.length * rowHeight + 22);
+    ctx.font = '10px Bungee, sans-serif';
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.8)';
+    ctx.fillText('WEAPONS', left + 8, top + 14);
+    weapons.forEach((wp, i) => {
+        const y = top + 22 + i * rowHeight;
+        rows.push({ x: left, y: y, w: 230, h: rowHeight, kind: wp.kind });
+        ctx.globalAlpha = wp.off ? 0.4 : 1;
+        ctx.fillStyle = 'rgb(' + wp.color + ')';
+        ctx.font = '11px Bungee, sans-serif';
+        ctx.fillText((i < 5 ? (i + 1) + ' ' : '') + wp.name + (wp.count > 1 ? ' x' + wp.count : ''), left + 8, y + 11);
+        const barX = left + 108;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.strokeRect(barX, y + 3, 70, 8);
+        const warn = wp.state === 'overheated' || wp.state === 'hot';
+        ctx.fillStyle = warn ? (wp.state === 'overheated' ? 'rgb(255, 80, 60)' : 'rgb(255, 170, 70)') : 'rgb(' + wp.color + ')';
+        ctx.fillRect(barX + 1, y + 4, 68 * wp.ready, 6);
+        ctx.globalAlpha = 1;
+        ctx.font = '9px Bungee, sans-serif';
+        ctx.fillStyle = wp.off ? 'rgba(255, 110, 90, 0.95)' : wp.state === 'ready' ? 'rgba(140, 255, 160, 0.9)' : (warn ? 'rgba(255, 140, 100, 0.95)' : 'rgba(200, 220, 255, 0.8)');
+        ctx.fillText(LABELS[wp.state], barX + 76, y + 11);
+    });
+    ctx.restore();
+    return rows;
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = drawWeapons;
+
+
+const drawText = (ctx, text, x, y, size, color, align) => {
+    ctx.save();
+    ctx.font = size + 'px Bungee, sans-serif';
+    ctx.textAlign = align || 'center';
+    ctx.fillStyle = color;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 6;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = drawText;
+
+
+
+/***/ }),
+/* 36 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(31);
+var content = __webpack_require__(37);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -13373,7 +16770,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(33)(content, options);
+var update = __webpack_require__(39)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -13390,21 +16787,21 @@ if(false) {
 }
 
 /***/ }),
-/* 31 */
+/* 37 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(32)(undefined);
+exports = module.exports = __webpack_require__(38)(undefined);
 // imports
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n\n/* 3D view layers: WebGL scene < main canvas (effects, HUD). */\n#gameboard > canvas.gl-layer {\n    position: fixed;\n    top: 0;\n    left: 0;\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.main-layer {\n    z-index: 3;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n\n/* 3D view layers: WebGL scene < main canvas (effects, HUD). */\n#gameboard > canvas.gl-layer {\n    position: fixed;\n    top: 0;\n    left: 0;\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.main-layer {\n    z-index: 3;\n}\n\n/* Full 3D game: WebGL scene with its HUD canvas on top. */\n#gameboard > canvas.game3d-layer,\n#gameboard > canvas.game3d-hud {\n    position: fixed;\n    top: 0;\n    left: 0;\n}\n\n#gameboard > canvas.game3d-layer {\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.game3d-hud {\n    z-index: 3;\n}\n\nbody.touch .controls-3d {\n    display: none;\n}\n", ""]);
 
 // exports
 
 
 /***/ }),
-/* 32 */
+/* 38 */
 /***/ (function(module, exports) {
 
 /*
@@ -13486,7 +16883,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 33 */
+/* 39 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -13542,7 +16939,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(34);
+var	fixUrls = __webpack_require__(40);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -13858,7 +17255,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 34 */
+/* 40 */
 /***/ (function(module, exports) {
 
 

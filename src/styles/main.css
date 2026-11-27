@@ -1260,3 +1260,24 @@ body.touch .starmap-canvas {
 #gameboard > canvas.main-layer {
     z-index: 3;
 }
+
+/* Full 3D game: WebGL scene with its HUD canvas on top. */
+#gameboard > canvas.game3d-layer,
+#gameboard > canvas.game3d-hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+}
+
+#gameboard > canvas.game3d-layer {
+    z-index: 2;
+    pointer-events: none;
+}
+
+#gameboard > canvas.game3d-hud {
+    z-index: 3;
+}
+
+body.touch .controls-3d {
+    display: none;
+}

@@ -258,7 +258,7 @@ export const buildDHD = (THREE) => {
 // ------------------------------------------------------------ planets
 
 // Seamless 3D value noise sampled on the sphere, for procedural planet surfaces.
-const makeNoise = (seed) => {
+export const makeNoise = (seed) => {
     const perm = new Uint8Array(512);
     let s = seed >>> 0;
     for(let i = 0; i < 256; i++) perm[i] = i;
