@@ -56,6 +56,34 @@ On Linux, or with `./docker-build.sh linux`, the script builds a Linux executabl
 `dist/linux/`. The first build takes about 10 to 20 minutes. Later builds reuse the
 container cache and are much faster.
 
+## Company-managed Macs (ThreatLocker and similar)
+
+Allowlisting tools such as ThreatLocker block every program that your IT hasn't approved,
+however the program is built. That's their job, so the game can't avoid it. It has to be
+approved. The build signs the app and ends by printing the details an administrator needs:
+bundle ID, path, SHA-256 hash and signature.
+
+- **With an Apple Developer ID**, sign with it, and optionally notarize:
+
+  ```bash
+  SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=my-profile ./docker-build.sh
+  ```
+
+  Your administrator can then approve the app by its certificate. That approval keeps
+  working for every future build.
+- **Without one**, the app gets an ad-hoc signature, which is enough for macOS to run it.
+  An allowlisting tool can then approve it only by file hash, which changes with every
+  rebuild, so ask again after updating.
+
+To sign an app you already built:
+
+```bash
+./tools/sign-macos.sh "dist/macos/Some Awesome Game.app"
+```
+
+The browser version of the game in the repository's root folder isn't a program you
+install, so these tools don't block it.
+
 ## Build it yourself
 
 Install Rust from https://rustup.rs. Then, in this `native` folder:

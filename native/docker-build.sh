@@ -87,6 +87,10 @@ $engine cp "$container:/out/." "$out/"
 
 echo
 if [[ "$what" == "macos" ]]; then
+  # Sign the whole bundle (with your Developer ID if SIGN_IDENTITY is set) and print the
+  # details an administrator needs to approve it in tools like ThreatLocker.
+  ./tools/sign-macos.sh "$out/Some Awesome Game.app"
+  echo
   echo "Done: $out/Some Awesome Game.app  (double-click to play, or drag it to Applications)"
 else
   echo "Done: $out/SomeAwesomeGame/some-awesome-game"

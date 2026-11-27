@@ -48,6 +48,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-# Ad-hoc signature so Apple silicon will launch it (not notarized).
-codesign --force --deep --sign - "$APP" || true
+# Sign it (Developer ID if SIGN_IDENTITY is set, otherwise ad-hoc) and print the details
+# an administrator needs to approve it.
+./tools/sign-macos.sh "$APP"
 echo "Built $APP"
