@@ -1,23 +1,30 @@
 # syntax=docker/dockerfile:1.7
 #
-# Builds the game inside Docker, so you don't need Rust on your computer.
-# Use ./docker-build.sh, which runs the right command for you. By hand:
+# Builds the game in a container (Docker or Podman), so you don't need Rust on your
+# computer. Use ./docker-build.sh, which runs the right commands for you.
 #
-#   Linux executable:
-#     docker buildx build --target linux --output type=local,dest=dist/linux .
-#
-#   macOS app (universal: Apple silicon + Intel). It needs Apple's macOS SDK, which
-#   can't be shipped in an image. Pass the one from your Mac's Command Line Tools
-#   (install them with: xcode-select --install):
-#     docker buildx build --build-context macsdk="$(xcrun --sdk macosx --show-sdk-path)" \
-#       --target macos --output type=local,dest=dist/macos .
+# Targets: linux-build (Linux executable in /out) and macos-build (universal
+# "Some Awesome Game.app" in /out). The macOS build needs Apple's macOS SDK, which can't
+# be shipped in an image: docker-build.sh copies the one from your Mac's Command Line
+# Tools (xcode-select --install) into ./macos-sdk before building.
 
-FROM rust:1-trixie AS toolchain
+ARG BASE_IMAGE=docker.io/library/ubuntu:24.04
+FROM ${BASE_IMAGE} AS toolchain
+# LLVM 18 (clang, ld64.lld, llvm-lipo) builds the macOS binaries; the -dev packages are
+# what the Linux build links against.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-       clang lld llvm libclang-dev pkg-config \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+       ca-certificates curl build-essential pkg-config \
+       clang lld llvm libclang-dev \
        libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev \
     && rm -rf /var/lib/apt/lists/*
+ENV RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/usr/local/cargo PATH=/usr/local/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/rustup-init \
+       "https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-gnu/rustup-init" \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --profile minimal --default-toolchain stable --no-modify-path \
+    && rm /tmp/rustup-init \
+    && cargo --version
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
@@ -40,8 +47,8 @@ COPY --from=linux-build /out/ /
 
 FROM toolchain AS macos-build
 RUN rustup target add aarch64-apple-darwin x86_64-apple-darwin
-# Apple's SDK, provided at build time with --build-context macsdk=<path to MacOSX.sdk>.
-COPY --from=macsdk . /sdk
+# Apple's SDK, copied into ./macos-sdk by docker-build.sh.
+COPY macos-sdk/ /sdk/
 # Cross compilers: clang targeting macOS, with LLVM's Mach-O linker. On Apple silicon,
 # ld64.lld also adds the ad-hoc code signature that arm64 Macs require.
 RUN LD64="$(ls /usr/lib/llvm-*/bin/ld64.lld | sort -V | tail -1)" \
