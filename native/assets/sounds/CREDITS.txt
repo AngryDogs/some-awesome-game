@@ -1,0 +1,16 @@
+Sounds in this folder
+=====================
+
+Source: Stargate Carter Addon Pack (CAP) resources
+        https://github.com/RafaelDeJongh/cap_resources  (folder "sound")
+Authors: the CAP team (sounds: Locutus_1 and contributors, see the repository's CREDITS.md)
+License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+         https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+The files are copied unmodified, keeping their original paths inside "sound/".
+They may only be used non-commercially, and redistributions must keep this license.
+
+Changes: the larger files (gate_roll_long, dhd_usual_dial, hyperwindow, missilefire,
+asgard_beam, atlantis_door_open) were converted from WAV to MP3 (128 kbps) to save space;
+the audio itself is otherwise unmodified. All files are packed into ../cap-sounds.js by
+tools/pack-sounds.js so the game can load them without fetching.

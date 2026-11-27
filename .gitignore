@@ -3,3 +3,5 @@ dist
 
 # OSX
 .DS_Store
+# Native game build output
+native/target

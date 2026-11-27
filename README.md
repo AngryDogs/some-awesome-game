@@ -2,6 +2,9 @@
 
 Zero-gravity asteroid mining in an endless star field, with a ship-building shipyard.
 
+There is also a native desktop edition for macOS and Linux, written in Rust and Bevy, in
+[`native/`](native/README.md).
+
 ## Running
 
 ```
