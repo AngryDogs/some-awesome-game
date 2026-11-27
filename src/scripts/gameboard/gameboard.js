@@ -18,6 +18,7 @@ import { getStarmap, isStarmapOpen, hyperTravelTime } from '../ui/starmap';
 import { planetSprite, nebulaSprite } from '../render/planets';
 import { drawWormhole, drawHyperspace, drawHyperWindow } from './travel';
 import { glowSprite, stamp } from '../render/sprites';
+import Scene3D, { webglAvailable } from '../render3d/scene3d';
 import TouchControls, { isTouchDevice } from '../ui/touch';
 
 const STEP = 1 / 120;             // fixed physics timestep (frame-rate independent)
@@ -60,7 +61,18 @@ const hudElements = {
 };
 
 const canvas = document.createElement('canvas');
+canvas.className = 'main-layer';
 const ctx = canvas.getContext('2d');
+
+// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls and the
+// starfield are drawn by `scene3d` underneath this canvas; the station, gate and DHD go on
+// a flat 2D layer below that (ships fly over them), and everything else stays on the main
+// canvas on top. Without WebGL the whole game is drawn on the main canvas as before.
+let scene3d = null;
+const underCanvas = document.createElement('canvas');
+underCanvas.className = 'under-layer';
+const underCtx = underCanvas.getContext('2d');
+let underUsed = false;
 let pixelRatio = 1;
 
 let state = null;
@@ -149,6 +161,14 @@ const resize = () => {
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
+    if(scene3d) {
+        underCanvas.width = canvas.width;
+        underCanvas.height = canvas.height;
+        underCanvas.style.width = canvas.style.width;
+        underCanvas.style.height = canvas.style.height;
+        underUsed = true;
+        scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
+    }
     world.resize(window.innerWidth, window.innerHeight);
 };
 
@@ -1970,7 +1990,18 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
+const hide3d = () => {
+    if(!scene3d) return;
+    scene3d.setVisible(false);
+    if(underUsed) {
+        underCtx.setTransform(1, 0, 0, 1, 0, 0);
+        underCtx.clearRect(0, 0, underCanvas.width, underCanvas.height);
+        underUsed = false;
+    }
+};
+
 const renderTunnel = () => {
+    hide3d();
     const tr = state.transition;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const time = state.transitionClock || 0;
@@ -2238,31 +2269,49 @@ const drawMinimap = () => {
 const render = () => {
     const time = state.time;
     resetRebuildBudget();
+    const use3d = !!scene3d;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, world.width, world.height);
     drawBackdrop();
-    drawStarfield();
+    if(!use3d) drawStarfield();
 
-    ctx.save();
-    ctx.translate(world.width / 2, world.height / 2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-state.camera.x, -state.camera.y);
+    const toWorld = (c) => {
+        c.save();
+        c.translate(world.width / 2, world.height / 2);
+        c.scale(zoom, zoom);
+        c.translate(-state.camera.x, -state.camera.y);
+    };
 
-    if(state.system.station && isVisible(STATION.x, STATION.y, 460)) drawStation(ctx, time, state.canDock);
-    if(isVisible(state.gate.x, state.gate.y, 300)) {
-        state.gate.draw(ctx, time);
-        state.gate.drawDHD(ctx, time, state.nearDHD);
+    // Station, gate and DHD: on the flat layer under the 3D view (or straight on the canvas).
+    const stationVisible = state.system.station && isVisible(STATION.x, STATION.y, 460);
+    const gateVisible = isVisible(state.gate.x, state.gate.y, 300);
+    const floor = use3d ? underCtx : ctx;
+    if(use3d && (underUsed || stationVisible || gateVisible)) {
+        underCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        underCtx.clearRect(0, 0, world.width, world.height);
+        underUsed = stationVisible || gateVisible;
     }
+    toWorld(floor);
+    if(stationVisible) drawStation(floor, time, state.canDock);
+    if(gateVisible) {
+        state.gate.draw(floor, time);
+        state.gate.drawDHD(floor, time, state.nearDHD);
+    }
+    if(use3d) underCtx.restore();
+    else ctx.restore();
 
+    toWorld(ctx);
     const visibleRocks = state.rocks.filter(rock => {
         if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
         // Free the cached image of rocks well off screen.
         if(rock.sprite && !isVisible(rock.x, rock.y, 900)) rock.releaseSprite();
         return false;
     });
-    // Merging guests are drawn first so they sink beneath their host.
-    visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
-    visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
+    if(!use3d) {
+        // Merging guests are drawn first so they sink beneath their host.
+        visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
+        visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
+    }
     state.particles.forEach(particle => { if(isUnlit(particle) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
@@ -2300,12 +2349,20 @@ const render = () => {
     const tr = state.transition;
     if(tr && tr.type === 'hyper' && tr.open > 0) drawHyperWindow(ctx, tr.wx, tr.wy, tr.size, time, tr.open);
     state.enemies.forEach(enemy => {
-        if(isVisible(enemy.x, enemy.y, enemy.radius * 2 + 40)) enemy.draw(ctx);
+        if(isVisible(enemy.x, enemy.y, enemy.radius * 2 + 40)) enemy.draw(ctx, use3d);
     });
-    state.ship.draw(ctx);
+    state.ship.draw(ctx, use3d);
     drawEnemyBars();
     drawFloatingTexts();
     ctx.restore();
+
+    if(use3d) {
+        scene3d.setVisible(true);
+        scene3d.render({
+            cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom,
+            rocks: state.rocks, ships: [state.ship].concat(state.enemies), isVisible: isVisible
+        });
+    }
 
     if(state.system.station) drawStationPointer();
     drawGatePointer();
@@ -2489,6 +2546,8 @@ const endGame = (message) => {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hide3d();
+    if(scene3d) scene3d.clear();
 
     if(menuMessage) menuMessage.textContent = message || '';
     menu.style.visibility = 'visible';
@@ -2561,6 +2620,15 @@ let initialized = false;
 const initialize = () => {
     initialized = true;
     gameboard.appendChild(backdrop);
+    if(webglAvailable() && !/[?&]2d\b/.test(window.location.search)) {
+        try {
+            gameboard.appendChild(underCanvas);
+            scene3d = new Scene3D(gameboard);
+        } catch(e) {
+            scene3d = null;
+            if(underCanvas.parentNode) underCanvas.parentNode.removeChild(underCanvas);
+        }
+    }
     gameboard.appendChild(canvas);
     window.addEventListener('resize', resize);
     loadInputHandlers();

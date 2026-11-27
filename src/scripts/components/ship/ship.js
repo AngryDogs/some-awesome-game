@@ -68,9 +68,9 @@ const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
 };
 
 // Hull line art with its glow, rendered once per hull and colour.
-const hullSprite = (hull, color) => {
+const hullSprite = (hull, color, linesOnly) => {
     hull._sprites = hull._sprites || {};
-    const key = color || 'base';
+    const key = (color || 'base') + (linesOnly ? ':lines' : '');
     if(!hull._sprites[key]) {
         const b = hullBounds(hull);
         const pad = 8;
@@ -80,7 +80,7 @@ const hullSprite = (hull, color) => {
         const res = Math.min(spriteResolution(), 2048 / Math.max(w, h));
         const sprite = createSprite(w, h, ctx => {
             ctx.translate(pad - b.minX, pad - b.minY);
-            drawHullArt(ctx, hull, { color: color });
+            drawHullArt(ctx, hull, { color: color, fill: !linesOnly });
         }, res);
         sprite.x = b.minX - pad;
         sprite.y = b.minY - pad;
@@ -1164,7 +1164,8 @@ class Ship {
         });
     }
 
-    draw(ctx) {
+    // `hull3d`: the 3D view draws the solid hull, so only the glowing line art goes here.
+    draw(ctx, hull3d) {
         if(!this.alive || this.hidden) return;
         // Blink while invulnerable after launch.
         if(this.immunity > 0 && Math.floor(this.immunity * 10) % 2 === 0) return;
@@ -1176,7 +1177,7 @@ class Ship {
         ctx.rotate(this.angle);
 
         this.drawThrusters(ctx);
-        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
+        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined, !!hull3d);
         ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
 
         this.stats.modules.forEach(module => {

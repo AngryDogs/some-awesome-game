@@ -11,6 +11,19 @@ NODE_OPTIONS=--openssl-legacy-provider yarn build
 
 Then open `index.html` through any static web server (e.g. `python3 -m http.server`).
 
+## 3D graphics
+
+The game is drawn in 3D on the graphics card with WebGL ([Three.js](https://threejs.org) r158,
+bundled in `assets/vendor/`, MIT licence). A perspective camera looks straight down on the
+playing field: asteroids are lit 3D rocks built from their real (chippable) outlines with their
+painted surface wrapped on, ship hulls are bevelled metal plates extruded from their line art
+(the glowing line art is drawn on top), and the stars sit at different depths so they drift
+with real parallax. Gameplay is unchanged and still happens on a flat plane. Effects, shields,
+the station, the Stargate and the HUD are drawn in 2D layers lined up exactly with the 3D view.
+
+If the browser has no WebGL the game falls back to the 2D view; add `?2d` to the address to
+force it (e.g. `index.html?2d`).
+
 ## Controls
 
 | Action | Keys |

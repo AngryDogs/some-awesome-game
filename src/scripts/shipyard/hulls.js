@@ -659,8 +659,9 @@ export const drawHullArt = (ctx, hull, options) => {
             for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
             if(part.closed || part.rect) ctx.closePath();
         }
-        // Closed sections are filled dark so the line art reads against space.
-        if(part.closed || part.rect) {
+        // Closed sections are filled dark so the line art reads against space (unless the
+        // 3D view supplies a solid hull underneath).
+        if((part.closed || part.rect) && opts.fill !== false) {
             ctx.fillStyle = 'rgba(8, 13, 24, ' + (0.85 * alpha) + ')';
             ctx.fill();
         }

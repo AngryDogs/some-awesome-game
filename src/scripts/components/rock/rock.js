@@ -794,6 +794,7 @@ class Rock {
             ctx.stroke();
         }, Math.min(1.5, spriteResolution()), this.sprite);
         this.spriteAngle = this.angle;
+        this.spriteVersion = (this.spriteVersion || 0) + 1;   // tells the 3D view to refresh
         this.spriteExtent = extent;
         this.spriteRadius = r;
         this.spriteDirty = false;
@@ -804,17 +805,24 @@ class Rock {
         this.sprite = null;
     }
 
-    draw(ctx) {
-        const r = this.radius * this.renderScale;
-        if(r < 0.5) return;
+    // Make sure the painted surface is up to date (rebuilt within the per-frame budget).
+    // In the 3D view this paints the asteroid's texture; lighting comes from the 3D scene,
+    // so it doesn't need re-baking as the rock turns.
+    ensureSprite(lit3d) {
         let turned = Math.abs(this.angle - (this.spriteAngle || 0)) % (Math.PI * 2);
         if(turned > Math.PI) turned = Math.PI * 2 - turned;
         const stale = (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
-            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05;
+            (!lit3d && turned > LIGHT_REFRESH_ANGLE) || Math.abs(this.radius - (this.spriteRadius || 0)) > (this.spriteRadius || 0) * 0.05;
         if(!this.sprite || (stale && rebuildBudget > 0)) {
             rebuildBudget--;
             this.buildSprite();
         }
+    }
+
+    draw(ctx) {
+        const r = this.radius * this.renderScale;
+        if(r < 0.5) return;
+        this.ensureSprite(false);
 
         // One image stamp per frame: surface, lighting and outline are all in the sprite.
         const scale = r / this.spriteRadius;

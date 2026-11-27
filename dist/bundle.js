@@ -1039,8 +1039,9 @@ const drawHullArt = (ctx, hull, options) => {
             for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
             if(part.closed || part.rect) ctx.closePath();
         }
-        // Closed sections are filled dark so the line art reads against space.
-        if(part.closed || part.rect) {
+        // Closed sections are filled dark so the line art reads against space (unless the
+        // 3D view supplies a solid hull underneath).
+        if((part.closed || part.rect) && opts.fill !== false) {
             ctx.fillStyle = 'rgba(8, 13, 24, ' + (0.85 * alpha) + ')';
             ctx.fill();
         }
@@ -3464,9 +3465,9 @@ const raycastRocks = (x, y, dirX, dirY, range, rocks) => {
 };
 
 // Hull line art with its glow, rendered once per hull and colour.
-const hullSprite = (hull, color) => {
+const hullSprite = (hull, color, linesOnly) => {
     hull._sprites = hull._sprites || {};
-    const key = color || 'base';
+    const key = (color || 'base') + (linesOnly ? ':lines' : '');
     if(!hull._sprites[key]) {
         const b = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["d" /* hullBounds */])(hull);
         const pad = 8;
@@ -3476,7 +3477,7 @@ const hullSprite = (hull, color) => {
         const res = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* spriteResolution */])(), 2048 / Math.max(w, h));
         const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(w, h, ctx => {
             ctx.translate(pad - b.minX, pad - b.minY);
-            Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color });
+            Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color, fill: !linesOnly });
         }, res);
         sprite.x = b.minX - pad;
         sprite.y = b.minY - pad;
@@ -4560,7 +4561,8 @@ class Ship {
         });
     }
 
-    draw(ctx) {
+    // `hull3d`: the 3D view draws the solid hull, so only the glowing line art goes here.
+    draw(ctx, hull3d) {
         if(!this.alive || this.hidden) return;
         // Blink while invulnerable after launch.
         if(this.immunity > 0 && Math.floor(this.immunity * 10) % 2 === 0) return;
@@ -4572,7 +4574,7 @@ class Ship {
         ctx.rotate(this.angle);
 
         this.drawThrusters(ctx);
-        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined);
+        const hull = hullSprite(this.hullDef, this.hullFlash > 0 ? '255,120,120' : undefined, !!hull3d);
         ctx.drawImage(hull.canvas, hull.x, hull.y, hull.width, hull.height);
 
         this.stats.modules.forEach(module => {
@@ -5432,6 +5434,7 @@ class Rock {
             ctx.stroke();
         }, Math.min(1.5, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["g" /* spriteResolution */])()), this.sprite);
         this.spriteAngle = this.angle;
+        this.spriteVersion = (this.spriteVersion || 0) + 1;   // tells the 3D view to refresh
         this.spriteExtent = extent;
         this.spriteRadius = r;
         this.spriteDirty = false;
@@ -5442,17 +5445,24 @@ class Rock {
         this.sprite = null;
     }
 
-    draw(ctx) {
-        const r = this.radius * this.renderScale;
-        if(r < 0.5) return;
+    // Make sure the painted surface is up to date (rebuilt within the per-frame budget).
+    // In the 3D view this paints the asteroid's texture; lighting comes from the 3D scene,
+    // so it doesn't need re-baking as the rock turns.
+    ensureSprite(lit3d) {
         let turned = Math.abs(this.angle - (this.spriteAngle || 0)) % (Math.PI * 2);
         if(turned > Math.PI) turned = Math.PI * 2 - turned;
         const stale = (this.spriteDirty && this.spriteAge > SPRITE_REBUILD_INTERVAL) ||
-            turned > LIGHT_REFRESH_ANGLE || Math.abs(this.radius - this.spriteRadius) > this.spriteRadius * 0.05;
+            (!lit3d && turned > LIGHT_REFRESH_ANGLE) || Math.abs(this.radius - (this.spriteRadius || 0)) > (this.spriteRadius || 0) * 0.05;
         if(!this.sprite || (stale && rebuildBudget > 0)) {
             rebuildBudget--;
             this.buildSprite();
         }
+    }
+
+    draw(ctx) {
+        const r = this.radius * this.renderScale;
+        if(r < 0.5) return;
+        this.ensureSprite(false);
 
         // One image stamp per frame: surface, lighting and outline are all in the sprite.
         const scale = r / this.spriteRadius;
@@ -6507,7 +6517,7 @@ Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(15);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(28);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(13);
 
@@ -6604,7 +6614,9 @@ openShipyard.addEventListener('click', () => {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__render_planets__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__travel__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ui_touch__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__ = __webpack_require__(28);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ui_touch__ = __webpack_require__(13);
+
 
 
 
@@ -6639,7 +6651,7 @@ const SECTOR_UPDATE_INTERVAL = 0.5;
 const MINIMAP_SIZE = 180;
 
 // Phones and tablets get on-screen controls and a layout that keeps the thumbs' areas clear.
-const TOUCH = Object(__WEBPACK_IMPORTED_MODULE_20__ui_touch__["b" /* isTouchDevice */])();
+const TOUCH = Object(__WEBPACK_IMPORTED_MODULE_21__ui_touch__["b" /* isTouchDevice */])();
 let touchControls = null;
 const hint = (key) => TOUCH ? '' : ' (' + key + ')';
 const MINIMAP_RANGE = 3500;
@@ -6667,7 +6679,18 @@ const hudElements = {
 };
 
 const canvas = document.createElement('canvas');
+canvas.className = 'main-layer';
 const ctx = canvas.getContext('2d');
+
+// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls and the
+// starfield are drawn by `scene3d` underneath this canvas; the station, gate and DHD go on
+// a flat 2D layer below that (ships fly over them), and everything else stays on the main
+// canvas on top. Without WebGL the whole game is drawn on the main canvas as before.
+let scene3d = null;
+const underCanvas = document.createElement('canvas');
+underCanvas.className = 'under-layer';
+const underCtx = underCanvas.getContext('2d');
+let underUsed = false;
 let pixelRatio = 1;
 
 let state = null;
@@ -6756,6 +6779,14 @@ const resize = () => {
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
+    if(scene3d) {
+        underCanvas.width = canvas.width;
+        underCanvas.height = canvas.height;
+        underCanvas.style.width = canvas.style.width;
+        underCanvas.style.height = canvas.style.height;
+        underUsed = true;
+        scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
+    }
     __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].resize(window.innerWidth, window.innerHeight);
 };
 
@@ -8577,7 +8608,18 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
+const hide3d = () => {
+    if(!scene3d) return;
+    scene3d.setVisible(false);
+    if(underUsed) {
+        underCtx.setTransform(1, 0, 0, 1, 0, 0);
+        underCtx.clearRect(0, 0, underCanvas.width, underCanvas.height);
+        underUsed = false;
+    }
+};
+
 const renderTunnel = () => {
+    hide3d();
     const tr = state.transition;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     const time = state.transitionClock || 0;
@@ -8845,31 +8887,49 @@ const drawMinimap = () => {
 const render = () => {
     const time = state.time;
     Object(__WEBPACK_IMPORTED_MODULE_2__components_rock_rock__["d" /* resetRebuildBudget */])();
+    const use3d = !!scene3d;
     ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     ctx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height);
     drawBackdrop();
-    drawStarfield();
+    if(!use3d) drawStarfield();
 
-    ctx.save();
-    ctx.translate(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-state.camera.x, -state.camera.y);
+    const toWorld = (c) => {
+        c.save();
+        c.translate(__WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width / 2, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height / 2);
+        c.scale(zoom, zoom);
+        c.translate(-state.camera.x, -state.camera.y);
+    };
 
-    if(state.system.station && isVisible(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 460)) Object(__WEBPACK_IMPORTED_MODULE_10__world_station__["b" /* drawStation */])(ctx, time, state.canDock);
-    if(isVisible(state.gate.x, state.gate.y, 300)) {
-        state.gate.draw(ctx, time);
-        state.gate.drawDHD(ctx, time, state.nearDHD);
+    // Station, gate and DHD: on the flat layer under the 3D view (or straight on the canvas).
+    const stationVisible = state.system.station && isVisible(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 460);
+    const gateVisible = isVisible(state.gate.x, state.gate.y, 300);
+    const floor = use3d ? underCtx : ctx;
+    if(use3d && (underUsed || stationVisible || gateVisible)) {
+        underCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+        underCtx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height);
+        underUsed = stationVisible || gateVisible;
     }
+    toWorld(floor);
+    if(stationVisible) Object(__WEBPACK_IMPORTED_MODULE_10__world_station__["b" /* drawStation */])(floor, time, state.canDock);
+    if(gateVisible) {
+        state.gate.draw(floor, time);
+        state.gate.drawDHD(floor, time, state.nearDHD);
+    }
+    if(use3d) underCtx.restore();
+    else ctx.restore();
 
+    toWorld(ctx);
     const visibleRocks = state.rocks.filter(rock => {
         if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
         // Free the cached image of rocks well off screen.
         if(rock.sprite && !isVisible(rock.x, rock.y, 900)) rock.releaseSprite();
         return false;
     });
-    // Merging guests are drawn first so they sink beneath their host.
-    visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
-    visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
+    if(!use3d) {
+        // Merging guests are drawn first so they sink beneath their host.
+        visibleRocks.forEach(rock => { if(rock.merging && rock.merging.guest === rock) rock.draw(ctx, time); });
+        visibleRocks.forEach(rock => { if(!(rock.merging && rock.merging.guest === rock)) rock.draw(ctx, time); });
+    }
     state.particles.forEach(particle => { if(isUnlit(particle) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
     state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
@@ -8907,12 +8967,20 @@ const render = () => {
     const tr = state.transition;
     if(tr && tr.type === 'hyper' && tr.open > 0) Object(__WEBPACK_IMPORTED_MODULE_18__travel__["a" /* drawHyperWindow */])(ctx, tr.wx, tr.wy, tr.size, time, tr.open);
     state.enemies.forEach(enemy => {
-        if(isVisible(enemy.x, enemy.y, enemy.radius * 2 + 40)) enemy.draw(ctx);
+        if(isVisible(enemy.x, enemy.y, enemy.radius * 2 + 40)) enemy.draw(ctx, use3d);
     });
-    state.ship.draw(ctx);
+    state.ship.draw(ctx, use3d);
     drawEnemyBars();
     drawFloatingTexts();
     ctx.restore();
+
+    if(use3d) {
+        scene3d.setVisible(true);
+        scene3d.render({
+            cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom,
+            rocks: state.rocks, ships: [state.ship].concat(state.enemies), isVisible: isVisible
+        });
+    }
 
     if(state.system.station) drawStationPointer();
     drawGatePointer();
@@ -9096,6 +9164,8 @@ const endGame = (message) => {
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hide3d();
+    if(scene3d) scene3d.clear();
 
     if(menuMessage) menuMessage.textContent = message || '';
     menu.style.visibility = 'visible';
@@ -9168,6 +9238,15 @@ let initialized = false;
 const initialize = () => {
     initialized = true;
     gameboard.appendChild(backdrop);
+    if(Object(__WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["b" /* webglAvailable */])() && !/[?&]2d\b/.test(window.location.search)) {
+        try {
+            gameboard.appendChild(underCanvas);
+            scene3d = new __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["a" /* default */](gameboard);
+        } catch(e) {
+            scene3d = null;
+            if(underCanvas.parentNode) underCanvas.parentNode.removeChild(underCanvas);
+        }
+    }
     gameboard.appendChild(canvas);
     window.addEventListener('resize', resize);
     Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["a" /* default */])();
@@ -9304,7 +9383,7 @@ const initialize = () => {
     if(TOUCH) {
         document.body.classList.add('touch');
         starmapButton.textContent = 'Starmap';
-        touchControls = new __WEBPACK_IMPORTED_MODULE_20__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */], canvas, {
+        touchControls = new __WEBPACK_IMPORTED_MODULE_21__ui_touch__["a" /* default */](__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["b" /* input */], canvas, {
             interact: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyB'),
             toggleAuto: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyG'),
             cycleTargets: () => Object(__WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__["e" /* triggerKey */])('KeyT'),
@@ -12164,12 +12243,456 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
 
 /***/ }),
 /* 28 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// WebGL (Three.js) layer that draws the world in 3D on the graphics card.
+//
+// The game itself stays on a flat plane: physics, collisions and aiming are unchanged. A
+// perspective camera looks straight down at that plane, so a point on the plane lands on
+// exactly the same pixel as in the 2D view. That lets the 2D canvas above keep drawing
+// effects (particles, shots, beams, shields, line art, HUD) perfectly lined up, while
+// asteroids, ship hulls and the starfield underneath are real lit 3D geometry with depth
+// and parallax.
+//
+// Coordinates: game (x, y) with y pointing down the screen becomes Three.js (x, -y, z) with
+// z towards the camera. A game angle `a` becomes a rotation of -a about z.
+
+const FOV = 35;
+const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
+
+// Same light direction the asteroid surface art is painted with (upper left), lifted up.
+const LIGHT = { x: -0.55, y: 0.65, z: 0.85 };
+
+const webglAvailable = () => {
+    if(!window.THREE) return false;
+    try {
+        const canvas = document.createElement('canvas');
+        return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+    } catch(e) {
+        return false;
+    }
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = webglAvailable;
+
+
+const parseRgb = (text) => text.split(',').map(v => parseFloat(v) / 255);
+
+// Small deterministic noise for lumps on the asteroid surfaces.
+const hash = (a, b, seed) => {
+    let h = (a * 374761393 + b * 668265263 + seed * 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
+// ------------------------------------------------------------ asteroids
+
+// Rings of latitude for the rock body, from the bottom pole to the top pole.
+const LATITUDES = [-0.82, -0.55, -0.27, 0, 0.27, 0.55, 0.82];
+
+// A lumpy rock body built from the asteroid's own outline (so chipping, carving and splits
+// show in 3D), unit radius. UVs map the asteroid's painted surface straight down onto it.
+const buildRockGeometry = (THREE, rock) => {
+    const shape = rock.shape;
+    const n = shape.length;
+    const thickness = 0.5 + hash(rock.id, 1, 7) * 0.25;
+    const k = rock.spriteRadius / (2 * rock.spriteExtent);   // unit radius -> sprite UV
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    const push = (x, y, z) => {
+        positions.push(x, -y, z);
+        uvs.push(0.5 + x * k, 0.5 - y * k);
+    };
+
+    LATITUDES.forEach((lat, j) => {
+        const phi = lat * Math.PI / 2;
+        const ring = Math.cos(phi);
+        const z = Math.sin(phi) * thickness;
+        for(let i = 0; i < n; i++) {
+            const a = i * Math.PI * 2 / n;
+            const lump = 1 + (hash(rock.id, i * 16 + j, 3) - 0.5) * 0.12 * (j === 3 ? 0.3 : 1);
+            const r = shape[i] * ring * lump;
+            push(Math.cos(a) * r, Math.sin(a) * r, z * (0.9 + hash(rock.id, i + j * 64, 11) * 0.2));
+        }
+    });
+    const bottom = positions.length / 3;
+    push(0, 0, -thickness);
+    const top = positions.length / 3;
+    push(0, 0, thickness * (0.95 + hash(rock.id, 5, 5) * 0.1));
+
+    for(let j = 0; j < LATITUDES.length - 1; j++) {
+        for(let i = 0; i < n; i++) {
+            const a = j * n + i;
+            const b = j * n + (i + 1) % n;
+            const c = (j + 1) * n + i;
+            const d = (j + 1) * n + (i + 1) % n;
+            indices.push(a, c, b, b, c, d);
+        }
+    }
+    const last = (LATITUDES.length - 1) * n;
+    for(let i = 0; i < n; i++) {
+        indices.push(bottom, i, (i + 1) % n);
+        indices.push(top, last + (i + 1) % n, last + i);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+};
+
+// ------------------------------------------------------------ ship hulls
+
+const partPoints = (part) => {
+    if(part.rect) {
+        const r = part.rect;
+        return [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+    }
+    return part.pts;
+};
+
+const polygonArea = (pts) => {
+    let area = 0;
+    for(let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[(i + 1) % pts.length];
+        area += a[0] * b[1] - b[0] * a[1];
+    }
+    return Math.abs(area) / 2;
+};
+
+// Every closed piece of the hull's line art extruded into a solid plate, its top face on
+// the game plane (where the 2D line art is drawn) and its sides going down into depth.
+// Later pieces (details) sit a hair higher so they never flicker against the plates.
+const buildHullGeometries = (THREE, hull) => {
+    const parts = [];
+    const maxDepth = Math.max(2.5, hull.radius * 0.22);
+    hull.art.forEach((part, index) => {
+        const lift = index * 0.02 * Math.max(1, hull.radius / 40);
+        if(part.circle) {
+            const c = part.circle;
+            const depth = Math.min(maxDepth, Math.max(0.8, c[2] * 0.6));
+            const geometry = new THREE.CylinderGeometry(c[2], c[2], depth, 18);
+            geometry.rotateX(Math.PI / 2);
+            geometry.translate(c[0], -c[1], lift - depth / 2);
+            parts.push(geometry);
+            return;
+        }
+        if(!(part.closed || part.rect)) return;
+        const pts = partPoints(part);
+        if(pts.length < 3) return;
+        const shape = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1])));
+        const area = polygonArea(pts);
+        let perimeter = 0;
+        for(let i = 0; i < pts.length; i++) {
+            const a = pts[i];
+            const b = pts[(i + 1) % pts.length];
+            perimeter += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+        }
+        const inradius = perimeter > 0 ? 2 * area / perimeter : 1;
+        const depth = Math.min(maxDepth, Math.max(0.8, Math.sqrt(area) * 0.3));
+        // A rounded, inward bevel so plate edges catch the light (the outline stays exactly
+        // on the line art; the bevel slopes in from it).
+        const bevelSize = Math.max(0.2, Math.min(inradius * 0.45, depth * 1.1));
+        const bevelThickness = depth * 0.7;
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: depth * 0.3, steps: 1, bevelEnabled: true, bevelThickness: bevelThickness,
+            bevelSize: bevelSize, bevelOffset: -bevelSize, bevelSegments: 3
+        });
+        geometry.translate(0, 0, lift - depth * 0.3 - bevelThickness);
+        parts.push(geometry);
+    });
+    return parts;
+};
+
+// ------------------------------------------------------------ stars
+
+// Star layers at increasing depth below the play plane. The vertex shader wraps each star
+// into a tile around the camera, so the field is endless; perspective gives the parallax.
+const STAR_LAYERS = [
+    { count: 900, minDepth: 400, maxDepth: 1600, tile: 5000, size: [1.2, 2.4] },
+    { count: 1200, minDepth: 1600, maxDepth: 5000, tile: 11000, size: [1, 2] },
+    { count: 1800, minDepth: 5000, maxDepth: 14000, tile: 24000, size: [0.8, 1.6] }
+];
+
+const STAR_VERTEX = [
+    'attribute float size;',
+    'attribute vec3 tint;',
+    'uniform vec2 uCamera;',
+    'uniform float uTile;',
+    'uniform float uPixelRatio;',
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec3 p = position;',
+    '    vec2 origin = uCamera - vec2(uTile * 0.5);',
+    '    p.xy = origin + mod(p.xy - origin, uTile);',
+    '    vTint = tint;',
+    '    gl_PointSize = size * uPixelRatio;',
+    '    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+    '}'
+].join('\n');
+
+const STAR_FRAGMENT = [
+    'varying vec3 vTint;',
+    'void main() {',
+    '    vec2 d = gl_PointCoord - vec2(0.5);',
+    '    float falloff = 1.0 - smoothstep(0.15, 0.5, length(d));',
+    '    gl_FragColor = vec4(vTint * falloff, falloff);',
+    '}'
+].join('\n');
+
+// ------------------------------------------------------------ scene
+
+class Scene3D {
+
+    constructor(container) {
+        const THREE = window.THREE;
+        this.THREE = THREE;
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer.setClearColor(0x000000, 0);
+        this.canvas = this.renderer.domElement;
+        this.canvas.className = 'gl-layer';
+        container.appendChild(this.canvas);
+
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(FOV, 1, 10, 40000);
+
+        this.scene.add(new THREE.AmbientLight(0x8a96b0, 0.45));
+        this.scene.add(new THREE.HemisphereLight(0xb8c8e8, 0x1a1c24, 0.55));
+        const sun = new THREE.DirectionalLight(0xfff0dc, 3.4);
+        sun.position.set(LIGHT.x, LIGHT.y, LIGHT.z);
+        this.scene.add(sun);
+        this.scene.add(sun.target);
+        // A faint cool rim light from the opposite side so dark faces keep some shape.
+        const rim = new THREE.DirectionalLight(0x6f8cff, 0.6);
+        rim.position.set(-LIGHT.x, -LIGHT.y, 0.3);
+        this.scene.add(rim);
+
+        this.rockEntries = new Map();
+        this.shipEntries = new Map();
+        this.hullCache = {};
+        this.buildStars();
+        this.visible = true;
+    }
+
+    buildStars() {
+        const THREE = this.THREE;
+        this.starMaterials = [];
+        STAR_LAYERS.forEach(layer => {
+            const positions = new Float32Array(layer.count * 3);
+            const sizes = new Float32Array(layer.count);
+            const tints = new Float32Array(layer.count * 3);
+            for(let i = 0; i < layer.count; i++) {
+                positions[i * 3] = Math.random() * layer.tile;
+                positions[i * 3 + 1] = Math.random() * layer.tile;
+                positions[i * 3 + 2] = -(layer.minDepth + Math.random() * (layer.maxDepth - layer.minDepth));
+                sizes[i] = layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]);
+                const warm = Math.random();
+                const b = 0.5 + Math.random() * 0.5;
+                tints[i * 3] = b * (warm < 0.2 ? 1 : 0.85);
+                tints[i * 3 + 1] = b * 0.9;
+                tints[i * 3 + 2] = b * (warm > 0.7 ? 1 : 0.9);
+            }
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('tint', new THREE.BufferAttribute(tints, 3));
+            const material = new THREE.ShaderMaterial({
+                uniforms: { uCamera: { value: new THREE.Vector2() }, uTile: { value: layer.tile }, uPixelRatio: { value: 1 } },
+                vertexShader: STAR_VERTEX,
+                fragmentShader: STAR_FRAGMENT,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            const points = new THREE.Points(geometry, material);
+            points.frustumCulled = false;
+            this.scene.add(points);
+            this.starMaterials.push(material);
+        });
+    }
+
+    resize(width, height, pixelRatio) {
+        this.renderer.setPixelRatio(pixelRatio);
+        this.renderer.setSize(width, height, false);
+        this.canvas.style.width = width + 'px';
+        this.canvas.style.height = height + 'px';
+        this.width = width;
+        this.height = height;
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.starMaterials.forEach(m => { m.uniforms.uPixelRatio.value = pixelRatio; });
+    }
+
+    setVisible(visible) {
+        if(this.visible === visible) return;
+        this.visible = visible;
+        this.canvas.style.display = visible ? '' : 'none';
+    }
+
+    // Camera straight above (cx, cy) at the height where the game plane appears at `zoom`
+    // screen pixels per world unit.
+    placeCamera(cx, cy, zoom) {
+        const height = (this.height / 2) / (zoom * TAN_HALF_FOV);
+        const camera = this.camera;
+        camera.position.set(cx, -cy, height);
+        camera.lookAt(cx, -cy, 0);
+        camera.near = Math.max(5, height * 0.3);
+        camera.far = height + 16000;
+        camera.updateProjectionMatrix();
+        this.starMaterials.forEach(m => { m.uniforms.uCamera.value.set(cx, -cy); });
+    }
+
+    // ------------------------------------------------------------ asteroids
+
+    syncRocks(rocks, isVisible) {
+        const THREE = this.THREE;
+        const seen = new Set();
+        rocks.forEach(rock => {
+            if(rock.dead) return;
+            seen.add(rock);
+            let entry = this.rockEntries.get(rock);
+            const visible = isVisible(rock.x, rock.y, rock.radius * 1.6);
+            if(!visible) {
+                if(entry) entry.mesh.visible = false;
+                return;
+            }
+            rock.ensureSprite(true);
+            if(!rock.sprite) return;
+            if(!entry) {
+                const material = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.06 });
+                const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+                this.scene.add(mesh);
+                entry = { mesh: mesh, material: material, texture: null, version: -1, canvas: null };
+                this.rockEntries.set(rock, entry);
+            }
+            // The painted surface (craters, ore, scars) is the texture; rebuild the body
+            // whenever that art is redrawn (after chipping, carving or merging).
+            if(entry.version !== rock.spriteVersion) {
+                entry.version = rock.spriteVersion;
+                entry.mesh.geometry.dispose();
+                entry.mesh.geometry = buildRockGeometry(THREE, rock);
+                if(entry.canvas !== rock.sprite.canvas) {
+                    if(entry.texture) entry.texture.dispose();
+                    entry.texture = new THREE.CanvasTexture(rock.sprite.canvas);
+                    entry.texture.colorSpace = THREE.SRGBColorSpace;
+                    entry.texture.anisotropy = 2;
+                    entry.material.map = entry.texture;
+                    entry.material.needsUpdate = true;
+                    entry.canvas = rock.sprite.canvas;
+                } else {
+                    entry.texture.needsUpdate = true;
+                }
+            }
+            const mesh = entry.mesh;
+            const scale = rock.radius * rock.renderScale;
+            mesh.visible = scale > 0.5;
+            mesh.position.set(rock.x, -rock.y, 0);
+            mesh.rotation.z = -rock.angle;
+            mesh.scale.set(scale, scale, scale);
+            const fading = rock.renderAlpha < 0.999;
+            if(entry.material.transparent !== fading) {
+                entry.material.transparent = fading;
+                entry.material.needsUpdate = true;
+            }
+            entry.material.opacity = rock.renderAlpha;
+            entry.material.emissive.setScalar(rock.flash > 0 ? 0.22 : 0);
+        });
+        // Forget asteroids that were destroyed or streamed out.
+        this.rockEntries.forEach((entry, rock) => {
+            if(seen.has(rock)) return;
+            this.scene.remove(entry.mesh);
+            entry.mesh.geometry.dispose();
+            entry.material.dispose();
+            if(entry.texture) entry.texture.dispose();
+            this.rockEntries.delete(rock);
+        });
+    }
+
+    // ------------------------------------------------------------ ships
+
+    hullParts(hull) {
+        const key = hull.id;
+        if(!this.hullCache[key]) this.hullCache[key] = buildHullGeometries(this.THREE, hull);
+        return this.hullCache[key];
+    }
+
+    syncShips(ships, isVisible) {
+        const THREE = this.THREE;
+        const seen = new Set();
+        ships.forEach(ship => {
+            seen.add(ship);
+            let entry = this.shipEntries.get(ship);
+            if(entry && entry.hull !== ship.hullDef) {
+                this.removeShip(ship, entry);
+                entry = null;
+            }
+            if(!entry) {
+                const color = parseRgb(ship.hullDef.color);
+                const material = new THREE.MeshStandardMaterial({
+                    color: new THREE.Color(0.08 + color[0] * 0.3, 0.09 + color[1] * 0.3, 0.11 + color[2] * 0.32),
+                    metalness: 0.35,
+                    roughness: 0.42,
+                    emissive: new THREE.Color(color[0] * 0.03, color[1] * 0.03, color[2] * 0.035)
+                });
+                const group = new THREE.Group();
+                this.hullParts(ship.hullDef).forEach(geometry => group.add(new THREE.Mesh(geometry, material)));
+                this.scene.add(group);
+                entry = { group: group, material: material, hull: ship.hullDef, baseEmissive: material.emissive.clone() };
+                this.shipEntries.set(ship, entry);
+            }
+            const blink = ship.immunity > 0 && Math.floor(ship.immunity * 10) % 2 === 0;
+            const visible = ship.alive && !ship.hidden && !blink && isVisible(ship.x, ship.y, ship.radius * 2);
+            entry.group.visible = visible;
+            if(!visible) return;
+            entry.group.position.set(ship.x, -ship.y, 0);
+            entry.group.rotation.z = -ship.angle;
+            if(ship.hullFlash > 0) entry.material.emissive.setRGB(0.5, 0.08, 0.06);
+            else entry.material.emissive.copy(entry.baseEmissive);
+        });
+        this.shipEntries.forEach((entry, ship) => {
+            if(!seen.has(ship)) this.removeShip(ship, entry);
+        });
+    }
+
+    removeShip(ship, entry) {
+        this.scene.remove(entry.group);
+        entry.material.dispose();
+        this.shipEntries.delete(ship);
+    }
+
+    // ------------------------------------------------------------ frame
+
+    render(view) {
+        if(!this.visible) return;
+        this.placeCamera(view.cameraX, view.cameraY, view.zoom);
+        this.syncRocks(view.rocks, view.isVisible);
+        this.syncShips(view.ships, view.isVisible);
+        this.renderer.render(this.scene, this.camera);
+    }
+
+    // Drop everything (new game / new star system).
+    clear() {
+        this.syncRocks([], () => false);
+        this.syncShips([], () => false);
+    }
+}
+
+/* harmony default export */ __webpack_exports__["a"] = (Scene3D);
+
+
+/***/ }),
+/* 29 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(29);
+var content = __webpack_require__(30);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -12177,7 +12700,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(31)(content, options);
+var update = __webpack_require__(32)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -12194,21 +12717,21 @@ if(false) {
 }
 
 /***/ }),
-/* 29 */
+/* 30 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(30)(undefined);
+exports = module.exports = __webpack_require__(31)(undefined);
 // imports
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n\n/* 3D view layers: flat floor (station, gate) < WebGL scene < main canvas (effects, HUD). */\n#gameboard > canvas.under-layer {\n    z-index: 1;\n    pointer-events: none;\n}\n\n#gameboard > canvas.gl-layer {\n    position: fixed;\n    top: 0;\n    left: 0;\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.main-layer {\n    z-index: 3;\n}\n", ""]);
 
 // exports
 
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports) {
 
 /*
@@ -12290,7 +12813,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -12346,7 +12869,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(32);
+var	fixUrls = __webpack_require__(33);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -12662,7 +13185,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ (function(module, exports) {
 
 

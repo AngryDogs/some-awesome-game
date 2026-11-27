@@ -1247,3 +1247,21 @@ body.touch .starmap-canvas {
     color: #9fb2d8;
     white-space: nowrap;
 }
+
+/* 3D view layers: flat floor (station, gate) < WebGL scene < main canvas (effects, HUD). */
+#gameboard > canvas.under-layer {
+    z-index: 1;
+    pointer-events: none;
+}
+
+#gameboard > canvas.gl-layer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+#gameboard > canvas.main-layer {
+    z-index: 3;
+}
