@@ -10,6 +10,11 @@
 // Coordinates: game (x, y) with y pointing down the screen becomes Three.js (x, -y, z) with
 // z towards the camera. A game angle `a` becomes a rotation of -a about z.
 
+import { buildAtlantis, buildGate, buildDHD, buildPlanet, buildOreCrystals, ORE_LIMIT } from './world3d';
+import { gateSymbolSprite, CHEVRON_ANGLES, GATE_RADIUS, GATE_INNER } from '../world/stargate';
+import { PALETTES } from '../render/planets';
+import MATERIALS from '../world/materials';
+
 const FOV = 35;
 const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
 
@@ -199,10 +204,15 @@ const STAR_FRAGMENT = [
 
 class Scene3D {
 
-    constructor(container) {
+    // `requireHardware`: refuse to start (throw) when the browser would only give us slow
+    // software rendering, so the game uses its 2D view instead of crawling.
+    constructor(container, requireHardware) {
         const THREE = window.THREE;
         this.THREE = THREE;
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true, alpha: true, powerPreference: 'high-performance',
+            failIfMajorPerformanceCaveat: !!requireHardware
+        });
         this.renderer.setClearColor(0x000000, 0);
         this.canvas = this.renderer.domElement;
         this.canvas.className = 'gl-layer';
@@ -226,7 +236,105 @@ class Scene3D {
         this.shipEntries = new Map();
         this.hullCache = {};
         this.buildStars();
+        this.ores = buildOreCrystals(THREE);
+        this.scene.add(this.ores);
+        this.oreMatrix = new THREE.Matrix4();
+        this.oreQuat = new THREE.Quaternion();
+        this.oreEuler = new THREE.Euler();
+        this.oreColor = new THREE.Color();
+        this.oreScale = new THREE.Vector3();
+        this.orePos = new THREE.Vector3();
         this.visible = true;
+    }
+
+    // ------------------------------------------------------------ scenery
+
+    // Atlantis, the gate, the DHD and the planet belong to the current star system.
+    syncSystem(view) {
+        const THREE = this.THREE;
+        if(this.systemId === view.system.id && this.gateRef === view.gate) return;
+        this.systemId = view.system.id;
+        this.gateRef = view.gate;
+        ['stationGroup', 'gateGroup', 'dhdGroup', 'planetHolder'].forEach(key => {
+            if(this[key]) {
+                this.scene.remove(this[key]);
+                this[key] = null;
+            }
+        });
+        if(this.planet) {
+            this.planet.textures.map.dispose();
+            this.planet.textures.clouds.dispose();
+            this.planet = null;
+        }
+        if(view.station) {
+            if(!this.atlantis) this.atlantis = buildAtlantis(THREE, view.station);
+            this.stationGroup = this.atlantis;
+            this.scene.add(this.stationGroup);
+        }
+        if(!this.gateModel) {
+            this.gateModel = buildGate(THREE, GATE_RADIUS, GATE_INNER, gateSymbolSprite(), CHEVRON_ANGLES);
+            this.dhdModel = buildDHD(THREE);
+        }
+        this.gateGroup = this.gateModel.group;
+        this.gateGroup.position.set(view.gate.x, -view.gate.y, 0);
+        this.scene.add(this.gateGroup);
+        const dhd = view.gate.dhd;
+        this.dhdGroup = this.dhdModel.group;
+        this.dhdGroup.position.set(dhd.x, -dhd.y, 0);
+        this.scene.add(this.dhdGroup);
+        const palette = PALETTES[view.system.planet.type] || PALETTES.rocky;
+        this.planet = buildPlanet(THREE, view.system, palette);
+        this.planetHolder = this.planet.holder;
+        this.scene.add(this.planetHolder);
+    }
+
+    syncScenery(view) {
+        this.syncSystem(view);
+        const gate = view.gate;
+        if(this.stationGroup) this.stationGroup.visible = view.isVisible(view.station.x, view.station.y, 520);
+        const gateOn = view.isVisible(gate.x, gate.y, 320);
+        this.gateGroup.visible = gateOn;
+        this.dhdGroup.visible = gateOn;
+        if(gateOn) {
+            this.gateModel.symbolRing.rotation.z = -gate.spin;
+            this.gateModel.chevrons.forEach((material, i) => {
+                const lit = gate.chevronLit(i);
+                material.emissive.setRGB(lit ? 1 : 0, lit ? 0.45 : 0, lit ? 0.12 : 0);
+                material.color.setRGB(lit ? 1 : 0.31, lit ? 0.55 : 0.16, lit ? 0.25 : 0.12);
+            });
+            const glow = gate.busy ? 1 : view.nearDHD ? 0.55 + 0.25 * Math.sin(view.time * 3) : 0.3;
+            this.dhdModel.dome.emissive.setRGB(glow, glow * 0.25, glow * 0.12);
+        }
+        // Slow planet spin and drifting clouds.
+        if(this.planet) {
+            this.planet.body.rotation.y = view.time * 0.01;
+            this.planet.clouds.rotation.y = view.time * 0.016;
+        }
+    }
+
+    // ------------------------------------------------------------ ore
+
+    syncOres(ores, isVisible) {
+        const mesh = this.ores;
+        let count = 0;
+        for(let i = 0; i < ores.length && count < ORE_LIMIT; i++) {
+            const ore = ores[i];
+            if(ore.dead || !isVisible(ore.x, ore.y, 10)) continue;
+            const size = ore.radius * 1.35;
+            this.orePos.set(ore.x, -ore.y, 1);
+            this.oreEuler.set(ore.angle * 0.7 + ore.phase, ore.phase, -ore.angle);
+            this.oreQuat.setFromEuler(this.oreEuler);
+            this.oreScale.set(size, size, size);
+            this.oreMatrix.compose(this.orePos, this.oreQuat, this.oreScale);
+            mesh.setMatrixAt(count, this.oreMatrix);
+            const color = (MATERIALS[ore.material] || MATERIALS.rock).color.split(',');
+            this.oreColor.setRGB(color[0] / 255, color[1] / 255, color[2] / 255, this.THREE.SRGBColorSpace);
+            mesh.setColorAt(count, this.oreColor);
+            count++;
+        }
+        mesh.count = count;
+        mesh.instanceMatrix.needsUpdate = true;
+        if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
 
     buildStars() {
@@ -308,7 +416,19 @@ class Scene3D {
             let entry = this.rockEntries.get(rock);
             const visible = isVisible(rock.x, rock.y, rock.radius * 1.6);
             if(!visible) {
-                if(entry) entry.mesh.visible = false;
+                if(entry) {
+                    entry.mesh.visible = false;
+                    // Well off screen: let go of the texture and its canvas (Safari caps
+                    // total canvas memory); it is rebuilt when the rock comes back.
+                    if(entry.texture && !isVisible(rock.x, rock.y, 900)) {
+                        entry.texture.dispose();
+                        entry.texture = null;
+                        entry.canvas = null;
+                        entry.material.map = null;
+                        entry.material.needsUpdate = true;
+                        entry.version = -1;
+                    }
+                }
                 return;
             }
             rock.ensureSprite(true);
@@ -420,6 +540,8 @@ class Scene3D {
     render(view) {
         if(!this.visible) return;
         this.placeCamera(view.cameraX, view.cameraY, view.zoom);
+        this.syncScenery(view);
+        this.syncOres(view.ores, view.isVisible);
         this.syncRocks(view.rocks, view.isVisible);
         this.syncShips(view.ships, view.isVisible);
         this.renderer.render(this.scene, this.camera);

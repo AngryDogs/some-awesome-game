@@ -17,7 +17,7 @@ import { getDHD, isDHDOpen } from '../ui/dhd';
 import { getStarmap, isStarmapOpen, hyperTravelTime } from '../ui/starmap';
 import { planetSprite, nebulaSprite } from '../render/planets';
 import { drawWormhole, drawHyperspace, drawHyperWindow } from './travel';
-import { glowSprite, stamp } from '../render/sprites';
+import { glowSprite, stamp, isSafari } from '../render/sprites';
 import Scene3D, { webglAvailable } from '../render3d/scene3d';
 import TouchControls, { isTouchDevice } from '../ui/touch';
 
@@ -64,15 +64,13 @@ const canvas = document.createElement('canvas');
 canvas.className = 'main-layer';
 const ctx = canvas.getContext('2d');
 
-// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls and the
-// starfield are drawn by `scene3d` underneath this canvas; the station, gate and DHD go on
-// a flat 2D layer below that (ships fly over them), and everything else stays on the main
-// canvas on top. Without WebGL the whole game is drawn on the main canvas as before.
+// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls, ore, Atlantis,
+// the Stargate, the planet and the starfield are drawn by `scene3d` underneath this canvas;
+// effects and the HUD stay on this canvas on top, lined up exactly. Without WebGL the whole
+// game is drawn on this canvas as before.
 let scene3d = null;
-const underCanvas = document.createElement('canvas');
-underCanvas.className = 'under-layer';
-const underCtx = underCanvas.getContext('2d');
-let underUsed = false;
+let slow3dTime = 0;
+let frameErrors = 0;
 let pixelRatio = 1;
 
 let state = null;
@@ -134,7 +132,8 @@ const createState = () => {
 
 // Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
 // automatically if the game can't hold a smooth frame rate on this computer.
-let resolutionCap = 2;
+// Safari starts at standard resolution (4x fewer pixels on Retina screens).
+let resolutionCap = isSafari() ? 1 : 2;
 
 // Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
 // Mouse wheel or +/- keys change it between MIN_ZOOM (wide tactical view) and
@@ -161,14 +160,7 @@ const resize = () => {
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    if(scene3d) {
-        underCanvas.width = canvas.width;
-        underCanvas.height = canvas.height;
-        underCanvas.style.width = canvas.style.width;
-        underCanvas.style.height = canvas.style.height;
-        underUsed = true;
-        scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
-    }
+    if(scene3d) scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
     world.resize(window.innerWidth, window.innerHeight);
 };
 
@@ -200,7 +192,7 @@ const renderInfo = () => {
     setText('credits', 'Credits: ' + Math.round(getProfile().credits).toLocaleString('en-US'));
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
-    setText('fps', 'Fps: ' + Math.round(fps));
+    setText('fps', 'Fps: ' + Math.round(fps) + (scene3d ? ' (3D)' : ' (2D)'));
     setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
         (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') +
             ' · Targets: ' + TARGET_MODE_LABEL[ship.targetMode] + hint('T') : ''));
@@ -1978,6 +1970,9 @@ const drawBackdrop = () => {
     setBackdrop(system);
     const w = world.width;
     const h = world.height;
+    // In 3D the planet is a real sphere in the scene.
+    if(planetEl) planetEl.style.display = scene3d ? 'none' : '';
+    if(scene3d) return;
     const planet = planetSprite(system);
     const parallax = 0.12;
     const px = w / 2 + (system.planet.x - state.camera.x) * parallax;
@@ -1990,14 +1985,16 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
+// Everything the 3D view needs for one frame.
+const view3d = (time) => ({
+    cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom, time: time,
+    rocks: state.rocks, ships: [state.ship].concat(state.enemies), ores: state.ores,
+    system: state.system, gate: state.gate, station: state.system.station ? STATION : null,
+    canDock: state.canDock, nearDHD: state.nearDHD, isVisible: isVisible
+});
+
 const hide3d = () => {
-    if(!scene3d) return;
-    scene3d.setVisible(false);
-    if(underUsed) {
-        underCtx.setTransform(1, 0, 0, 1, 0, 0);
-        underCtx.clearRect(0, 0, underCanvas.width, underCanvas.height);
-        underUsed = false;
-    }
+    if(scene3d) scene3d.setVisible(false);
 };
 
 const renderTunnel = () => {
@@ -2282,25 +2279,16 @@ const render = () => {
         c.translate(-state.camera.x, -state.camera.y);
     };
 
-    // Station, gate and DHD: on the flat layer under the 3D view (or straight on the canvas).
+    // Station, gate and DHD. In 3D they are models in the scene, and only their effects
+    // (docking ring, shield impacts, event horizon, glows, labels) are drawn here.
     const stationVisible = state.system.station && isVisible(STATION.x, STATION.y, 460);
     const gateVisible = isVisible(state.gate.x, state.gate.y, 300);
-    const floor = use3d ? underCtx : ctx;
-    if(use3d && (underUsed || stationVisible || gateVisible)) {
-        underCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-        underCtx.clearRect(0, 0, world.width, world.height);
-        underUsed = stationVisible || gateVisible;
-    }
-    toWorld(floor);
-    if(stationVisible) drawStation(floor, time, state.canDock);
-    if(gateVisible) {
-        state.gate.draw(floor, time);
-        state.gate.drawDHD(floor, time, state.nearDHD);
-    }
-    if(use3d) underCtx.restore();
-    else ctx.restore();
-
     toWorld(ctx);
+    if(stationVisible) drawStation(ctx, time, state.canDock, use3d);
+    if(gateVisible) {
+        state.gate.draw(ctx, time, use3d);
+        state.gate.drawDHD(ctx, time, state.nearDHD, use3d);
+    }
     const visibleRocks = state.rocks.filter(rock => {
         if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
         // Free the cached image of rocks well off screen.
@@ -2314,7 +2302,7 @@ const render = () => {
     }
     state.particles.forEach(particle => { if(isUnlit(particle) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
-    state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
+    if(!use3d) state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
@@ -2357,11 +2345,12 @@ const render = () => {
     ctx.restore();
 
     if(use3d) {
-        scene3d.setVisible(true);
-        scene3d.render({
-            cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom,
-            rocks: state.rocks, ships: [state.ship].concat(state.enemies), isVisible: isVisible
-        });
+        try {
+            scene3d.setVisible(true);
+            scene3d.render(view3d(time));
+        } catch(error) {
+            disable3d(error);
+        }
     }
 
     if(state.system.station) drawStationPointer();
@@ -2555,13 +2544,30 @@ const endGame = (message) => {
     backdrop.style.display = 'none';
 };
 
-const frame = (now) => {
+const frameStep = (now) => {
     const elapsed = Math.min((now - lastFrameTime) / 1000, 0.25);
     lastFrameTime = now;
     if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
     if(zoomKeys.in) targetZoom = clampZoom(targetZoom * Math.exp(elapsed * 1.6));
     if(zoomKeys.out) targetZoom = clampZoom(targetZoom * Math.exp(-elapsed * 1.6));
     zoom += (targetZoom - zoom) * Math.min(1, elapsed * 10);
+    // A 3D view that can't keep up first drops to normal resolution, then to the 2D view.
+    if(scene3d && !state.transition && !state.paused) {
+        if(fps < 20) {
+            slow3dTime += elapsed;
+            if(slow3dTime > 4) {
+                slow3dTime = 0;
+                if(resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
+                    resolutionCap = 1;
+                    resize();
+                } else if(!/[?&]3d\b/.test(window.location.search)) {
+                    disable3d('frame rate too low');
+                }
+            }
+        } else {
+            slow3dTime = 0;
+        }
+    }
     if(fps < 45 && resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
         slowTime += elapsed;
         if(slowTime > 2) {
@@ -2609,10 +2615,41 @@ const frame = (now) => {
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
         loseCargo();
         endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
-        return;
+        return false;
     }
+    return true;
+};
 
-    frameId = requestAnimationFrame(frame);
+// Switch to the 2D view for good (no WebGL, or the 3D view hit an error on this computer).
+const disable3d = (reason) => {
+    if(!scene3d) return;
+    try {
+        scene3d.setVisible(false);
+        scene3d.clear();
+    } catch(e) { /* already broken */ }
+    if(scene3d.canvas && scene3d.canvas.parentNode) scene3d.canvas.parentNode.removeChild(scene3d.canvas);
+    scene3d = null;
+    if(planetEl) planetEl.style.display = '';
+    if(state) banner('3D view unavailable on this computer: using 2D', 3);
+    if(window.console) console.warn('3D view disabled:', reason);
+};
+
+// The game loop never stops on an error: a failure in the 3D view drops back to 2D, and
+// anything else is reported while the game keeps running.
+const frame = (now) => {
+    let keepGoing = true;
+    try {
+        keepGoing = frameStep(now);
+    } catch(error) {
+        if(window.console) console.error('Frame error:', error);
+        if(scene3d) disable3d(error);
+        else if(state) {
+            // Show what went wrong instead of silently freezing.
+            frameErrors++;
+            if(frameErrors < 5 || frameErrors % 120 === 0) banner('Error: ' + ((error && error.message) || error), 4);
+        }
+    }
+    if(keepGoing && state) frameId = requestAnimationFrame(frame);
 };
 
 let initialized = false;
@@ -2620,13 +2657,14 @@ let initialized = false;
 const initialize = () => {
     initialized = true;
     gameboard.appendChild(backdrop);
+    // 3D unless asked for 2D (?2d). Without real graphics-card acceleration the browser
+    // refuses the 3D view and the game stays 2D; ?3d forces 3D anyway.
     if(webglAvailable() && !/[?&]2d\b/.test(window.location.search)) {
         try {
-            gameboard.appendChild(underCanvas);
-            scene3d = new Scene3D(gameboard);
+            scene3d = new Scene3D(gameboard, !/[?&]3d\b/.test(window.location.search));
         } catch(e) {
             scene3d = null;
-            if(underCanvas.parentNode) underCanvas.parentNode.removeChild(underCanvas);
+            if(window.console) console.warn('3D view not started:', e && e.message);
         }
     }
     gameboard.appendChild(canvas);

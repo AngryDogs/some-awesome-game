@@ -183,14 +183,26 @@ const buildCity = (canDock) => createSprite(EXTENT * 2, EXTENT * 2, ctx => {
     ctx.stroke();
 }, Math.min(2, spriteResolution()));
 
-export const drawStation = (ctx, time, canDock) => {
+// `effectsOnly`: the 3D view draws the city and its shield dome; only the docking ring,
+// shield impacts, lights and label are drawn here.
+export const drawStation = (ctx, time, canDock, effectsOnly) => {
     const key = canDock ? 'dock' : 'idle';
-    if(!sprites[key]) sprites[key] = buildCity(canDock);
     const R = STATION.shieldRadius;
 
     ctx.save();
     ctx.translate(STATION.x, STATION.y);
-    ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+    if(effectsOnly) {
+        ctx.setLineDash([12, 14]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
+        ctx.beginPath();
+        ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else {
+        if(!sprites[key]) sprites[key] = buildCity(canDock);
+        ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+    }
 
     // Impact ripples and flares, like the ship shields (only while something has just hit).
     if(STATION.impacts.length) {

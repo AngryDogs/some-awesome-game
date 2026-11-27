@@ -14,15 +14,27 @@ Then open `index.html` through any static web server (e.g. `python3 -m http.serv
 ## 3D graphics
 
 The game is drawn in 3D on the graphics card with WebGL ([Three.js](https://threejs.org) r158,
-bundled in `assets/vendor/`, MIT licence). A perspective camera looks straight down on the
-playing field: asteroids are lit 3D rocks built from their real (chippable) outlines with their
-painted surface wrapped on, ship hulls are bevelled metal plates extruded from their line art
-(the glowing line art is drawn on top), and the stars sit at different depths so they drift
-with real parallax. Gameplay is unchanged and still happens on a flat plane. Effects, shields,
-the station, the Stargate and the HUD are drawn in 2D layers lined up exactly with the 3D view.
+bundled in `assets/vendor/`, MIT licence, so it also works when `index.html` is opened from
+disk). A perspective camera looks straight down on the playing field:
 
-If the browser has no WebGL the game falls back to the 2D view; add `?2d` to the address to
-force it (e.g. `index.html?2d`).
+- asteroids are lit 3D rocks built from their real (chippable) outlines with their painted
+  surface wrapped on; ore pieces are faceted crystals;
+- ship hulls are bevelled metal plates extruded from their line art (the glowing line art is
+  drawn on top);
+- Atlantis is a 3D city (central spire, piers, towers with lit windows) under a glowing
+  shield dome; the Stargate has a 3D ring with a turning symbol ring and chevrons that light
+  up as they lock; the DHD is a 3D pedestal;
+- each system's planet is a real sphere far below with clouds, ice caps, an atmosphere glow
+  and sometimes a moon; stars sit at different depths, all drifting with real parallax.
+
+Gameplay is unchanged and still happens on a flat plane; effects, shields, the event horizon
+and the HUD are drawn in a 2D layer lined up exactly with the 3D view.
+
+The 3D view only starts with real graphics-card acceleration, and drops to the 2D view by
+itself if it can't keep a playable frame rate (the fps line shows `(3D)` or `(2D)`). Add `?2d`
+to the address to force the 2D view, or `?3d` to force 3D. Safari gets lighter settings
+(standard resolution, smaller cached images) because of its tighter canvas limits. If
+something goes wrong while playing, the game keeps running and shows the error message.
 
 ## Controls
 

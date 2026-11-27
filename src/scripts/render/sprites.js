@@ -4,8 +4,12 @@
 
 const cache = {};
 
+// Safari has much tighter limits on total canvas memory (especially on iPhone / iPad) and a
+// slower 2D canvas, so it gets lighter settings.
+export const isSafari = () => /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent || '');
+
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
-export const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
+export const spriteResolution = () => Math.min(isSafari() ? 2 : 3, (window.devicePixelRatio || 1) * (isSafari() ? 1.25 : 2));
 
 // Draws `draw(ctx)` into an offscreen canvas of `width` x `height` world pixels.
 // Pass a previous sprite as `reuse` to redraw into its canvas when the size still fits

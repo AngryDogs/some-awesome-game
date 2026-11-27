@@ -60,7 +60,7 @@
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 14);
+/******/ 	return __webpack_require__(__webpack_require__.s = 16);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -74,9 +74,15 @@
 
 const cache = {};
 
+// Safari has much tighter limits on total canvas memory (especially on iPhone / iPad) and a
+// slower 2D canvas, so it gets lighter settings.
+const isSafari = () => /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent || '');
+/* harmony export (immutable) */ __webpack_exports__["f"] = isSafari;
+
+
 // Sprites are drawn magnified by the camera zoom, so render them a bit sharper.
-const spriteResolution = () => Math.min(3, (window.devicePixelRatio || 1) * 2);
-/* harmony export (immutable) */ __webpack_exports__["g"] = spriteResolution;
+const spriteResolution = () => Math.min(isSafari() ? 2 : 3, (window.devicePixelRatio || 1) * (isSafari() ? 1.25 : 2));
+/* harmony export (immutable) */ __webpack_exports__["h"] = spriteResolution;
 
 
 // Draws `draw(ctx)` into an offscreen canvas of `width` x `height` world pixels.
@@ -203,7 +209,7 @@ const muzzleSprite = (color) => {
     }
     return cache[key];
 };
-/* harmony export (immutable) */ __webpack_exports__["f"] = muzzleSprite;
+/* harmony export (immutable) */ __webpack_exports__["g"] = muzzleSprite;
 
 
 // Soft feathered puff for dust clouds (no hard edge, unlike a filled circle).
@@ -228,7 +234,7 @@ const dustSprite = (color) => {
 const stamp = (ctx, sprite, x, y, width, height) => {
     ctx.drawImage(sprite.canvas, x - width / 2, y - height / 2, width, height);
 };
-/* harmony export (immutable) */ __webpack_exports__["h"] = stamp;
+/* harmony export (immutable) */ __webpack_exports__["i"] = stamp;
 
 
 
@@ -3379,8 +3385,8 @@ const drawConstellation = (ctx, id, x, y, size, color, starColor, dotScale) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__bullet_bullet__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__missile_missile__ = __webpack_require__(19);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__particle_particle__ = __webpack_require__(7);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__ = __webpack_require__(3);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__render_sprites__ = __webpack_require__(0);
@@ -3474,7 +3480,7 @@ const hullSprite = (hull, color, linesOnly) => {
         const w = b.maxX - b.minX + pad * 2;
         const h = b.maxY - b.minY + pad * 2;
         // Keep very large hull sprites to a sensible size in memory.
-        const res = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* spriteResolution */])(), 2048 / Math.max(w, h));
+        const res = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* spriteResolution */])(), 2048 / Math.max(w, h));
         const sprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(w, h, ctx => {
             ctx.translate(pad - b.minX, pad - b.minY);
             Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["c" /* drawHullArt */])(ctx, hull, { color: color, fill: !linesOnly });
@@ -3492,7 +3498,7 @@ const shieldSprite = (hull) => {
     const s = Object(__WEBPACK_IMPORTED_MODULE_3__shipyard_hulls__["e" /* shieldFor */])(hull);
     const color = hull.shieldColor || '120,210,255';
     const pad = 6;
-    const shieldRes = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* spriteResolution */])(), 2048 / (Math.max(s.rx, s.ry) * 2 + pad * 2));
+    const shieldRes = Math.min(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* spriteResolution */])(), 2048 / (Math.max(s.rx, s.ry) * 2 + pad * 2));
     hull._shieldSprite = Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["a" /* createSprite */])(s.rx * 2 + pad * 2, s.ry * 2 + pad * 2, ctx => {
         ctx.translate(s.rx + pad, s.ry + pad);
         ctx.scale(1, s.ry / s.rx);
@@ -4429,7 +4435,7 @@ class Ship {
             // Nozzle glow, pulsing even when idle.
             const glowSize = (2.5 + pulse + t.main * 3) * size * 3.2;
             ctx.globalAlpha = 0.55 + t.main * 0.45;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, glow, engine.x, engine.y, glowSize, glowSize);
 
             // Plume straight out of the nozzle, as wide as the nozzle.
             if(t.main > 0.03) {
@@ -4489,7 +4495,7 @@ class Ship {
             ctx.globalAlpha = f * 0.9;
             ctx.drawImage(sprite.canvas, -w / 2, -h / 2, w, h);
             ctx.globalAlpha = f * 0.35;
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color), 0, 0, w * 1.15, h * 1.15);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])(color), 0, 0, w * 1.15, h * 1.15);
             ctx.globalAlpha = f;
             ctx.strokeStyle = 'rgb(' + color + ')';
             ctx.lineWidth = 2 + 2.5 * f;
@@ -4512,7 +4518,7 @@ class Ship {
                 const iy = impact.y * grow;
                 const size = (20 + 50 * impact.strength) * impact.life;
                 ctx.globalAlpha = Math.min(1, impact.life * impact.strength);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, glow, ix, iy, size, size);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, glow, ix, iy, size, size);
                 ctx.globalAlpha = 0.7 * impact.life;
                 ctx.strokeStyle = 'rgb(' + color + ')';
                 ctx.lineWidth = 2 * impact.life + 0.5;
@@ -4551,11 +4557,11 @@ class Ship {
             ctx.lineTo(beam.x2, beam.y2);
             ctx.stroke();
             ctx.setLineDash([]);
-            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
+            Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('140,210,255'), beam.x1, beam.y1, 16 * flicker, 16 * flicker);
             if(beam.hit) {
                 // Molten contact point.
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
-                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('120,190,255'), beam.x2, beam.y2, 40 * flicker, 40 * flicker);
+                Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,190,120'), beam.x2, beam.y2, 18 * flicker, 18 * flicker);
             }
             ctx.restore();
         });
@@ -4603,13 +4609,13 @@ class Ship {
                     const fy = Math.sin(turret.aim - this.angle) * tip;
                     ctx.globalCompositeOperation = 'lighter';
                     const bloom = 16 + 20 * turret.flash / 0.14;
-                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
+                    Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["d" /* glowSprite */])('255,150,50'), fx, fy, bloom, bloom);
                 }
                 // Star-shaped muzzle flash pointing down the barrel, flickering in size.
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.rotate(turret.aim - this.angle);
                 const flashSize = (turret.kind === 'staff' ? 30 : 18 + Math.random() * 10) * Math.max(0.8, u);
-                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["f" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
+                ctx.drawImage(Object(__WEBPACK_IMPORTED_MODULE_4__render_sprites__["g" /* muzzleSprite */])(color.replace(/ /g, '')).canvas, tip - flashSize * 0.25, -flashSize * 0.25, flashSize, flashSize * 0.5);
             }
             ctx.restore();
         });
@@ -5432,7 +5438,7 @@ class Rock {
             ctx.strokeStyle = rim;
             ctx.lineWidth = Math.max(1, r * 0.03);
             ctx.stroke();
-        }, Math.min(1.5, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["g" /* spriteResolution */])()), this.sprite);
+        }, Math.min(1.5, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["h" /* spriteResolution */])()), this.sprite);
         this.spriteAngle = this.angle;
         this.spriteVersion = (this.spriteVersion || 0) + 1;   // tells the 3D view to refresh
         this.spriteExtent = extent;
@@ -6267,6 +6273,683 @@ const isShipyardOpen = () => !!(instance && instance.isOpen);
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CHEVRON_ANGLES; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
+// The Stargate in each system, and the DHD (dial-home device) next to it.
+//
+// Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
+// sounds line up exactly: the ring starts rolling, chevrons 1-6 encode at slightly random
+// intervals while it turns, the ring stops, chevron 7 locks, and 1.2 s later the gate opens
+// with the kawoosh (7 s from pressing the dome), settling into a rippling event horizon.
+// Small ships can fly through an outgoing wormhole; it closes after a while.
+
+
+
+
+
+const GATE_RADIUS = 78;
+/* harmony export (immutable) */ __webpack_exports__["d"] = GATE_RADIUS;
+        // outer ring
+const GATE_INNER = 58;
+/* harmony export (immutable) */ __webpack_exports__["c"] = GATE_INNER;
+         // event horizon radius (ships bigger than this can't pass)
+const DHD_OFFSET = { x: 0, y: 220 };
+/* unused harmony export DHD_OFFSET */
+
+const DHD_RANGE = 170;
+/* harmony export (immutable) */ __webpack_exports__["b"] = DHD_RANGE;
+         // how close to the DHD you need to be to use it
+
+// DHD dial timeline (seconds after the dome is pressed), from CAP's stargate_sg1 sequence.
+const RING_START = 0.1;               // ring starts rolling
+const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
+const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
+const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
+const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
+const FORM_TIME = 0.8;                // horizon water rushing in from the rim before the burst
+
+// Churning foam blobs for the horizon forming (fixed layout, animated).
+const FOAM = [];
+for(let i = 0; i < 46; i++) {
+    FOAM.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), size: 0.5 + Math.random(),
+        spin: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6), phase: Math.random() * 10 });
+}
+const KAWOOSH_TIME = 1.3;
+const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
+const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
+const CLOSE_TIME = 0.9;
+const SYMBOLS = 39;
+
+const CHEVRON_ANGLES = [];
+for(let i = 0; i < 9; i++) CHEVRON_ANGLES.push(-Math.PI / 2 + i * Math.PI * 2 / 9);
+// Order in which chevrons light: chevrons 1-6 around the gate, then the top one (7).
+const LOCK_ORDER = [1, 2, 3, 6, 7, 8, 0];
+
+let ringSprite = null;
+let symbolSprite = null;
+
+// Outer ring body (cached).
+const buildRing = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2 + 20, GATE_RADIUS * 2 + 20, ctx => {
+    const c = GATE_RADIUS + 10;
+    ctx.translate(c, c);
+    ctx.beginPath();
+    ctx.arc(0, 0, GATE_RADIUS, 0, Math.PI * 2);
+    ctx.arc(0, 0, GATE_INNER, 0, Math.PI * 2, true);
+    const metal = ctx.createRadialGradient(-20, -25, GATE_INNER * 0.6, 0, 0, GATE_RADIUS);
+    metal.addColorStop(0, 'rgb(150, 150, 158)');
+    metal.addColorStop(0.6, 'rgb(95, 96, 104)');
+    metal.addColorStop(1, 'rgb(55, 56, 64)');
+    ctx.fillStyle = metal;
+    ctx.fill('evenodd');
+    ctx.strokeStyle = 'rgba(20, 20, 26, 0.9)';
+    ctx.lineWidth = 1.5;
+    [GATE_RADIUS, GATE_INNER, GATE_RADIUS - 6, GATE_INNER + 5].forEach(r => {
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.stroke();
+    });
+    // Segment seams.
+    for(let i = 0; i < 36; i++) {
+        const a = i * Math.PI * 2 / 36;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (GATE_RADIUS - 6), Math.sin(a) * (GATE_RADIUS - 6));
+        ctx.lineTo(Math.cos(a) * GATE_RADIUS, Math.sin(a) * GATE_RADIUS);
+        ctx.stroke();
+    }
+}, 2);
+
+// Inner symbol ring with all 39 glyphs (cached; rotated when spinning).
+const buildSymbols = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx => {
+    ctx.translate(GATE_RADIUS, GATE_RADIUS);
+    const mid = (GATE_INNER + 5 + GATE_RADIUS - 6) / 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, GATE_RADIUS - 6, 0, Math.PI * 2);
+    ctx.arc(0, 0, GATE_INNER + 5, 0, Math.PI * 2, true);
+    ctx.fillStyle = 'rgb(70, 72, 80)';
+    ctx.fill('evenodd');
+    for(let i = 0; i < SYMBOLS; i++) {
+        const a = i * Math.PI * 2 / SYMBOLS;
+        ctx.save();
+        ctx.rotate(a);
+        // Slot 38 holds the point of origin (where the ring comes to rest after a dial).
+        if(i < __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */].length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */][i], 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        else if(i === SYMBOLS - 1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
+        ctx.restore();
+    }
+}, 2);
+
+
+
+// The inner symbol ring image (also used as the 3D ring's texture).
+const gateSymbolSprite = () => {
+    if(!symbolSprite) symbolSprite = buildSymbols();
+    return symbolSprite;
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = gateSymbolSprite;
+
+
+class Stargate {
+
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.state = 'idle';
+        this.timer = 0;
+        this.locked = 0;
+        this.spin = 0;
+        this.spinFrom = 0;
+        this.spinTo = 0;
+        this.phase = 'spin';
+        this.outgoing = false;
+        this.target = null;
+        this.kawoosh = 0;
+        this.time = 0;
+    }
+
+    get dhd() {
+        return { x: this.x + DHD_OFFSET.x, y: this.y + DHD_OFFSET.y };
+    }
+
+    get isOpen() {
+        return this.state === 'open';
+    }
+
+    get busy() {
+        return this.state !== 'idle';
+    }
+
+    // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
+    dial(targetId, symbols) {
+        // A gate that is still shutting down can be dialled again straight away.
+        if(this.busy && this.state !== 'closing') return false;
+        if(this.state === 'closing') __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
+        this.wasOpen = false;
+        this.state = 'dialing';
+        this.outgoing = true;
+        this.target = targetId;
+        this.symbols = symbols;
+        this.locked = 0;
+        this.phase = 'spin';
+        this.clock = 0;
+        this.ringOn = false;
+        // Chevrons 1-6 at random-ish intervals (CAP: 0.3-1.0 s each plus an even share, the
+        // last gap always the longest) that together span CHEVRONS_SPAN.
+        const gaps = [];
+        for(let i = 0; i < 5; i++) gaps.push(0.3 + Math.random() * 0.7);
+        gaps.push(1);
+        const total = gaps.reduce((a, b) => a + b, 0);
+        const delta = (CHEVRONS_SPAN - total) / 6;
+        this.chevronTimes = [];
+        let t = FIRST_CHEVRON;
+        for(let i = 0; i < 6; i++) {
+            this.chevronTimes.push(t);
+            t += gaps[i] + delta;
+        }
+        this.ringStop = t;
+        this.lockTime = t + RING_STOP_TO_LOCK;
+        this.openTime = this.lockTime + LOCK_TO_OPEN;
+        // The ring turns one way for the whole dial and comes to rest with the point of
+        // origin under the top chevron.
+        this.spinFrom = this.spin;
+        const finalAngle = -Math.PI / 2 + Math.PI / 2 - 38 * Math.PI * 2 / SYMBOLS;
+        let to = finalAngle;
+        while(to < this.spin + Math.PI * 4) to += Math.PI * 2;
+        this.spinTo = to;
+        return true;
+    }
+
+    // A wormhole arriving here (after travelling through it).
+    incoming() {
+        this.state = 'open';
+        this.outgoing = false;
+        this.locked = 7;
+        this.timer = INCOMING_OPEN_TIME;
+        this.kawoosh = 0;
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
+    }
+
+    // `silent`: shut down without the closing sound (the ship has just gone through).
+    close(silent) {
+        if(this.state === 'idle' || this.state === 'closing') return;
+        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
+        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
+        this.ringOn = false;
+        this.state = 'closing';
+        this.timer = CLOSE_TIME;
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
+        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateClose(silent);
+    }
+
+    update(dt) {
+        this.time += dt;
+        if(this.state === 'idle') return;
+        this.timer -= dt;
+
+        if(this.state === 'dialing') {
+            const t = (this.clock += dt);
+            if(!this.ringOn && t >= RING_START && t < this.ringStop) {
+                this.ringOn = true;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(true);
+            }
+            // Ring: ease in, roll, ease out to a stop at ringStop.
+            const span = this.ringStop - RING_START;
+            const u = Math.max(0, Math.min(1, (t - RING_START) / span));
+            const ease = u < 0.12 ? (u * u) / (2 * 0.12 * 0.88) :
+                u > 0.88 ? 1 - ((1 - u) * (1 - u)) / (2 * 0.12 * 0.88) :
+                (u - 0.06) / 0.88;
+            this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
+            // Chevrons 1-6 encode while the ring turns.
+            while(this.locked < 6 && t >= this.chevronTimes[this.locked]) {
+                this.locked++;
+                this.phase = 'encode';
+                this.lockFlash = 0.3;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(false);
+            }
+            // Ring stopped: its sound stops as chevron 7 locks.
+            if(this.locked === 6 && t >= this.lockTime) {
+                this.locked = 7;
+                this.phase = 'lock';
+                this.lockFlash = 0.6;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
+                this.ringOn = false;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(true);
+            }
+            if(this.lockFlash > 0) this.lockFlash -= dt;
+            if(t >= this.openTime) {
+                this.state = 'opening';
+                this.timer = FORM_TIME;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].kawoosh();
+            }
+        } else if(this.state === 'opening') {
+            if(this.timer <= 0) {
+                this.state = 'kawoosh';
+                this.timer = KAWOOSH_TIME;
+            }
+        } else if(this.state === 'kawoosh') {
+            this.kawoosh = 1 - Math.max(0, this.timer) / KAWOOSH_TIME;
+            if(this.timer <= 0) {
+                this.state = 'open';
+                this.timer = OPEN_TIME;
+                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
+            }
+        } else if(this.state === 'open') {
+            if(this.timer <= 0) this.close();
+        } else if(this.state === 'closing') {
+            if(this.timer <= 0) {
+                this.state = 'idle';
+                this.locked = 0;
+                this.target = null;
+            }
+        }
+    }
+
+    // `effectsOnly`: the 3D view draws the ring, symbols and chevrons; only the event
+    // horizon, kawoosh and chevron glow are drawn here.
+    draw(ctx, time, effectsOnly) {
+        if(!ringSprite) ringSprite = buildRing();
+        if(!symbolSprite) symbolSprite = buildSymbols();
+        const R = GATE_RADIUS;
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // The horizon forming: water rushing in from the rim (and still there under the
+        // first moments of the kawoosh).
+        if(this.state === 'opening') this.drawForming(ctx, time, 1 - Math.max(0, this.timer) / FORM_TIME);
+        if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
+
+        // Event horizon behind the ring.
+        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
+            const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
+            this.drawHorizon(ctx, time, fade);
+        }
+
+        if(!effectsOnly) {
+            ctx.save();
+            ctx.rotate(this.spin);
+            ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
+            ctx.restore();
+            ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
+        }
+
+        // Chevrons: locked ones glow.
+        CHEVRON_ANGLES.forEach((a, i) => {
+            const order = LOCK_ORDER.indexOf(i);
+            const lit = order !== -1 && order < this.locked;
+            const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
+            if(effectsOnly && !lit) return;
+            ctx.save();
+            ctx.rotate(a + Math.PI / 2);
+            ctx.translate(0, -R + 2);
+            if(effectsOnly) {
+                ctx.globalCompositeOperation = 'lighter';
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
+                ctx.restore();
+                return;
+            }
+            ctx.fillStyle = 'rgb(120, 118, 125)';
+            ctx.strokeStyle = 'rgb(35, 35, 42)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-8, -4); ctx.lineTo(8, -4); ctx.lineTo(4, 7); ctx.lineTo(0, 9); ctx.lineTo(-4, 7);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = lit ? 'rgb(255, 140, 60)' : 'rgb(80, 40, 30)';
+            ctx.beginPath();
+            ctx.moveTo(-4, -1); ctx.lineTo(4, -1); ctx.lineTo(0, 6 + (engaging ? 2 : 0));
+            ctx.closePath();
+            ctx.fill();
+            if(lit) {
+                ctx.globalCompositeOperation = 'lighter';
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
+            }
+            ctx.restore();
+        });
+
+        // The kawoosh: the unstable vortex bursting out and collapsing back.
+        if(this.state === 'kawoosh') {
+            const k = this.kawoosh;
+            const burst = Math.sin(Math.min(1, k / 0.75) * Math.PI);
+            const radius = GATE_INNER * (0.6 + 1.9 * burst);
+            ctx.globalCompositeOperation = 'lighter';
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+            g.addColorStop(0, 'rgba(240, 250, 255, ' + (0.9 * burst) + ')');
+            g.addColorStop(0.5, 'rgba(110, 170, 255, ' + (0.75 * burst) + ')');
+            g.addColorStop(1, 'rgba(60, 110, 255, 0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.fill();
+            // Spiralling vortex streaks.
+            ctx.strokeStyle = 'rgba(220, 240, 255, ' + (0.6 * burst) + ')';
+            ctx.lineWidth = 2;
+            for(let i = 0; i < 6; i++) {
+                const a0 = i * Math.PI / 3 + time * 6;
+                ctx.beginPath();
+                for(let s = 0; s <= 10; s++) {
+                    const rr = radius * s / 10;
+                    const aa = a0 + s * 0.35;
+                    if(s === 0) ctx.moveTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
+                    else ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
+                }
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
+    // The event horizon forming, as seen in the show: churning icy white-blue water rushes in
+    // from the rim while the middle is still see-through. `f` 0..1 is how far it has closed.
+    drawForming(ctx, time, f) {
+        const r = GATE_INNER;
+        const e = f * f * (3 - 2 * f);
+        const inner = r * (1 - e) * 0.95;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+        // Translucent watery band, brightest and thickest at the rim.
+        const g = ctx.createRadialGradient(0, 0, Math.max(0, inner * 0.85), 0, 0, r);
+        g.addColorStop(0, 'rgba(150, 190, 240, 0)');
+        g.addColorStop(0.2, 'rgba(170, 205, 250, ' + (0.35 + 0.3 * e) + ')');
+        g.addColorStop(0.65, 'rgba(215, 235, 255, ' + (0.7 + 0.2 * e) + ')');
+        g.addColorStop(1, 'rgba(150, 195, 250, 0.95)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        // Churning foam swirling around in the band.
+        ctx.globalCompositeOperation = 'lighter';
+        FOAM.forEach(blob => {
+            const a = blob.angle + time * blob.spin;
+            const d = inner + (r - inner) * (0.15 + 0.85 * blob.depth) + Math.sin(time * 6 + blob.phase) * 2;
+            const size = (6 + 12 * blob.size) * (0.6 + 0.4 * Math.sin(time * 7 + blob.phase));
+            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(time * 9 + blob.phase);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(blob.spin > 0 ? '230,242,255' : '185,215,255'), Math.cos(a) * d, Math.sin(a) * d, size * 1.6, size);
+        });
+        // Ripple lines racing round the band.
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = 'rgb(235, 245, 255)';
+        ctx.lineWidth = 1.2;
+        for(let i = 0; i < 7; i++) {
+            const rr = inner + (r - inner) * ((i + 0.5) / 7);
+            const a0 = time * (i % 2 ? 3 : -2.4) + i;
+            ctx.beginPath();
+            ctx.arc(0, 0, rr, a0, a0 + 0.8 + 0.5 * Math.sin(time * 4 + i));
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Rippling, shimmering pool of the event horizon.
+    drawHorizon(ctx, time, fade) {
+        const r = GATE_INNER;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+        const pool = ctx.createRadialGradient(-r * 0.2, -r * 0.25, r * 0.1, 0, 0, r);
+        pool.addColorStop(0, 'rgba(200, 230, 255, ' + (0.95 * fade) + ')');
+        pool.addColorStop(0.5, 'rgba(70, 140, 240, ' + (0.9 * fade) + ')');
+        pool.addColorStop(1, 'rgba(25, 60, 170, ' + (0.95 * fade) + ')');
+        ctx.fillStyle = pool;
+        ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineWidth = 1.5;
+        for(let i = 0; i < 6; i++) {
+            const t = (time * 0.45 + i / 6) % 1;
+            ctx.strokeStyle = 'rgba(210, 235, 255, ' + (0.35 * (1 - t) * fade) + ')';
+            ctx.beginPath();
+            ctx.arc(Math.sin(time * 0.7 + i) * 4, Math.cos(time * 0.6 + i) * 4, r * t, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Caustic shimmer.
+        for(let i = 0; i < 10; i++) {
+            const a = time * 0.8 + i * 0.63;
+            const d = (0.2 + 0.7 * ((i * 0.37 + time * 0.1) % 1)) * r;
+            ctx.globalAlpha = 0.25 * fade;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('170,210,255'), Math.cos(a) * d, Math.sin(a * 1.3) * d, 22, 10);
+        }
+        ctx.restore();
+    }
+
+    // DHD pedestal: octagonal base, two rings of keys, red dome. Glows when you're in range.
+    // `effectsOnly`: the 3D view draws the pedestal; only the glow and label are drawn here.
+    drawDHD(ctx, time, inRange, effectsOnly) {
+        const d = this.dhd;
+        ctx.save();
+        ctx.translate(d.x, d.y);
+        if(effectsOnly) {
+            if(this.busy || inRange) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = this.busy ? 1 : (0.6 + 0.4 * Math.sin(time * 3)) * 0.6;
+                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
+            }
+            ctx.restore();
+            this.drawDHDLabel(ctx, inRange);
+            return;
+        }
+        ctx.fillStyle = 'rgb(70, 68, 66)';
+        ctx.strokeStyle = 'rgb(30, 28, 26)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for(let i = 0; i < 8; i++) {
+            const a = i * Math.PI / 4 + Math.PI / 8;
+            if(i === 0) ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
+            else ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 30);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        [[24, 19], [16, 20]].forEach(ring => {
+            for(let i = 0; i < ring[1]; i++) {
+                const a = i * Math.PI * 2 / ring[1];
+                ctx.fillStyle = 'rgb(150, 145, 135)';
+                ctx.fillRect(Math.cos(a) * ring[0] - 2, Math.sin(a) * ring[0] - 2, 4, 4);
+            }
+        });
+        const pulse = 0.6 + 0.4 * Math.sin(time * 3);
+        ctx.fillStyle = this.busy ? 'rgb(255, 90, 50)' : 'rgb(150, 40, 30)';
+        ctx.beginPath();
+        ctx.arc(0, 0, 9, 0, Math.PI * 2);
+        ctx.fill();
+        if(this.busy || inRange) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = this.busy ? 1 : pulse * 0.6;
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
+        }
+        ctx.restore();
+        this.drawDHDLabel(ctx, inRange);
+    }
+
+    drawDHDLabel(ctx, inRange) {
+        const d = this.dhd;
+        ctx.save();
+        ctx.font = '11px Bungee, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = inRange ? 'rgba(140, 255, 160, 0.95)' : 'rgba(200, 210, 230, 0.6)';
+        ctx.fillText(inRange ? 'DHD · press B' : 'DHD', d.x, d.y + 46);
+        ctx.restore();
+    }
+
+    // Which chevrons are lit (for the 3D view), by chevron index 0-8.
+    chevronLit(index) {
+        const order = LOCK_ORDER.indexOf(index);
+        return order !== -1 && order < this.locked;
+    }
+}
+
+/* harmony default export */ __webpack_exports__["e"] = (Stargate);
+
+
+/***/ }),
+/* 14 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__sprites__ = __webpack_require__(0);
+// Background planets and nebula tint for each star system, rendered once into sprites.
+
+
+
+const cache = {};
+
+const PALETTES = {
+    ocean: { base: [40, 90, 170], dark: [10, 30, 70], land: [70, 140, 120], cloud: [235, 245, 255], atmosphere: '120,180,255' },
+    earth: { base: [40, 80, 160], dark: [10, 25, 60], land: [70, 130, 70], cloud: [245, 248, 255], atmosphere: '130,180,255' },
+    desert: { base: [200, 160, 100], dark: [90, 60, 30], land: [170, 120, 70], cloud: [240, 225, 200], atmosphere: '240,200,140' },
+    jungle: { base: [60, 120, 70], dark: [15, 40, 20], land: [110, 100, 60], cloud: [235, 245, 235], atmosphere: '150,220,170' },
+    rocky: { base: [150, 80, 60], dark: [50, 20, 15], land: [110, 60, 45], cloud: [220, 190, 170], atmosphere: '230,150,120' },
+    industrial: { base: [110, 100, 110], dark: [30, 25, 35], land: [80, 70, 80], cloud: [200, 195, 210], atmosphere: '190,170,220' },
+    ice: { base: [180, 220, 235], dark: [50, 80, 110], land: [140, 190, 215], cloud: [250, 252, 255], atmosphere: '170,230,255' }
+};
+/* harmony export (immutable) */ __webpack_exports__["a"] = PALETTES;
+
+
+const rgb = (c, a) => 'rgba(' + c.map(v => Math.round(v)).join(',') + ',' + (a === undefined ? 1 : a) + ')';
+
+const rnd = (seed) => {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6D2B79F5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+};
+
+// A lit sphere with surface patches, cloud bands, a terminator and an atmosphere glow.
+const planetSprite = (system) => {
+    if(cache[system.id]) return cache[system.id];
+    const p = system.planet;
+    const pal = PALETTES[p.type];
+    const R = 220;
+    const size = R * 2 + 80;
+    const r = rnd(system.id.length * 977 + p.radius);
+
+    cache[system.id] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(size, size, ctx => {
+        ctx.translate(size / 2, size / 2);
+
+        // Atmosphere halo.
+        const halo = ctx.createRadialGradient(0, 0, R * 0.95, 0, 0, R + 38);
+        halo.addColorStop(0, 'rgba(' + pal.atmosphere + ', 0.35)');
+        halo.addColorStop(1, 'rgba(' + pal.atmosphere + ', 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(0, 0, R + 38, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, R, 0, Math.PI * 2);
+        ctx.fillStyle = rgb(pal.base);
+        ctx.fill();
+        ctx.save();
+        ctx.clip();
+
+        // Land / surface patches.
+        for(let i = 0; i < 26; i++) {
+            const a = r() * Math.PI * 2;
+            const d = Math.sqrt(r()) * R;
+            ctx.fillStyle = rgb(pal.land, 0.5 + r() * 0.4);
+            ctx.beginPath();
+            ctx.ellipse(Math.cos(a) * d, Math.sin(a) * d, 20 + r() * 70, 12 + r() * 40, r() * Math.PI, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Dune / band texture for desert and gas-like worlds.
+        if(p.type === 'desert' || p.type === 'industrial') {
+            ctx.strokeStyle = rgb(pal.dark, 0.15);
+            ctx.lineWidth = 3;
+            for(let y = -R; y < R; y += 14) {
+                ctx.beginPath();
+                ctx.moveTo(-R, y);
+                ctx.quadraticCurveTo(0, y + (r() - 0.5) * 30, R, y + (r() - 0.5) * 20);
+                ctx.stroke();
+            }
+        }
+        // City lights on industrial worlds.
+        if(p.type === 'industrial') {
+            for(let i = 0; i < 80; i++) {
+                ctx.fillStyle = 'rgba(255, 190, 110, ' + (0.4 + r() * 0.5) + ')';
+                ctx.fillRect(-R * 0.2 + r() * R * 1.1, (r() - 0.5) * R * 1.6, 2, 2);
+            }
+        }
+        // Clouds.
+        for(let i = 0; i < 18; i++) {
+            const y = (r() - 0.5) * R * 1.8;
+            ctx.fillStyle = rgb(pal.cloud, 0.12 + r() * 0.25);
+            ctx.beginPath();
+            ctx.ellipse((r() - 0.5) * R, y, 60 + r() * 120, 6 + r() * 14, (r() - 0.5) * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Terminator: night side towards the bottom right.
+        const night = ctx.createLinearGradient(-R * 0.6, -R * 0.7, R * 0.8, R * 0.9);
+        night.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+        night.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
+        night.addColorStop(0.75, 'rgba(0, 0, 10, 0.7)');
+        night.addColorStop(1, 'rgba(0, 0, 10, 0.92)');
+        ctx.fillStyle = night;
+        ctx.fillRect(-R, -R, R * 2, R * 2);
+        ctx.restore();
+
+        // Thin bright rim on the lit side.
+        ctx.strokeStyle = 'rgba(' + pal.atmosphere + ', 0.6)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, R - 1, Math.PI * 0.85, Math.PI * 1.75);
+        ctx.stroke();
+
+        // Moon.
+        if(p.moon) {
+            const mx = -R * 1.05;
+            const my = R * 0.85;
+            const mr = 26;
+            ctx.fillStyle = 'rgb(170, 168, 160)';
+            ctx.beginPath();
+            ctx.arc(mx, my, mr, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(0, 0, 10, 0.6)';
+            ctx.beginPath();
+            ctx.arc(mx + 9, my + 8, mr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }, 1);
+    cache[system.id].R = R;
+    return cache[system.id];
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = planetSprite;
+
+
+// Very soft coloured nebula wash for the system's background.
+const nebulaSprite = (system) => {
+    const key = 'nebula:' + system.id;
+    if(cache[key]) return cache[key];
+    const r = rnd(system.id.length * 131 + 7);
+    cache[key] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(512, 512, ctx => {
+        for(let i = 0; i < 7; i++) {
+            const x = 80 + r() * 352;
+            const y = 80 + r() * 352;
+            const rad = 90 + r() * 160;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+            g.addColorStop(0, 'rgba(' + system.tint + ', ' + (0.12 + r() * 0.1) + ')');
+            g.addColorStop(1, 'rgba(' + system.tint + ', 0)');
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, 512, 512);
+        }
+    }, 1);
+    return cache[key];
+};
+/* unused harmony export nebulaSprite */
+
+
+
+/***/ }),
+/* 15 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 // Touch controls for phones and tablets.
 //
 //  - Left: a virtual joystick. Push towards where you want to go: an autopilot turns the
@@ -6509,17 +7192,17 @@ class TouchControls {
 
 
 /***/ }),
-/* 14 */
+/* 16 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(15);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__scripts_gameboard_gameboard__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__scripts_shipyard_shipyard__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__scripts_shipyard_profile__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css__ = __webpack_require__(30);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__styles_main_css___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_3__styles_main_css__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__scripts_ui_touch__ = __webpack_require__(15);
 
 
 
@@ -6590,32 +7273,32 @@ openShipyard.addEventListener('click', () => {
 
 
 /***/ }),
-/* 15 */
+/* 17 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__components_ship_enemy__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__components_rock_rock__ = __webpack_require__(11);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__components_particle_particle__ = __webpack_require__(7);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__components_ore_ore__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__components_ship_handlers__ = __webpack_require__(22);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__audio_audio__ = __webpack_require__(4);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__physics_physics__ = __webpack_require__(2);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__world_materials__ = __webpack_require__(1);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_sectors__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(22);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__world_sectors__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__world_station__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__shipyard_profile__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__shipyard_shipyard__ = __webpack_require__(12);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__world_systems__ = __webpack_require__(6);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__world_stargate__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__render_planets__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__world_stargate__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ui_dhd__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ui_starmap__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__render_planets__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__travel__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__render_sprites__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__ = __webpack_require__(28);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ui_touch__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ui_touch__ = __webpack_require__(15);
 
 
 
@@ -6682,15 +7365,13 @@ const canvas = document.createElement('canvas');
 canvas.className = 'main-layer';
 const ctx = canvas.getContext('2d');
 
-// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls and the
-// starfield are drawn by `scene3d` underneath this canvas; the station, gate and DHD go on
-// a flat 2D layer below that (ships fly over them), and everything else stays on the main
-// canvas on top. Without WebGL the whole game is drawn on the main canvas as before.
+// 3D view (WebGL on the graphics card) when available: asteroids, ship hulls, ore, Atlantis,
+// the Stargate, the planet and the starfield are drawn by `scene3d` underneath this canvas;
+// effects and the HUD stay on this canvas on top, lined up exactly. Without WebGL the whole
+// game is drawn on this canvas as before.
 let scene3d = null;
-const underCanvas = document.createElement('canvas');
-underCanvas.className = 'under-layer';
-const underCtx = underCanvas.getContext('2d');
-let underUsed = false;
+let slow3dTime = 0;
+let frameErrors = 0;
 let pixelRatio = 1;
 
 let state = null;
@@ -6716,7 +7397,7 @@ const createState = () => {
     ship.angle = 0;
     return {
         system: system,
-        gate: new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* default */](system.gate.x, system.gate.y),
+        gate: new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["e" /* default */](system.gate.x, system.gate.y),
         transition: null,
         tooBigTimer: 0,
         ship: ship,
@@ -6752,7 +7433,8 @@ const createState = () => {
 
 // Render resolution cap: starts at the screen's pixel ratio (max 2) and drops to 1
 // automatically if the game can't hold a smooth frame rate on this computer.
-let resolutionCap = 2;
+// Safari starts at standard resolution (4x fewer pixels on Retina screens).
+let resolutionCap = Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["f" /* isSafari */])() ? 1 : 2;
 
 // Camera zoom: a little closer than 1:1 so ships and asteroids read clearly.
 // Mouse wheel or +/- keys change it between MIN_ZOOM (wide tactical view) and
@@ -6779,14 +7461,7 @@ const resize = () => {
     canvas.height = Math.floor(window.innerHeight * pixelRatio);
     canvas.style.width = window.innerWidth + 'px';
     canvas.style.height = window.innerHeight + 'px';
-    if(scene3d) {
-        underCanvas.width = canvas.width;
-        underCanvas.height = canvas.height;
-        underCanvas.style.width = canvas.style.width;
-        underCanvas.style.height = canvas.style.height;
-        underUsed = true;
-        scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
-    }
+    if(scene3d) scene3d.resize(window.innerWidth, window.innerHeight, pixelRatio);
     __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].resize(window.innerWidth, window.innerHeight);
 };
 
@@ -6818,7 +7493,7 @@ const renderInfo = () => {
     setText('credits', 'Credits: ' + Math.round(Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["g" /* getProfile */])().credits).toLocaleString('en-US'));
     setText('location', state.system.name + ' · sector ' + sector.sx + ', ' + sector.sy +
         (state.system.station ? ' · base ' + (distanceToStation() / 1000).toFixed(1) + 'k' : ''));
-    setText('fps', 'Fps: ' + Math.round(fps));
+    setText('fps', 'Fps: ' + Math.round(fps) + (scene3d ? ' (3D)' : ' (2D)'));
     setText('targeting', 'Stabilizer: ' + (ship.stabilizer ? 'ON' : 'OFF') + hint('X') +
         (ship.guidance ? ' · Auto-target: ' + (ship.autoTarget ? 'ON' : 'OFF') + hint('G') +
             ' · Targets: ' + __WEBPACK_IMPORTED_MODULE_0__components_ship_ship__["c" /* TARGET_MODE_LABEL */][ship.targetMode] + hint('T') : ''));
@@ -7890,7 +8565,7 @@ const step = (dt) => {
 
     state.canDock = !!state.system.station && ship.alive && distanceToStation() < __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].dockRadius;
     const dhd = state.gate.dhd;
-    state.nearDHD = ship.alive && Math.sqrt((ship.x - dhd.x) * (ship.x - dhd.x) + (ship.y - dhd.y) * (ship.y - dhd.y)) < __WEBPACK_IMPORTED_MODULE_14__world_stargate__["a" /* DHD_RANGE */];
+    state.nearDHD = ship.alive && Math.sqrt((ship.x - dhd.x) * (ship.x - dhd.x) + (ship.y - dhd.y) * (ship.y - dhd.y)) < __WEBPACK_IMPORTED_MODULE_14__world_stargate__["b" /* DHD_RANGE */];
     if(state.bannerTimer > 0) state.bannerTimer -= dt;
     if(!ship.alive) state.gameOverTimer += dt;
 };
@@ -7901,7 +8576,7 @@ const step = (dt) => {
 // destination gate) or 'hyper' (drop out of hyperspace near the gate).
 const enterSystem = (system, how) => {
     state.system = system;
-    state.gate = new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* default */](system.gate.x, system.gate.y);
+    state.gate = new __WEBPACK_IMPORTED_MODULE_14__world_stargate__["e" /* default */](system.gate.x, system.gate.y);
     state.sectors = makeSectors(system);
     ['rocks', 'newRocks', 'bullets', 'missiles', 'particles', 'ores', 'mergeLinks', 'flashes', 'shockwaves', 'beamHits', 'floatingTexts', 'enemies']
         .forEach(key => { state[key] = []; });
@@ -7942,8 +8617,8 @@ const checkGateTravel = (dt) => {
     if(state.transition || !ship.alive || !gate.isOpen || !gate.outgoing) return;
     const dx = ship.x - gate.x;
     const dy = ship.y - gate.y;
-    if(dx * dx + dy * dy > Math.pow(__WEBPACK_IMPORTED_MODULE_14__world_stargate__["b" /* GATE_INNER */] * 0.8, 2)) return;
-    if(ship.radius > __WEBPACK_IMPORTED_MODULE_14__world_stargate__["b" /* GATE_INNER */] * 0.95) {
+    if(dx * dx + dy * dy > Math.pow(__WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* GATE_INNER */] * 0.8, 2)) return;
+    if(ship.radius > __WEBPACK_IMPORTED_MODULE_14__world_stargate__["c" /* GATE_INNER */] * 0.95) {
         if(state.tooBigTimer <= 0) {
             state.tooBigTimer = 3;
             banner('Ship too large for the Stargate: use a hyperdrive.', 2.5);
@@ -8239,7 +8914,7 @@ const drawTractor = (time) => {
 
         // Containment field around the captured ore.
         ctx.globalAlpha = 0.5 + 0.3 * pulse;
-        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["i" /* stamp */])(ctx, glow, ore.x, ore.y, 26, 26);
         ctx.globalAlpha = 1;
         ctx.setLineDash([3, 3]);
         ctx.lineDashOffset = -time * 20;
@@ -8253,7 +8928,7 @@ const drawTractor = (time) => {
 
     // Emitter aura.
     ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
+    Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["i" /* stamp */])(ctx, glow, emitter.x, emitter.y, 30 + pulse * 10, 30 + pulse * 10);
     ctx.globalAlpha = 1;
     ctx.strokeStyle = 'rgba(' + TRACTOR + ', 0.7)';
     ctx.lineWidth = 1.2;
@@ -8405,7 +9080,7 @@ const drawFlashes = () => {
     state.flashes.forEach(f => {
         const t = f.life / f.maxLife;
         ctx.globalAlpha = t;
-        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(f.color), f.x, f.y, f.size * (0.6 + 0.4 * t), f.size * (0.6 + 0.4 * t));
     });
     ctx.restore();
 };
@@ -8417,7 +9092,7 @@ const drawShockwaves = () => {
     state.shockwaves.forEach(wave => {
         const glow = wave.maxRadius * 1.6 * wave.life;
         ctx.globalAlpha = wave.life * 0.8;
-        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
+        Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_19__render_sprites__["d" /* glowSprite */])(wave.color), wave.x, wave.y, glow, glow);
         ctx.globalAlpha = wave.life;
         ctx.strokeStyle = 'rgb(' + wave.color + ')';
         ctx.lineWidth = 1 + 4 * wave.life;
@@ -8586,7 +9261,7 @@ const setBackdrop = (system) => {
     backdrop.style.background = 'radial-gradient(ellipse at 30% 35%, rgba(' + system.tint + ', 0.22), transparent 60%), ' +
         'radial-gradient(ellipse at 75% 70%, rgba(' + system.tint + ', 0.16), transparent 55%)';
     if(planetEl) planetEl.remove();
-    planetEl = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["a" /* planetSprite */])(system).canvas;
+    planetEl = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["b" /* planetSprite */])(system).canvas;
     planetEl.className = 'backdrop-planet';
     backdrop.appendChild(planetEl);
 };
@@ -8596,7 +9271,10 @@ const drawBackdrop = () => {
     setBackdrop(system);
     const w = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width;
     const h = __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height;
-    const planet = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["a" /* planetSprite */])(system);
+    // In 3D the planet is a real sphere in the scene.
+    if(planetEl) planetEl.style.display = scene3d ? 'none' : '';
+    if(scene3d) return;
+    const planet = Object(__WEBPACK_IMPORTED_MODULE_17__render_planets__["b" /* planetSprite */])(system);
     const parallax = 0.12;
     const px = w / 2 + (system.planet.x - state.camera.x) * parallax;
     const py = h / 2 + (system.planet.y - state.camera.y) * parallax;
@@ -8608,14 +9286,16 @@ const drawBackdrop = () => {
 };
 
 // Full-screen wormhole or hyperspace tunnel while travelling.
+// Everything the 3D view needs for one frame.
+const view3d = (time) => ({
+    cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom, time: time,
+    rocks: state.rocks, ships: [state.ship].concat(state.enemies), ores: state.ores,
+    system: state.system, gate: state.gate, station: state.system.station ? __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */] : null,
+    canDock: state.canDock, nearDHD: state.nearDHD, isVisible: isVisible
+});
+
 const hide3d = () => {
-    if(!scene3d) return;
-    scene3d.setVisible(false);
-    if(underUsed) {
-        underCtx.setTransform(1, 0, 0, 1, 0, 0);
-        underCtx.clearRect(0, 0, underCanvas.width, underCanvas.height);
-        underUsed = false;
-    }
+    if(scene3d) scene3d.setVisible(false);
 };
 
 const renderTunnel = () => {
@@ -8900,25 +9580,16 @@ const render = () => {
         c.translate(-state.camera.x, -state.camera.y);
     };
 
-    // Station, gate and DHD: on the flat layer under the 3D view (or straight on the canvas).
+    // Station, gate and DHD. In 3D they are models in the scene, and only their effects
+    // (docking ring, shield impacts, event horizon, glows, labels) are drawn here.
     const stationVisible = state.system.station && isVisible(__WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].x, __WEBPACK_IMPORTED_MODULE_10__world_station__["a" /* STATION */].y, 460);
     const gateVisible = isVisible(state.gate.x, state.gate.y, 300);
-    const floor = use3d ? underCtx : ctx;
-    if(use3d && (underUsed || stationVisible || gateVisible)) {
-        underCtx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-        underCtx.clearRect(0, 0, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].width, __WEBPACK_IMPORTED_MODULE_7__physics_physics__["d" /* world */].height);
-        underUsed = stationVisible || gateVisible;
-    }
-    toWorld(floor);
-    if(stationVisible) Object(__WEBPACK_IMPORTED_MODULE_10__world_station__["b" /* drawStation */])(floor, time, state.canDock);
-    if(gateVisible) {
-        state.gate.draw(floor, time);
-        state.gate.drawDHD(floor, time, state.nearDHD);
-    }
-    if(use3d) underCtx.restore();
-    else ctx.restore();
-
     toWorld(ctx);
+    if(stationVisible) Object(__WEBPACK_IMPORTED_MODULE_10__world_station__["b" /* drawStation */])(ctx, time, state.canDock, use3d);
+    if(gateVisible) {
+        state.gate.draw(ctx, time, use3d);
+        state.gate.drawDHD(ctx, time, state.nearDHD, use3d);
+    }
     const visibleRocks = state.rocks.filter(rock => {
         if(isVisible(rock.x, rock.y, rock.radius * 1.3)) return true;
         // Free the cached image of rocks well off screen.
@@ -8932,7 +9603,7 @@ const render = () => {
     }
     state.particles.forEach(particle => { if(isUnlit(particle) && isVisible(particle.x, particle.y, 20)) particle.draw(ctx); });
     drawTractor(time);
-    state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
+    if(!use3d) state.ores.forEach(ore => { if(isVisible(ore.x, ore.y, 10)) ore.draw(ctx, time); });
     drawTargeting(time);
 
     ctx.save();
@@ -8975,11 +9646,12 @@ const render = () => {
     ctx.restore();
 
     if(use3d) {
-        scene3d.setVisible(true);
-        scene3d.render({
-            cameraX: state.camera.x, cameraY: state.camera.y, zoom: zoom,
-            rocks: state.rocks, ships: [state.ship].concat(state.enemies), isVisible: isVisible
-        });
+        try {
+            scene3d.setVisible(true);
+            scene3d.render(view3d(time));
+        } catch(error) {
+            disable3d(error);
+        }
     }
 
     if(state.system.station) drawStationPointer();
@@ -9173,13 +9845,30 @@ const endGame = (message) => {
     backdrop.style.display = 'none';
 };
 
-const frame = (now) => {
+const frameStep = (now) => {
     const elapsed = Math.min((now - lastFrameTime) / 1000, 0.25);
     lastFrameTime = now;
     if(elapsed > 0) fps += (1 / elapsed - fps) * 0.05;
     if(zoomKeys.in) targetZoom = clampZoom(targetZoom * Math.exp(elapsed * 1.6));
     if(zoomKeys.out) targetZoom = clampZoom(targetZoom * Math.exp(-elapsed * 1.6));
     zoom += (targetZoom - zoom) * Math.min(1, elapsed * 10);
+    // A 3D view that can't keep up first drops to normal resolution, then to the 2D view.
+    if(scene3d && !state.transition && !state.paused) {
+        if(fps < 20) {
+            slow3dTime += elapsed;
+            if(slow3dTime > 4) {
+                slow3dTime = 0;
+                if(resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
+                    resolutionCap = 1;
+                    resize();
+                } else if(!/[?&]3d\b/.test(window.location.search)) {
+                    disable3d('frame rate too low');
+                }
+            }
+        } else {
+            slow3dTime = 0;
+        }
+    }
     if(fps < 45 && resolutionCap > 1 && (window.devicePixelRatio || 1) > 1) {
         slowTime += elapsed;
         if(slowTime > 2) {
@@ -9227,10 +9916,41 @@ const frame = (now) => {
     if(state.gameOverTimer >= GAME_OVER_DELAY) {
         Object(__WEBPACK_IMPORTED_MODULE_11__shipyard_profile__["k" /* loseCargo */])();
         endGame('Ship destroyed! The cargo was lost. Your credits and ship are safe at the shipyard.');
-        return;
+        return false;
     }
+    return true;
+};
 
-    frameId = requestAnimationFrame(frame);
+// Switch to the 2D view for good (no WebGL, or the 3D view hit an error on this computer).
+const disable3d = (reason) => {
+    if(!scene3d) return;
+    try {
+        scene3d.setVisible(false);
+        scene3d.clear();
+    } catch(e) { /* already broken */ }
+    if(scene3d.canvas && scene3d.canvas.parentNode) scene3d.canvas.parentNode.removeChild(scene3d.canvas);
+    scene3d = null;
+    if(planetEl) planetEl.style.display = '';
+    if(state) banner('3D view unavailable on this computer: using 2D', 3);
+    if(window.console) console.warn('3D view disabled:', reason);
+};
+
+// The game loop never stops on an error: a failure in the 3D view drops back to 2D, and
+// anything else is reported while the game keeps running.
+const frame = (now) => {
+    let keepGoing = true;
+    try {
+        keepGoing = frameStep(now);
+    } catch(error) {
+        if(window.console) console.error('Frame error:', error);
+        if(scene3d) disable3d(error);
+        else if(state) {
+            // Show what went wrong instead of silently freezing.
+            frameErrors++;
+            if(frameErrors < 5 || frameErrors % 120 === 0) banner('Error: ' + ((error && error.message) || error), 4);
+        }
+    }
+    if(keepGoing && state) frameId = requestAnimationFrame(frame);
 };
 
 let initialized = false;
@@ -9238,13 +9958,14 @@ let initialized = false;
 const initialize = () => {
     initialized = true;
     gameboard.appendChild(backdrop);
+    // 3D unless asked for 2D (?2d). Without real graphics-card acceleration the browser
+    // refuses the 3D view and the game stays 2D; ?3d forces 3D anyway.
     if(Object(__WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["b" /* webglAvailable */])() && !/[?&]2d\b/.test(window.location.search)) {
         try {
-            gameboard.appendChild(underCanvas);
-            scene3d = new __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["a" /* default */](gameboard);
+            scene3d = new __WEBPACK_IMPORTED_MODULE_20__render3d_scene3d__["a" /* default */](gameboard, !/[?&]3d\b/.test(window.location.search));
         } catch(e) {
             scene3d = null;
-            if(underCanvas.parentNode) underCanvas.parentNode.removeChild(underCanvas);
+            if(window.console) console.warn('3D view not started:', e && e.message);
         }
     }
     gameboard.appendChild(canvas);
@@ -9438,7 +10159,7 @@ const constructGameBoard = () => {
 
 
 /***/ }),
-/* 16 */
+/* 18 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9493,7 +10214,7 @@ class Bullet {
                 ctx.stroke();
             });
             const head = 28 * flicker;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,140,40'), this.x, this.y, head, head);
             ctx.restore();
             return;
         }
@@ -9510,7 +10231,7 @@ class Bullet {
 
 
 /***/ }),
-/* 17 */
+/* 19 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9660,7 +10381,7 @@ class Missile {
             const pulse = 0.7 + 0.3 * Math.sin(this.time * 20);
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = pulse;
-            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["d" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
+            Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_2__render_sprites__["d" /* glowSprite */])('255,200,80'), 0, 0, 18, 18);
             ctx.globalAlpha = 1;
             ctx.strokeStyle = 'rgba(255, 235, 170, 0.95)';
             ctx.lineWidth = 1.2;
@@ -9689,7 +10410,7 @@ class Missile {
 
 
 /***/ }),
-/* 18 */
+/* 20 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10006,7 +10727,7 @@ const pickEnemyHull = (systemId) => {
 
 
 /***/ }),
-/* 19 */
+/* 21 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10124,7 +10845,7 @@ class Ore {
 
 
 /***/ }),
-/* 20 */
+/* 22 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10250,7 +10971,7 @@ const loadInputHandlers = () => {
 
 
 /***/ }),
-/* 21 */
+/* 23 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10419,7 +11140,7 @@ class SectorManager {
 
 
 /***/ }),
-/* 22 */
+/* 24 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -10609,16 +11330,28 @@ const buildCity = (canDock) => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprite
     ctx.beginPath();
     ctx.arc(0, 0, 10, 0, Math.PI * 2);
     ctx.stroke();
-}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["g" /* spriteResolution */])()));
+}, Math.min(2, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* spriteResolution */])()));
 
-const drawStation = (ctx, time, canDock) => {
+// `effectsOnly`: the 3D view draws the city and its shield dome; only the docking ring,
+// shield impacts, lights and label are drawn here.
+const drawStation = (ctx, time, canDock, effectsOnly) => {
     const key = canDock ? 'dock' : 'idle';
-    if(!sprites[key]) sprites[key] = buildCity(canDock);
     const R = STATION.shieldRadius;
 
     ctx.save();
     ctx.translate(STATION.x, STATION.y);
-    ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+    if(effectsOnly) {
+        ctx.setLineDash([12, 14]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = canDock ? 'rgba(140, 255, 160, 0.6)' : 'rgba(140, 180, 255, 0.18)';
+        ctx.beginPath();
+        ctx.arc(0, 0, STATION.dockRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else {
+        if(!sprites[key]) sprites[key] = buildCity(canDock);
+        ctx.drawImage(sprites[key].canvas, -EXTENT, -EXTENT, EXTENT * 2, EXTENT * 2);
+    }
 
     // Impact ripples and flares, like the ship shields (only while something has just hit).
     if(STATION.impacts.length) {
@@ -10633,7 +11366,7 @@ const drawStation = (ctx, time, canDock) => {
             const age = 1 - impact.life;
             const size = (50 + 90 * impact.strength) * impact.life;
             ctx.globalAlpha = Math.min(1, impact.life * impact.strength + 0.2);
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('140,200,255'), ix, iy, size, size);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('140,200,255'), ix, iy, size, size);
             ctx.globalAlpha = 0.7 * impact.life;
             ctx.strokeStyle = 'rgb(150, 215, 255)';
             ctx.lineWidth = 2.5 * impact.life + 0.5;
@@ -10653,7 +11386,7 @@ const drawStation = (ctx, time, canDock) => {
     ctx.globalCompositeOperation = 'lighter';
     const pulse = 0.6 + 0.4 * Math.sin(time * 1.5);
     ctx.globalAlpha = 0.8 * pulse;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('80,150,255'), 0, 0, 40, 40);
 
     // Beacons on the main pier tips.
     const blink = Math.sin(time * 4) > 0;
@@ -10662,7 +11395,7 @@ const drawStation = (ctx, time, canDock) => {
         const color = canDock ? '140,255,160' : '255,120,100';
         for(let i = 0; i < 6; i += 2) {
             const angle = i * Math.PI / 3 - Math.PI / 2;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
+            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(color), Math.cos(angle) * 372, Math.sin(angle) * 372, 22, 22);
         }
     }
     ctx.restore();
@@ -10679,480 +11412,7 @@ const drawStation = (ctx, time, canDock) => {
 
 
 /***/ }),
-/* 23 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__render_sprites__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__render_glyphs__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__audio_audio__ = __webpack_require__(4);
-// The Stargate in each system, and the DHD (dial-home device) next to it.
-//
-// Dialling follows the Carter Addon Pack's DHD ("fast") dial of a Milky Way gate, so its
-// sounds line up exactly: the ring starts rolling, chevrons 1-6 encode at slightly random
-// intervals while it turns, the ring stops, chevron 7 locks, and 1.2 s later the gate opens
-// with the kawoosh (7 s from pressing the dome), settling into a rippling event horizon.
-// Small ships can fly through an outgoing wormhole; it closes after a while.
-
-
-
-
-
-const GATE_RADIUS = 78;
-/* unused harmony export GATE_RADIUS */
-        // outer ring
-const GATE_INNER = 58;
-/* harmony export (immutable) */ __webpack_exports__["b"] = GATE_INNER;
-         // event horizon radius (ships bigger than this can't pass)
-const DHD_OFFSET = { x: 0, y: 220 };
-/* unused harmony export DHD_OFFSET */
-
-const DHD_RANGE = 170;
-/* harmony export (immutable) */ __webpack_exports__["a"] = DHD_RANGE;
-         // how close to the DHD you need to be to use it
-
-// DHD dial timeline (seconds after the dome is pressed), from CAP's stargate_sg1 sequence.
-const RING_START = 0.1;               // ring starts rolling
-const FIRST_CHEVRON = 1.0;            // chevron 1 encodes
-const CHEVRONS_SPAN = 4.0;            // chevrons 1-6 and the ring stopping take this long
-const RING_STOP_TO_LOCK = 0.8;        // ring stops, then chevron 7 locks
-const LOCK_TO_OPEN = 1.2;             // chevron 7 lock to the gate opening
-const FORM_TIME = 0.8;                // horizon water rushing in from the rim before the burst
-
-// Churning foam blobs for the horizon forming (fixed layout, animated).
-const FOAM = [];
-for(let i = 0; i < 46; i++) {
-    FOAM.push({ angle: Math.random() * Math.PI * 2, depth: Math.random(), size: 0.5 + Math.random(),
-        spin: (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6), phase: Math.random() * 10 });
-}
-const KAWOOSH_TIME = 1.3;
-const OPEN_TIME = 38;                 // wormholes stay open this long (outgoing)
-const INCOMING_OPEN_TIME = 4;         // after arriving through a gate
-const CLOSE_TIME = 0.9;
-const SYMBOLS = 39;
-
-const CHEVRON_ANGLES = [];
-for(let i = 0; i < 9; i++) CHEVRON_ANGLES.push(-Math.PI / 2 + i * Math.PI * 2 / 9);
-// Order in which chevrons light: chevrons 1-6 around the gate, then the top one (7).
-const LOCK_ORDER = [1, 2, 3, 6, 7, 8, 0];
-
-let ringSprite = null;
-let symbolSprite = null;
-
-// Outer ring body (cached).
-const buildRing = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2 + 20, GATE_RADIUS * 2 + 20, ctx => {
-    const c = GATE_RADIUS + 10;
-    ctx.translate(c, c);
-    ctx.beginPath();
-    ctx.arc(0, 0, GATE_RADIUS, 0, Math.PI * 2);
-    ctx.arc(0, 0, GATE_INNER, 0, Math.PI * 2, true);
-    const metal = ctx.createRadialGradient(-20, -25, GATE_INNER * 0.6, 0, 0, GATE_RADIUS);
-    metal.addColorStop(0, 'rgb(150, 150, 158)');
-    metal.addColorStop(0.6, 'rgb(95, 96, 104)');
-    metal.addColorStop(1, 'rgb(55, 56, 64)');
-    ctx.fillStyle = metal;
-    ctx.fill('evenodd');
-    ctx.strokeStyle = 'rgba(20, 20, 26, 0.9)';
-    ctx.lineWidth = 1.5;
-    [GATE_RADIUS, GATE_INNER, GATE_RADIUS - 6, GATE_INNER + 5].forEach(r => {
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.stroke();
-    });
-    // Segment seams.
-    for(let i = 0; i < 36; i++) {
-        const a = i * Math.PI * 2 / 36;
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * (GATE_RADIUS - 6), Math.sin(a) * (GATE_RADIUS - 6));
-        ctx.lineTo(Math.cos(a) * GATE_RADIUS, Math.sin(a) * GATE_RADIUS);
-        ctx.stroke();
-    }
-}, 2);
-
-// Inner symbol ring with all 39 glyphs (cached; rotated when spinning).
-const buildSymbols = () => Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["a" /* createSprite */])(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx => {
-    ctx.translate(GATE_RADIUS, GATE_RADIUS);
-    const mid = (GATE_INNER + 5 + GATE_RADIUS - 6) / 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, GATE_RADIUS - 6, 0, Math.PI * 2);
-    ctx.arc(0, 0, GATE_INNER + 5, 0, Math.PI * 2, true);
-    ctx.fillStyle = 'rgb(70, 72, 80)';
-    ctx.fill('evenodd');
-    for(let i = 0; i < SYMBOLS; i++) {
-        const a = i * Math.PI * 2 / SYMBOLS;
-        ctx.save();
-        ctx.rotate(a);
-        // Slot 38 holds the point of origin (where the ring comes to rest after a dial).
-        if(i < __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */].length) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, __WEBPACK_IMPORTED_MODULE_1__render_glyphs__["a" /* GLYPH_NAMES */][i], 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
-        else if(i === SYMBOLS - 1) Object(__WEBPACK_IMPORTED_MODULE_1__render_glyphs__["d" /* drawGlyph */])(ctx, 'origin:0', 0, -mid, 7, 'rgba(200, 205, 215, 0.85)', 0.9);
-        ctx.restore();
-    }
-}, 2);
-
-class Stargate {
-
-    constructor(x, y) {
-        this.x = x;
-        this.y = y;
-        this.state = 'idle';
-        this.timer = 0;
-        this.locked = 0;
-        this.spin = 0;
-        this.spinFrom = 0;
-        this.spinTo = 0;
-        this.phase = 'spin';
-        this.outgoing = false;
-        this.target = null;
-        this.kawoosh = 0;
-        this.time = 0;
-    }
-
-    get dhd() {
-        return { x: this.x + DHD_OFFSET.x, y: this.y + DHD_OFFSET.y };
-    }
-
-    get isOpen() {
-        return this.state === 'open';
-    }
-
-    get busy() {
-        return this.state !== 'idle';
-    }
-
-    // Start dialling `targetId`; `symbols` are the 7 dialled glyphs (for the spin targets).
-    dial(targetId, symbols) {
-        // A gate that is still shutting down can be dialled again straight away.
-        if(this.busy && this.state !== 'closing') return false;
-        if(this.state === 'closing') __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
-        this.wasOpen = false;
-        this.state = 'dialing';
-        this.outgoing = true;
-        this.target = targetId;
-        this.symbols = symbols;
-        this.locked = 0;
-        this.phase = 'spin';
-        this.clock = 0;
-        this.ringOn = false;
-        // Chevrons 1-6 at random-ish intervals (CAP: 0.3-1.0 s each plus an even share, the
-        // last gap always the longest) that together span CHEVRONS_SPAN.
-        const gaps = [];
-        for(let i = 0; i < 5; i++) gaps.push(0.3 + Math.random() * 0.7);
-        gaps.push(1);
-        const total = gaps.reduce((a, b) => a + b, 0);
-        const delta = (CHEVRONS_SPAN - total) / 6;
-        this.chevronTimes = [];
-        let t = FIRST_CHEVRON;
-        for(let i = 0; i < 6; i++) {
-            this.chevronTimes.push(t);
-            t += gaps[i] + delta;
-        }
-        this.ringStop = t;
-        this.lockTime = t + RING_STOP_TO_LOCK;
-        this.openTime = this.lockTime + LOCK_TO_OPEN;
-        // The ring turns one way for the whole dial and comes to rest with the point of
-        // origin under the top chevron.
-        this.spinFrom = this.spin;
-        const finalAngle = -Math.PI / 2 + Math.PI / 2 - 38 * Math.PI * 2 / SYMBOLS;
-        let to = finalAngle;
-        while(to < this.spin + Math.PI * 4) to += Math.PI * 2;
-        this.spinTo = to;
-        return true;
-    }
-
-    // A wormhole arriving here (after travelling through it).
-    incoming() {
-        this.state = 'open';
-        this.outgoing = false;
-        this.locked = 7;
-        this.timer = INCOMING_OPEN_TIME;
-        this.kawoosh = 0;
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
-    }
-
-    // `silent`: shut down without the closing sound (the ship has just gone through).
-    close(silent) {
-        if(this.state === 'idle' || this.state === 'closing') return;
-        // Only an established wormhole fades its horizon out; a cancelled dial just stops.
-        this.wasOpen = this.state === 'open' || (this.state === 'kawoosh' && this.kawoosh > 0.45);
-        this.ringOn = false;
-        this.state = 'closing';
-        this.timer = CLOSE_TIME;
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(false);
-        __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateClose(silent);
-    }
-
-    update(dt) {
-        this.time += dt;
-        if(this.state === 'idle') return;
-        this.timer -= dt;
-
-        if(this.state === 'dialing') {
-            const t = (this.clock += dt);
-            if(!this.ringOn && t >= RING_START && t < this.ringStop) {
-                this.ringOn = true;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(true);
-            }
-            // Ring: ease in, roll, ease out to a stop at ringStop.
-            const span = this.ringStop - RING_START;
-            const u = Math.max(0, Math.min(1, (t - RING_START) / span));
-            const ease = u < 0.12 ? (u * u) / (2 * 0.12 * 0.88) :
-                u > 0.88 ? 1 - ((1 - u) * (1 - u)) / (2 * 0.12 * 0.88) :
-                (u - 0.06) / 0.88;
-            this.spin = this.spinFrom + (this.spinTo - this.spinFrom) * ease;
-            // Chevrons 1-6 encode while the ring turns.
-            while(this.locked < 6 && t >= this.chevronTimes[this.locked]) {
-                this.locked++;
-                this.phase = 'encode';
-                this.lockFlash = 0.3;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(false);
-            }
-            // Ring stopped: its sound stops as chevron 7 locks.
-            if(this.locked === 6 && t >= this.lockTime) {
-                this.locked = 7;
-                this.phase = 'lock';
-                this.lockFlash = 0.6;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].gateSpin(false);
-                this.ringOn = false;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].chevronLock(true);
-            }
-            if(this.lockFlash > 0) this.lockFlash -= dt;
-            if(t >= this.openTime) {
-                this.state = 'opening';
-                this.timer = FORM_TIME;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].kawoosh();
-            }
-        } else if(this.state === 'opening') {
-            if(this.timer <= 0) {
-                this.state = 'kawoosh';
-                this.timer = KAWOOSH_TIME;
-            }
-        } else if(this.state === 'kawoosh') {
-            this.kawoosh = 1 - Math.max(0, this.timer) / KAWOOSH_TIME;
-            if(this.timer <= 0) {
-                this.state = 'open';
-                this.timer = OPEN_TIME;
-                __WEBPACK_IMPORTED_MODULE_2__audio_audio__["a" /* default */].horizon(true);
-            }
-        } else if(this.state === 'open') {
-            if(this.timer <= 0) this.close();
-        } else if(this.state === 'closing') {
-            if(this.timer <= 0) {
-                this.state = 'idle';
-                this.locked = 0;
-                this.target = null;
-            }
-        }
-    }
-
-    draw(ctx, time) {
-        if(!ringSprite) ringSprite = buildRing();
-        if(!symbolSprite) symbolSprite = buildSymbols();
-        const R = GATE_RADIUS;
-
-        ctx.save();
-        ctx.translate(this.x, this.y);
-
-        // The horizon forming: water rushing in from the rim (and still there under the
-        // first moments of the kawoosh).
-        if(this.state === 'opening') this.drawForming(ctx, time, 1 - Math.max(0, this.timer) / FORM_TIME);
-        if(this.state === 'kawoosh' && this.kawoosh <= 0.45) this.drawForming(ctx, time, 1);
-
-        // Event horizon behind the ring.
-        if(this.state === 'open' || (this.state === 'closing' && this.wasOpen) || (this.state === 'kawoosh' && this.kawoosh > 0.45)) {
-            const fade = this.state === 'closing' ? Math.max(0, this.timer / CLOSE_TIME) : 1;
-            this.drawHorizon(ctx, time, fade);
-        }
-
-        ctx.save();
-        ctx.rotate(this.spin);
-        ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
-        ctx.restore();
-        ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
-
-        // Chevrons: locked ones glow.
-        CHEVRON_ANGLES.forEach((a, i) => {
-            const order = LOCK_ORDER.indexOf(i);
-            const lit = order !== -1 && order < this.locked;
-            const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
-            ctx.save();
-            ctx.rotate(a + Math.PI / 2);
-            ctx.translate(0, -R + 2);
-            ctx.fillStyle = 'rgb(120, 118, 125)';
-            ctx.strokeStyle = 'rgb(35, 35, 42)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(-8, -4); ctx.lineTo(8, -4); ctx.lineTo(4, 7); ctx.lineTo(0, 9); ctx.lineTo(-4, 7);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-            ctx.fillStyle = lit ? 'rgb(255, 140, 60)' : 'rgb(80, 40, 30)';
-            ctx.beginPath();
-            ctx.moveTo(-4, -1); ctx.lineTo(4, -1); ctx.lineTo(0, 6 + (engaging ? 2 : 0));
-            ctx.closePath();
-            ctx.fill();
-            if(lit) {
-                ctx.globalCompositeOperation = 'lighter';
-                Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,120,40'), 0, 2, 26, 26);
-            }
-            ctx.restore();
-        });
-
-        // The kawoosh: the unstable vortex bursting out and collapsing back.
-        if(this.state === 'kawoosh') {
-            const k = this.kawoosh;
-            const burst = Math.sin(Math.min(1, k / 0.75) * Math.PI);
-            const radius = GATE_INNER * (0.6 + 1.9 * burst);
-            ctx.globalCompositeOperation = 'lighter';
-            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-            g.addColorStop(0, 'rgba(240, 250, 255, ' + (0.9 * burst) + ')');
-            g.addColorStop(0.5, 'rgba(110, 170, 255, ' + (0.75 * burst) + ')');
-            g.addColorStop(1, 'rgba(60, 110, 255, 0)');
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2);
-            ctx.fill();
-            // Spiralling vortex streaks.
-            ctx.strokeStyle = 'rgba(220, 240, 255, ' + (0.6 * burst) + ')';
-            ctx.lineWidth = 2;
-            for(let i = 0; i < 6; i++) {
-                const a0 = i * Math.PI / 3 + time * 6;
-                ctx.beginPath();
-                for(let s = 0; s <= 10; s++) {
-                    const rr = radius * s / 10;
-                    const aa = a0 + s * 0.35;
-                    if(s === 0) ctx.moveTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
-                    else ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr);
-                }
-                ctx.stroke();
-            }
-        }
-        ctx.restore();
-    }
-
-    // The event horizon forming, as seen in the show: churning icy white-blue water rushes in
-    // from the rim while the middle is still see-through. `f` 0..1 is how far it has closed.
-    drawForming(ctx, time, f) {
-        const r = GATE_INNER;
-        const e = f * f * (3 - 2 * f);
-        const inner = r * (1 - e) * 0.95;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.clip();
-        // Translucent watery band, brightest and thickest at the rim.
-        const g = ctx.createRadialGradient(0, 0, Math.max(0, inner * 0.85), 0, 0, r);
-        g.addColorStop(0, 'rgba(150, 190, 240, 0)');
-        g.addColorStop(0.2, 'rgba(170, 205, 250, ' + (0.35 + 0.3 * e) + ')');
-        g.addColorStop(0.65, 'rgba(215, 235, 255, ' + (0.7 + 0.2 * e) + ')');
-        g.addColorStop(1, 'rgba(150, 195, 250, 0.95)');
-        ctx.fillStyle = g;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
-        // Churning foam swirling around in the band.
-        ctx.globalCompositeOperation = 'lighter';
-        FOAM.forEach(blob => {
-            const a = blob.angle + time * blob.spin;
-            const d = inner + (r - inner) * (0.15 + 0.85 * blob.depth) + Math.sin(time * 6 + blob.phase) * 2;
-            const size = (6 + 12 * blob.size) * (0.6 + 0.4 * Math.sin(time * 7 + blob.phase));
-            ctx.globalAlpha = 0.35 + 0.25 * Math.sin(time * 9 + blob.phase);
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(blob.spin > 0 ? '230,242,255' : '185,215,255'), Math.cos(a) * d, Math.sin(a) * d, size * 1.6, size);
-        });
-        // Ripple lines racing round the band.
-        ctx.globalAlpha = 0.45;
-        ctx.strokeStyle = 'rgb(235, 245, 255)';
-        ctx.lineWidth = 1.2;
-        for(let i = 0; i < 7; i++) {
-            const rr = inner + (r - inner) * ((i + 0.5) / 7);
-            const a0 = time * (i % 2 ? 3 : -2.4) + i;
-            ctx.beginPath();
-            ctx.arc(0, 0, rr, a0, a0 + 0.8 + 0.5 * Math.sin(time * 4 + i));
-            ctx.stroke();
-        }
-        ctx.restore();
-    }
-
-    // Rippling, shimmering pool of the event horizon.
-    drawHorizon(ctx, time, fade) {
-        const r = GATE_INNER;
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
-        ctx.clip();
-        const pool = ctx.createRadialGradient(-r * 0.2, -r * 0.25, r * 0.1, 0, 0, r);
-        pool.addColorStop(0, 'rgba(200, 230, 255, ' + (0.95 * fade) + ')');
-        pool.addColorStop(0.5, 'rgba(70, 140, 240, ' + (0.9 * fade) + ')');
-        pool.addColorStop(1, 'rgba(25, 60, 170, ' + (0.95 * fade) + ')');
-        ctx.fillStyle = pool;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.lineWidth = 1.5;
-        for(let i = 0; i < 6; i++) {
-            const t = (time * 0.45 + i / 6) % 1;
-            ctx.strokeStyle = 'rgba(210, 235, 255, ' + (0.35 * (1 - t) * fade) + ')';
-            ctx.beginPath();
-            ctx.arc(Math.sin(time * 0.7 + i) * 4, Math.cos(time * 0.6 + i) * 4, r * t, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-        // Caustic shimmer.
-        for(let i = 0; i < 10; i++) {
-            const a = time * 0.8 + i * 0.63;
-            const d = (0.2 + 0.7 * ((i * 0.37 + time * 0.1) % 1)) * r;
-            ctx.globalAlpha = 0.25 * fade;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('170,210,255'), Math.cos(a) * d, Math.sin(a * 1.3) * d, 22, 10);
-        }
-        ctx.restore();
-    }
-
-    // DHD pedestal: octagonal base, two rings of keys, red dome. Glows when you're in range.
-    drawDHD(ctx, time, inRange) {
-        const d = this.dhd;
-        ctx.save();
-        ctx.translate(d.x, d.y);
-        ctx.fillStyle = 'rgb(70, 68, 66)';
-        ctx.strokeStyle = 'rgb(30, 28, 26)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for(let i = 0; i < 8; i++) {
-            const a = i * Math.PI / 4 + Math.PI / 8;
-            if(i === 0) ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
-            else ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 30);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        [[24, 19], [16, 20]].forEach(ring => {
-            for(let i = 0; i < ring[1]; i++) {
-                const a = i * Math.PI * 2 / ring[1];
-                ctx.fillStyle = 'rgb(150, 145, 135)';
-                ctx.fillRect(Math.cos(a) * ring[0] - 2, Math.sin(a) * ring[0] - 2, 4, 4);
-            }
-        });
-        const pulse = 0.6 + 0.4 * Math.sin(time * 3);
-        ctx.fillStyle = this.busy ? 'rgb(255, 90, 50)' : 'rgb(150, 40, 30)';
-        ctx.beginPath();
-        ctx.arc(0, 0, 9, 0, Math.PI * 2);
-        ctx.fill();
-        if(this.busy || inRange) {
-            ctx.globalCompositeOperation = 'lighter';
-            ctx.globalAlpha = this.busy ? 1 : pulse * 0.6;
-            Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,90,50'), 0, 0, 40, 40);
-        }
-        ctx.restore();
-
-        ctx.save();
-        ctx.font = '11px Bungee, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = inRange ? 'rgba(140, 255, 160, 0.95)' : 'rgba(200, 210, 230, 0.6)';
-        ctx.fillText(inRange ? 'DHD · press B' : 'DHD', d.x, d.y + 46);
-        ctx.restore();
-    }
-}
-
-/* harmony default export */ __webpack_exports__["c"] = (Stargate);
-
-
-/***/ }),
-/* 24 */
+/* 25 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11549,7 +11809,7 @@ const isDHDOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 25 */
+/* 26 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -11919,165 +12179,6 @@ const isStarmapOpen = () => !!(instance && instance.isOpen);
 
 
 /***/ }),
-/* 26 */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__sprites__ = __webpack_require__(0);
-// Background planets and nebula tint for each star system, rendered once into sprites.
-
-
-
-const cache = {};
-
-const PALETTES = {
-    ocean: { base: [40, 90, 170], dark: [10, 30, 70], land: [70, 140, 120], cloud: [235, 245, 255], atmosphere: '120,180,255' },
-    earth: { base: [40, 80, 160], dark: [10, 25, 60], land: [70, 130, 70], cloud: [245, 248, 255], atmosphere: '130,180,255' },
-    desert: { base: [200, 160, 100], dark: [90, 60, 30], land: [170, 120, 70], cloud: [240, 225, 200], atmosphere: '240,200,140' },
-    jungle: { base: [60, 120, 70], dark: [15, 40, 20], land: [110, 100, 60], cloud: [235, 245, 235], atmosphere: '150,220,170' },
-    rocky: { base: [150, 80, 60], dark: [50, 20, 15], land: [110, 60, 45], cloud: [220, 190, 170], atmosphere: '230,150,120' },
-    industrial: { base: [110, 100, 110], dark: [30, 25, 35], land: [80, 70, 80], cloud: [200, 195, 210], atmosphere: '190,170,220' },
-    ice: { base: [180, 220, 235], dark: [50, 80, 110], land: [140, 190, 215], cloud: [250, 252, 255], atmosphere: '170,230,255' }
-};
-
-const rgb = (c, a) => 'rgba(' + c.map(v => Math.round(v)).join(',') + ',' + (a === undefined ? 1 : a) + ')';
-
-const rnd = (seed) => {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-};
-
-// A lit sphere with surface patches, cloud bands, a terminator and an atmosphere glow.
-const planetSprite = (system) => {
-    if(cache[system.id]) return cache[system.id];
-    const p = system.planet;
-    const pal = PALETTES[p.type];
-    const R = 220;
-    const size = R * 2 + 80;
-    const r = rnd(system.id.length * 977 + p.radius);
-
-    cache[system.id] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(size, size, ctx => {
-        ctx.translate(size / 2, size / 2);
-
-        // Atmosphere halo.
-        const halo = ctx.createRadialGradient(0, 0, R * 0.95, 0, 0, R + 38);
-        halo.addColorStop(0, 'rgba(' + pal.atmosphere + ', 0.35)');
-        halo.addColorStop(1, 'rgba(' + pal.atmosphere + ', 0)');
-        ctx.fillStyle = halo;
-        ctx.beginPath();
-        ctx.arc(0, 0, R + 38, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(0, 0, R, 0, Math.PI * 2);
-        ctx.fillStyle = rgb(pal.base);
-        ctx.fill();
-        ctx.save();
-        ctx.clip();
-
-        // Land / surface patches.
-        for(let i = 0; i < 26; i++) {
-            const a = r() * Math.PI * 2;
-            const d = Math.sqrt(r()) * R;
-            ctx.fillStyle = rgb(pal.land, 0.5 + r() * 0.4);
-            ctx.beginPath();
-            ctx.ellipse(Math.cos(a) * d, Math.sin(a) * d, 20 + r() * 70, 12 + r() * 40, r() * Math.PI, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // Dune / band texture for desert and gas-like worlds.
-        if(p.type === 'desert' || p.type === 'industrial') {
-            ctx.strokeStyle = rgb(pal.dark, 0.15);
-            ctx.lineWidth = 3;
-            for(let y = -R; y < R; y += 14) {
-                ctx.beginPath();
-                ctx.moveTo(-R, y);
-                ctx.quadraticCurveTo(0, y + (r() - 0.5) * 30, R, y + (r() - 0.5) * 20);
-                ctx.stroke();
-            }
-        }
-        // City lights on industrial worlds.
-        if(p.type === 'industrial') {
-            for(let i = 0; i < 80; i++) {
-                ctx.fillStyle = 'rgba(255, 190, 110, ' + (0.4 + r() * 0.5) + ')';
-                ctx.fillRect(-R * 0.2 + r() * R * 1.1, (r() - 0.5) * R * 1.6, 2, 2);
-            }
-        }
-        // Clouds.
-        for(let i = 0; i < 18; i++) {
-            const y = (r() - 0.5) * R * 1.8;
-            ctx.fillStyle = rgb(pal.cloud, 0.12 + r() * 0.25);
-            ctx.beginPath();
-            ctx.ellipse((r() - 0.5) * R, y, 60 + r() * 120, 6 + r() * 14, (r() - 0.5) * 0.3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        // Terminator: night side towards the bottom right.
-        const night = ctx.createLinearGradient(-R * 0.6, -R * 0.7, R * 0.8, R * 0.9);
-        night.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
-        night.addColorStop(0.45, 'rgba(0, 0, 0, 0)');
-        night.addColorStop(0.75, 'rgba(0, 0, 10, 0.7)');
-        night.addColorStop(1, 'rgba(0, 0, 10, 0.92)');
-        ctx.fillStyle = night;
-        ctx.fillRect(-R, -R, R * 2, R * 2);
-        ctx.restore();
-
-        // Thin bright rim on the lit side.
-        ctx.strokeStyle = 'rgba(' + pal.atmosphere + ', 0.6)';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(0, 0, R - 1, Math.PI * 0.85, Math.PI * 1.75);
-        ctx.stroke();
-
-        // Moon.
-        if(p.moon) {
-            const mx = -R * 1.05;
-            const my = R * 0.85;
-            const mr = 26;
-            ctx.fillStyle = 'rgb(170, 168, 160)';
-            ctx.beginPath();
-            ctx.arc(mx, my, mr, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = 'rgba(0, 0, 10, 0.6)';
-            ctx.beginPath();
-            ctx.arc(mx + 9, my + 8, mr, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }, 1);
-    cache[system.id].R = R;
-    return cache[system.id];
-};
-/* harmony export (immutable) */ __webpack_exports__["a"] = planetSprite;
-
-
-// Very soft coloured nebula wash for the system's background.
-const nebulaSprite = (system) => {
-    const key = 'nebula:' + system.id;
-    if(cache[key]) return cache[key];
-    const r = rnd(system.id.length * 131 + 7);
-    cache[key] = Object(__WEBPACK_IMPORTED_MODULE_0__sprites__["a" /* createSprite */])(512, 512, ctx => {
-        for(let i = 0; i < 7; i++) {
-            const x = 80 + r() * 352;
-            const y = 80 + r() * 352;
-            const rad = 90 + r() * 160;
-            const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-            g.addColorStop(0, 'rgba(' + system.tint + ', ' + (0.12 + r() * 0.1) + ')');
-            g.addColorStop(1, 'rgba(' + system.tint + ', 0)');
-            ctx.fillStyle = g;
-            ctx.fillRect(0, 0, 512, 512);
-        }
-    }, 1);
-    return cache[key];
-};
-/* unused harmony export nebulaSprite */
-
-
-
-/***/ }),
 /* 27 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -12136,7 +12237,7 @@ const drawWormhole = (ctx, w, h, time, progress) => {
     });
     // Bright light at the end of the tunnel, growing as you arrive.
     const end = 60 + progress * 260;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('190,220,255'), cx, cy, end, end);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('190,220,255'), cx, cy, end, end);
     ctx.restore();
 
     // Flash in and out.
@@ -12172,7 +12273,7 @@ const drawHyperspace = (ctx, w, h, time, progress, label) => {
         const r = Math.pow(z, 2) * max;
         const size = 40 + z * 380;
         ctx.globalAlpha = 0.12 + 0.25 * z;
-        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
+        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(i % 2 ? '120,170,255' : '180,210,255'), cx + Math.cos(a) * r, cy + Math.sin(a) * r, size, size * 0.6);
     }
     ctx.globalAlpha = 1;
     // Long star streaks.
@@ -12221,20 +12322,20 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
     ctx.globalCompositeOperation = 'lighter';
     // Faint outer haze.
     ctx.globalAlpha = Math.min(1, open * 1.2) * 0.35;
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('90,150,150'), 0, 0, r * 2.6, r * 2.4);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('90,150,150'), 0, 0, r * 2.6, r * 2.4);
     // Cloudy, turning wisps.
     WISPS.forEach(wisp => {
         const a = wisp.angle + time * wisp.spin;
         const d = r * wisp.dist * (0.85 + 0.15 * Math.sin(time * 1.7 + wisp.phase));
         const size = r * wisp.size * (0.8 + 0.25 * Math.sin(time * 2.3 + wisp.phase));
         ctx.globalAlpha = Math.min(1, open * 1.5) * (0.14 + 0.1 * Math.sin(time * 3 + wisp.phase));
-        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(wisp.spin > 0 ? '150,215,215' : '190,235,235'), Math.cos(a) * d, Math.sin(a) * d, size * 1.4, size * 0.8);
+        Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])(wisp.spin > 0 ? '150,215,215' : '190,235,235'), Math.cos(a) * d, Math.sin(a) * d, size * 1.4, size * 0.8);
     });
     // Bright heart.
     ctx.globalAlpha = Math.min(1, open * 2);
     const flicker = 0.85 + 0.15 * Math.sin(time * 9) * Math.sin(time * 5.3);
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('210,245,240'), r * 0.05, -r * 0.04, r * 0.75 * flicker, r * 0.65 * flicker);
-    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["h" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,255,255'), 0, 0, r * 0.3, r * 0.3);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('210,245,240'), r * 0.05, -r * 0.04, r * 0.75 * flicker, r * 0.65 * flicker);
+    Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["i" /* stamp */])(ctx, Object(__WEBPACK_IMPORTED_MODULE_0__render_sprites__["d" /* glowSprite */])('255,255,255'), 0, 0, r * 0.3, r * 0.3);
     ctx.restore();
 };
 /* harmony export (immutable) */ __webpack_exports__["a"] = drawHyperWindow;
@@ -12246,6 +12347,10 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__world3d__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__world_stargate__ = __webpack_require__(13);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__render_planets__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__world_materials__ = __webpack_require__(1);
 // WebGL (Three.js) layer that draws the world in 3D on the graphics card.
 //
 // The game itself stays on a flat plane: physics, collisions and aiming are unchanged. A
@@ -12257,6 +12362,11 @@ const drawHyperWindow = (ctx, x, y, radius, time, open) => {
 //
 // Coordinates: game (x, y) with y pointing down the screen becomes Three.js (x, -y, z) with
 // z towards the camera. A game angle `a` becomes a rotation of -a about z.
+
+
+
+
+
 
 const FOV = 35;
 const TAN_HALF_FOV = Math.tan(FOV * Math.PI / 360);
@@ -12449,10 +12559,15 @@ const STAR_FRAGMENT = [
 
 class Scene3D {
 
-    constructor(container) {
+    // `requireHardware`: refuse to start (throw) when the browser would only give us slow
+    // software rendering, so the game uses its 2D view instead of crawling.
+    constructor(container, requireHardware) {
         const THREE = window.THREE;
         this.THREE = THREE;
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true, alpha: true, powerPreference: 'high-performance',
+            failIfMajorPerformanceCaveat: !!requireHardware
+        });
         this.renderer.setClearColor(0x000000, 0);
         this.canvas = this.renderer.domElement;
         this.canvas.className = 'gl-layer';
@@ -12476,7 +12591,105 @@ class Scene3D {
         this.shipEntries = new Map();
         this.hullCache = {};
         this.buildStars();
+        this.ores = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["e" /* buildOreCrystals */])(THREE);
+        this.scene.add(this.ores);
+        this.oreMatrix = new THREE.Matrix4();
+        this.oreQuat = new THREE.Quaternion();
+        this.oreEuler = new THREE.Euler();
+        this.oreColor = new THREE.Color();
+        this.oreScale = new THREE.Vector3();
+        this.orePos = new THREE.Vector3();
         this.visible = true;
+    }
+
+    // ------------------------------------------------------------ scenery
+
+    // Atlantis, the gate, the DHD and the planet belong to the current star system.
+    syncSystem(view) {
+        const THREE = this.THREE;
+        if(this.systemId === view.system.id && this.gateRef === view.gate) return;
+        this.systemId = view.system.id;
+        this.gateRef = view.gate;
+        ['stationGroup', 'gateGroup', 'dhdGroup', 'planetHolder'].forEach(key => {
+            if(this[key]) {
+                this.scene.remove(this[key]);
+                this[key] = null;
+            }
+        });
+        if(this.planet) {
+            this.planet.textures.map.dispose();
+            this.planet.textures.clouds.dispose();
+            this.planet = null;
+        }
+        if(view.station) {
+            if(!this.atlantis) this.atlantis = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["b" /* buildAtlantis */])(THREE, view.station);
+            this.stationGroup = this.atlantis;
+            this.scene.add(this.stationGroup);
+        }
+        if(!this.gateModel) {
+            this.gateModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["d" /* buildGate */])(THREE, __WEBPACK_IMPORTED_MODULE_1__world_stargate__["d" /* GATE_RADIUS */], __WEBPACK_IMPORTED_MODULE_1__world_stargate__["c" /* GATE_INNER */], Object(__WEBPACK_IMPORTED_MODULE_1__world_stargate__["f" /* gateSymbolSprite */])(), __WEBPACK_IMPORTED_MODULE_1__world_stargate__["a" /* CHEVRON_ANGLES */]);
+            this.dhdModel = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["c" /* buildDHD */])(THREE);
+        }
+        this.gateGroup = this.gateModel.group;
+        this.gateGroup.position.set(view.gate.x, -view.gate.y, 0);
+        this.scene.add(this.gateGroup);
+        const dhd = view.gate.dhd;
+        this.dhdGroup = this.dhdModel.group;
+        this.dhdGroup.position.set(dhd.x, -dhd.y, 0);
+        this.scene.add(this.dhdGroup);
+        const palette = __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */][view.system.planet.type] || __WEBPACK_IMPORTED_MODULE_2__render_planets__["a" /* PALETTES */].rocky;
+        this.planet = Object(__WEBPACK_IMPORTED_MODULE_0__world3d__["f" /* buildPlanet */])(THREE, view.system, palette);
+        this.planetHolder = this.planet.holder;
+        this.scene.add(this.planetHolder);
+    }
+
+    syncScenery(view) {
+        this.syncSystem(view);
+        const gate = view.gate;
+        if(this.stationGroup) this.stationGroup.visible = view.isVisible(view.station.x, view.station.y, 520);
+        const gateOn = view.isVisible(gate.x, gate.y, 320);
+        this.gateGroup.visible = gateOn;
+        this.dhdGroup.visible = gateOn;
+        if(gateOn) {
+            this.gateModel.symbolRing.rotation.z = -gate.spin;
+            this.gateModel.chevrons.forEach((material, i) => {
+                const lit = gate.chevronLit(i);
+                material.emissive.setRGB(lit ? 1 : 0, lit ? 0.45 : 0, lit ? 0.12 : 0);
+                material.color.setRGB(lit ? 1 : 0.31, lit ? 0.55 : 0.16, lit ? 0.25 : 0.12);
+            });
+            const glow = gate.busy ? 1 : view.nearDHD ? 0.55 + 0.25 * Math.sin(view.time * 3) : 0.3;
+            this.dhdModel.dome.emissive.setRGB(glow, glow * 0.25, glow * 0.12);
+        }
+        // Slow planet spin and drifting clouds.
+        if(this.planet) {
+            this.planet.body.rotation.y = view.time * 0.01;
+            this.planet.clouds.rotation.y = view.time * 0.016;
+        }
+    }
+
+    // ------------------------------------------------------------ ore
+
+    syncOres(ores, isVisible) {
+        const mesh = this.ores;
+        let count = 0;
+        for(let i = 0; i < ores.length && count < __WEBPACK_IMPORTED_MODULE_0__world3d__["a" /* ORE_LIMIT */]; i++) {
+            const ore = ores[i];
+            if(ore.dead || !isVisible(ore.x, ore.y, 10)) continue;
+            const size = ore.radius * 1.35;
+            this.orePos.set(ore.x, -ore.y, 1);
+            this.oreEuler.set(ore.angle * 0.7 + ore.phase, ore.phase, -ore.angle);
+            this.oreQuat.setFromEuler(this.oreEuler);
+            this.oreScale.set(size, size, size);
+            this.oreMatrix.compose(this.orePos, this.oreQuat, this.oreScale);
+            mesh.setMatrixAt(count, this.oreMatrix);
+            const color = (__WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */][ore.material] || __WEBPACK_IMPORTED_MODULE_3__world_materials__["b" /* default */].rock).color.split(',');
+            this.oreColor.setRGB(color[0] / 255, color[1] / 255, color[2] / 255, this.THREE.SRGBColorSpace);
+            mesh.setColorAt(count, this.oreColor);
+            count++;
+        }
+        mesh.count = count;
+        mesh.instanceMatrix.needsUpdate = true;
+        if(mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
 
     buildStars() {
@@ -12558,7 +12771,19 @@ class Scene3D {
             let entry = this.rockEntries.get(rock);
             const visible = isVisible(rock.x, rock.y, rock.radius * 1.6);
             if(!visible) {
-                if(entry) entry.mesh.visible = false;
+                if(entry) {
+                    entry.mesh.visible = false;
+                    // Well off screen: let go of the texture and its canvas (Safari caps
+                    // total canvas memory); it is rebuilt when the rock comes back.
+                    if(entry.texture && !isVisible(rock.x, rock.y, 900)) {
+                        entry.texture.dispose();
+                        entry.texture = null;
+                        entry.canvas = null;
+                        entry.material.map = null;
+                        entry.material.needsUpdate = true;
+                        entry.version = -1;
+                    }
+                }
                 return;
             }
             rock.ensureSprite(true);
@@ -12670,6 +12895,8 @@ class Scene3D {
     render(view) {
         if(!this.visible) return;
         this.placeCamera(view.cameraX, view.cameraY, view.zoom);
+        this.syncScenery(view);
+        this.syncOres(view.ores, view.isVisible);
         this.syncRocks(view.rocks, view.isVisible);
         this.syncShips(view.ships, view.isVisible);
         this.renderer.render(this.scene, this.camera);
@@ -12687,12 +12914,458 @@ class Scene3D {
 
 /***/ }),
 /* 29 */
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+// 3D models for the fixed scenery: Atlantis with its city shield, the Stargate and DHD,
+// the system's planet (and moon), and the ore crystals.
+//
+// Everything sits at or below the play plane (z <= 0), so ships, which fly on the plane,
+// always pass over the city and the gate. Game (x, y) -> Three.js (x, -y, z).
+
+const v2 = (THREE, p) => new THREE.Vector2(p[0], -p[1]);
+
+// A flat-topped prism from a polygon in game coordinates, top face at `top`.
+const prism = (THREE, pts, top, depth, bevel) => {
+    const shape = new THREE.Shape(pts.map(p => v2(THREE, p)));
+    const b = bevel === undefined ? Math.min(2, depth * 0.25) : bevel;
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: Math.max(0.5, depth - b), steps: 1, bevelEnabled: b > 0, bevelThickness: b,
+        bevelSize: b, bevelOffset: -b, bevelSegments: 2
+    });
+    geometry.translate(0, 0, top - depth);
+    return geometry;
+};
+
+// A box standing on the deck: footprint centre (x, y), size w x d, from `bottom` up to `top`.
+const tower = (THREE, x, y, w, d, bottom, top, angle) => {
+    const geometry = new THREE.BoxGeometry(w, d, top - bottom);
+    if(angle) geometry.rotateZ(-angle);
+    geometry.translate(x, -y, (top + bottom) / 2);
+    return geometry;
+};
+
+const rotatePts = (pts, angle) => {
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    return pts.map(p => [p[0] * c - p[1] * s, p[0] * s + p[1] * c]);
+};
+
+const hexagon = (r, offset) => {
+    const pts = [];
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + (offset || 0);
+        pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return pts;
+};
+
+// Lit windows: a dark facade with rows of warm and cool lights (shared by all towers).
+const windowTexture = (THREE) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#1a2230';
+    ctx.fillRect(0, 0, 64, 128);
+    for(let y = 4; y < 128; y += 8) {
+        for(let x = 3; x < 64; x += 7) {
+            const r = Math.random();
+            if(r < 0.45) continue;
+            ctx.fillStyle = r < 0.8 ? 'rgba(255, 225, 160, 0.95)' : 'rgba(170, 215, 255, 0.95)';
+            ctx.fillRect(x, y, 4, 4);
+        }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    return texture;
+};
+
+// Fresnel glow: bright where the surface turns away from the camera (shield domes, atmospheres).
+const glowMaterial = (THREE, color, strength, power, backSide) => new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color[0] / 255, color[1] / 255, color[2] / 255) }, uStrength: { value: strength } },
+    vertexShader: [
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'void main() {',
+        '    vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '    vNormal = normalize(normalMatrix * normal);',
+        '    vView = normalize(-mv.xyz);',
+        '    gl_Position = projectionMatrix * mv;',
+        '}'
+    ].join('\n'),
+    fragmentShader: [
+        'uniform vec3 uColor;',
+        'uniform float uStrength;',
+        'varying vec3 vNormal;',
+        'varying vec3 vView;',
+        'void main() {',
+        '    float rim = pow(1.0 - abs(dot(vNormal, vView)), ' + power.toFixed(1) + ');',
+        '    gl_FragColor = vec4(uColor * rim * uStrength, rim * uStrength);',
+        '}'
+    ].join('\n'),
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: backSide ? THREE.BackSide : THREE.FrontSide
+});
+
+// ------------------------------------------------------------ Atlantis
+
+// The city sits below the flight plane: deck at DECK, the central spire reaching up to
+// just under the plane.
+const DECK = -70;
+
+const buildAtlantis = (THREE, station) => {
+    const group = new THREE.Group();
+    const metal = new THREE.MeshStandardMaterial({ color: 0x9fb0c8, metalness: 0.55, roughness: 0.4 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x4a5a70, metalness: 0.6, roughness: 0.5 });
+    const windows = windowTexture(THREE);
+    const buildings = new THREE.MeshStandardMaterial({
+        color: 0xb8c6da, metalness: 0.4, roughness: 0.45, map: windows,
+        emissive: 0xffffff, emissiveMap: windows, emissiveIntensity: 0.85
+    });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x6fa8ff, metalness: 0.3, roughness: 0.15, emissive: 0x2a5cff, emissiveIntensity: 0.6 });
+    const add = (geometry, material) => group.add(new THREE.Mesh(geometry, material));
+
+    // Central hub: stepped hexagonal tiers.
+    add(prism(THREE, hexagon(92, Math.PI / 6), DECK + 8, 22), metal);
+    add(prism(THREE, hexagon(70, 0), DECK + 20, 12), dark);
+    add(prism(THREE, hexagon(48, Math.PI / 6), DECK + 32, 12), metal);
+    // The central tower: a tall tapering spire with a glowing crown.
+    const spire = new THREE.CylinderGeometry(7, 18, 62, 12);
+    spire.rotateX(Math.PI / 2);
+    spire.translate(0, 0, DECK + 32 + 31);
+    add(spire, buildings);
+    const crown = new THREE.ConeGeometry(7, 16, 12);
+    crown.rotateX(Math.PI / 2);
+    crown.translate(0, 0, DECK + 32 + 62 + 7);
+    add(crown, glass);
+    // Ring of secondary towers around the spire.
+    for(let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const h = 22 + (i % 2) * 14;
+        add(tower(THREE, Math.cos(a) * 62, Math.sin(a) * 62, 11, 11, DECK + 8, DECK + 8 + h, a), buildings);
+    }
+
+    // Six piers: three long main piers with big platforms, three shorter ones.
+    for(let i = 0; i < 6; i++) {
+        const angle = i * Math.PI / 3 - Math.PI / 2;
+        const main = i % 2 === 0;
+        const length = main ? 270 : 215;
+        const half = main ? 22 : 18;
+        const P = (pts) => rotatePts(pts, angle);
+        const at = (x, y) => rotatePts([[x, y]], angle)[0];
+
+        add(prism(THREE, P([[70, -half], [length, -half], [length, half], [70, half]]), DECK + 4, 10), metal);
+        // Raised spine along the pier.
+        add(prism(THREE, P([[80, -half * 0.35], [length - 10, -half * 0.35], [length - 10, half * 0.35], [80, half * 0.35]]), DECK + 9, 5), dark);
+        if(main) {
+            add(prism(THREE, P([[length, -half], [length + 18, -58], [length + 78, -58], [length + 96, -26],
+                [length + 96, 26], [length + 78, 58], [length + 18, 58], [length, half]]), DECK + 6, 14), metal);
+            add(prism(THREE, P([[length + 26, -40], [length + 70, -40], [length + 80, 0], [length + 70, 40], [length + 26, 40], [length + 16, 0]]), DECK + 12, 6), dark);
+            [[36, -18, 34], [56, 14, 48], [44, 26, 26], [62, -26, 40], [30, 30, 20], [70, 0, 30]].forEach((t, k) => {
+                const p = at(length + t[0], t[1]);
+                add(tower(THREE, p[0], p[1], 12, 12, DECK + 12, DECK + 12 + t[2], angle + k * 0.3), buildings);
+            });
+            add(prism(THREE, P([[length - 70, half], [length - 40, half + 34], [length - 20, half + 34], [length - 36, half]]), DECK + 2, 6), metal);
+        } else {
+            add(prism(THREE, P([[length, -half], [length + 20, -38], [length + 52, -30], [length + 62, 0],
+                [length + 52, 30], [length + 20, 38], [length, half]]), DECK + 6, 12), metal);
+            const p = at(length + 28, 0);
+            add(tower(THREE, p[0], p[1], 24, 24, DECK + 6, DECK + 30, angle), buildings);
+            const mast = new THREE.CylinderGeometry(4, 5, 18, 10);
+            mast.rotateX(Math.PI / 2);
+            mast.translate(p[0], -p[1], DECK + 30 + 9);
+            add(mast, glass);
+        }
+    }
+
+    // City shield: a shallow dome glowing at its rim.
+    const R = station.shieldRadius;
+    const domeGeometry = new THREE.SphereGeometry(R, 64, 20, 0, Math.PI * 2, 0, Math.PI / 2);
+    domeGeometry.rotateX(Math.PI / 2);
+    const dome = new THREE.Mesh(domeGeometry, glowMaterial(THREE, [140, 205, 255], 0.75, 2.5, false));
+    dome.scale.set(1, 1, 0.4);
+    dome.position.z = DECK;
+    dome.renderOrder = 2;
+    group.add(dome);
+
+    group.position.set(station.x, -station.y, 0);
+    return group;
+};
+/* harmony export (immutable) */ __webpack_exports__["b"] = buildAtlantis;
+
+
+// ------------------------------------------------------------ Stargate and DHD
+
+const GATE_TOP = -4;
+
+const buildGate = (THREE, gateRadius, gateInner, symbolSprite, chevronAngles) => {
+    const group = new THREE.Group();
+    const stone = new THREE.MeshStandardMaterial({ color: 0x8c8e98, metalness: 0.65, roughness: 0.45 });
+
+    // Outer ring.
+    const ring = new THREE.Shape();
+    ring.absarc(0, 0, gateRadius, 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, gateInner, 0, Math.PI * 2, true);
+    ring.holes.push(hole);
+    const ringGeometry = new THREE.ExtrudeGeometry(ring, {
+        depth: 8, steps: 1, bevelEnabled: true, bevelThickness: 3, bevelSize: 2.5, bevelOffset: -2.5, bevelSegments: 3, curveSegments: 72
+    });
+    ringGeometry.translate(0, 0, GATE_TOP - 11);
+    group.add(new THREE.Mesh(ringGeometry, stone));
+
+    // The rotating inner ring of symbols, set slightly into the outer ring.
+    const inner = new THREE.RingGeometry(gateInner + 5, gateRadius - 6, 96, 1);
+    const uv = inner.attributes.uv;
+    const pos = inner.attributes.position;
+    for(let i = 0; i < pos.count; i++) {
+        uv.setXY(i, 0.5 + pos.getX(i) / (2 * gateRadius), 0.5 + pos.getY(i) / (2 * gateRadius));
+    }
+    const symbols = new THREE.CanvasTexture(symbolSprite.canvas);
+    symbols.colorSpace = THREE.SRGBColorSpace;
+    const symbolRing = new THREE.Mesh(inner, new THREE.MeshStandardMaterial({ map: symbols, metalness: 0.5, roughness: 0.5 }));
+    symbolRing.position.z = GATE_TOP + 0.6;
+    group.add(symbolRing);
+
+    // Nine chevrons; their lamps light up as they lock.
+    const chevrons = [];
+    const chevronShape = [[-8, -4], [8, -4], [4, 7], [0, 9], [-4, 7]];
+    const lampShape = [[-4, -1], [4, -1], [0, 6]];
+    chevronAngles.forEach(a => {
+        const place = (pts) => pts.map(p => {
+            // Same placement as the 2D drawing: rotate(a + PI/2), then translate(0, -R + 2).
+            const x = p[0];
+            const y = p[1] - gateRadius + 2;
+            const r = a + Math.PI / 2;
+            return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
+        });
+        group.add(new THREE.Mesh(prism(THREE, place(chevronShape), GATE_TOP + 2, 6, 1), stone));
+        const lampMaterial = new THREE.MeshStandardMaterial({ color: 0x502820, emissive: 0x000000, metalness: 0.2, roughness: 0.4 });
+        group.add(new THREE.Mesh(prism(THREE, place(lampShape), GATE_TOP + 3, 2, 0.4), lampMaterial));
+        chevrons.push(lampMaterial);
+    });
+
+    return { group: group, symbolRing: symbolRing, chevrons: chevrons };
+};
+/* harmony export (immutable) */ __webpack_exports__["d"] = buildGate;
+
+
+const buildDHD = (THREE) => {
+    const group = new THREE.Group();
+    const base = new THREE.MeshStandardMaterial({ color: 0x5a5753, metalness: 0.45, roughness: 0.6 });
+    const keys = new THREE.MeshStandardMaterial({ color: 0x9a948a, metalness: 0.3, roughness: 0.5 });
+    const octagon = [];
+    for(let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4 + Math.PI / 8;
+        octagon.push([Math.cos(a) * 30, Math.sin(a) * 30]);
+    }
+    group.add(new THREE.Mesh(prism(THREE, octagon, -6, 18, 3), base));
+    [[24, 19], [16, 20]].forEach(ring => {
+        for(let i = 0; i < ring[1]; i++) {
+            const a = i * Math.PI * 2 / ring[1];
+            group.add(new THREE.Mesh(tower(THREE, Math.cos(a) * ring[0], Math.sin(a) * ring[0], 4, 4, -6, -3.5, a), keys));
+        }
+    });
+    const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x8a1a12, emissive: 0x501008, metalness: 0.1, roughness: 0.2 });
+    const domeGeometry = new THREE.SphereGeometry(9, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    domeGeometry.rotateX(Math.PI / 2);
+    domeGeometry.translate(0, 0, -6);
+    group.add(new THREE.Mesh(domeGeometry, domeMaterial));
+    return { group: group, dome: domeMaterial };
+};
+/* harmony export (immutable) */ __webpack_exports__["c"] = buildDHD;
+
+
+// ------------------------------------------------------------ planets
+
+// Seamless 3D value noise sampled on the sphere, for procedural planet surfaces.
+const makeNoise = (seed) => {
+    const perm = new Uint8Array(512);
+    let s = seed >>> 0;
+    for(let i = 0; i < 256; i++) perm[i] = i;
+    for(let i = 255; i > 0; i--) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        const j = s % (i + 1);
+        const t = perm[i];
+        perm[i] = perm[j];
+        perm[j] = t;
+    }
+    for(let i = 0; i < 256; i++) perm[256 + i] = perm[i];
+    const values = new Float32Array(256);
+    for(let i = 0; i < 256; i++) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        values[i] = s / 4294967296;
+    }
+    const fade = t => t * t * (3 - 2 * t);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const at = (x, y, z) => values[perm[perm[perm[x & 255] + (y & 255)] + (z & 255)]];
+    const noise = (x, y, z) => {
+        const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+        const xf = fade(x - xi), yf = fade(y - yi), zf = fade(z - zi);
+        return lerp(
+            lerp(lerp(at(xi, yi, zi), at(xi + 1, yi, zi), xf), lerp(at(xi, yi + 1, zi), at(xi + 1, yi + 1, zi), xf), yf),
+            lerp(lerp(at(xi, yi, zi + 1), at(xi + 1, yi, zi + 1), xf), lerp(at(xi, yi + 1, zi + 1), at(xi + 1, yi + 1, zi + 1), xf), yf),
+            zf);
+    };
+    return (x, y, z, octaves) => {
+        let total = 0;
+        let amp = 0.5;
+        let freq = 1;
+        for(let o = 0; o < octaves; o++) {
+            total += noise(x * freq, y * freq, z * freq) * amp;
+            amp *= 0.5;
+            freq *= 2.1;
+        }
+        return total;
+    };
+};
+
+// How much of the surface is "land" (vs. the base colour) for each planet type.
+const LAND_LEVEL = { ocean: 0.62, earth: 0.52, desert: 0.47, jungle: 0.4, rocky: 0.5, industrial: 0.5, ice: 0.55 };
+const CLOUDS = { ocean: 0.55, earth: 0.55, jungle: 0.5, ice: 0.6, industrial: 0.62, desert: 0.72, rocky: 0.75 };
+
+const planetTextures = (THREE, type, palette, seed) => {
+    const w = 512;
+    const h = 256;
+    const noise = makeNoise(seed);
+    const surface = document.createElement('canvas');
+    surface.width = w;
+    surface.height = h;
+    const clouds = document.createElement('canvas');
+    clouds.width = w;
+    clouds.height = h;
+    const sctx = surface.getContext('2d');
+    const cctx = clouds.getContext('2d');
+    const simg = sctx.createImageData(w, h);
+    const cimg = cctx.createImageData(w, h);
+    const land = LAND_LEVEL[type] || 0.5;
+    const cloudLevel = CLOUDS[type] || 0.6;
+    for(let y = 0; y < h; y++) {
+        const lat = (y / (h - 1) - 0.5) * Math.PI;
+        const cl = Math.cos(lat);
+        const sl = Math.sin(lat);
+        for(let x = 0; x < w; x++) {
+            const lon = (x / w) * Math.PI * 2;
+            const px = Math.cos(lon) * cl * 2.2 + 10;
+            const py = sl * 2.2 + 10;
+            const pz = Math.sin(lon) * cl * 2.2 + 10;
+            const n = noise(px, py, pz, 5);
+            const detail = noise(px * 4, py * 4, pz * 4, 3);
+            let c;
+            if(n > land) {
+                const k = Math.min(1, (n - land) * 3);
+                c = palette.land.map((v, i) => v * (0.85 + detail * 0.3) * (1 - k * 0.25) + palette.dark[i] * k * 0.25);
+            } else {
+                const k = Math.min(1, (land - n) * 2.5);
+                c = palette.base.map((v, i) => v * (1 - k * 0.45) + palette.dark[i] * k * 0.45);
+            }
+            // Ice caps near the poles for most worlds.
+            // Ice caps near the poles for most worlds, with a soft, ragged edge.
+            if(type !== 'desert' && type !== 'industrial') {
+                const cap = Math.max(0, Math.min(1, (Math.abs(sl) - 0.84 + (n - 0.5) * 0.25) * 12));
+                if(cap > 0) c = c.map((v, i) => v * (1 - cap) + [235, 242, 250][i] * cap);
+            }
+            const o = (y * w + x) * 4;
+            simg.data[o] = c[0];
+            simg.data[o + 1] = c[1];
+            simg.data[o + 2] = c[2];
+            simg.data[o + 3] = 255;
+            const cn = noise(px * 1.7 + 30, py * 3 + 30, pz * 1.7 + 30, 5);
+            const a = Math.max(0, Math.min(1, (cn - cloudLevel) * 5));
+            cimg.data[o] = palette.cloud[0];
+            cimg.data[o + 1] = palette.cloud[1];
+            cimg.data[o + 2] = palette.cloud[2];
+            cimg.data[o + 3] = Math.round(a * 230);
+        }
+    }
+    sctx.putImageData(simg, 0, 0);
+    cctx.putImageData(cimg, 0, 0);
+    const map = new THREE.CanvasTexture(surface);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const cloudMap = new THREE.CanvasTexture(clouds);
+    cloudMap.colorSpace = THREE.SRGBColorSpace;
+    return { map: map, clouds: cloudMap };
+};
+
+// Planet far below the play plane (so it drifts past slowly with real parallax), with a
+// cloud layer, an atmosphere glow and sometimes a moon.
+const PLANET_DEPTH = 9000;
+/* unused harmony export PLANET_DEPTH */
+
+
+const buildPlanet = (THREE, system, palette) => {
+    const p = system.planet;
+    const group = new THREE.Group();
+    const radius = p.radius * 2.2;
+    let seed = 0;
+    for(let i = 0; i < system.id.length; i++) seed = (seed * 31 + system.id.charCodeAt(i)) >>> 0;
+    const textures = planetTextures(THREE, p.type, palette, seed);
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(radius, 64, 32),
+        new THREE.MeshStandardMaterial({ map: textures.map, roughness: 0.85, metalness: 0 }));
+    group.add(body);
+    const clouds = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.012, 64, 32),
+        new THREE.MeshStandardMaterial({ map: textures.clouds, transparent: true, depthWrite: false, roughness: 1 }));
+    group.add(clouds);
+    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.1, 48, 24),
+        glowMaterial(THREE, palette.atmosphere.split(',').map(Number), 1.4, 3.0, true));
+    group.add(atmosphere);
+    // Tilt the axis a little so the cloud bands and caps read as a globe.
+    group.rotation.z = 0.25;
+    group.rotation.x = 0.35;
+
+    let moon = null;
+    if(p.moon) {
+        const moonTextures = planetTextures(THREE, 'rocky', { base: [150, 150, 155], dark: [60, 60, 70], land: [120, 120, 128], cloud: [0, 0, 0] }, seed + 7);
+        moon = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.24, 32, 16),
+            new THREE.MeshStandardMaterial({ map: moonTextures.map, roughness: 0.95 }));
+        moonTextures.clouds.dispose();
+    }
+
+    const holder = new THREE.Group();
+    holder.add(group);
+    if(moon) {
+        moon.position.set(radius * 1.9, radius * 0.7, radius * 0.3);
+        holder.add(moon);
+    }
+    holder.position.set(p.x, -p.y, -PLANET_DEPTH);
+    return { holder: holder, body: body, clouds: clouds, textures: textures };
+};
+/* harmony export (immutable) */ __webpack_exports__["f"] = buildPlanet;
+
+
+// ------------------------------------------------------------ ore crystals
+
+const ORE_LIMIT = 800;
+/* harmony export (immutable) */ __webpack_exports__["a"] = ORE_LIMIT;
+
+
+const buildOreCrystals = (THREE) => {
+    const geometry = new THREE.OctahedronGeometry(1, 0);
+    geometry.scale(1, 1, 0.7);
+    const material = new THREE.MeshStandardMaterial({ metalness: 0.55, roughness: 0.3, flatShading: true, emissive: 0x111111 });
+    const mesh = new THREE.InstancedMesh(geometry, material, ORE_LIMIT);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.frustumCulled = false;
+    return mesh;
+};
+/* harmony export (immutable) */ __webpack_exports__["e"] = buildOreCrystals;
+
+
+
+/***/ }),
+/* 30 */
 /***/ (function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(30);
+var content = __webpack_require__(31);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // Prepare cssTransformation
 var transform;
@@ -12700,7 +13373,7 @@ var transform;
 var options = {"hmr":true}
 options.transform = transform
 // add the styles to the DOM
-var update = __webpack_require__(32)(content, options);
+var update = __webpack_require__(33)(content, options);
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -12717,21 +13390,21 @@ if(false) {
 }
 
 /***/ }),
-/* 30 */
+/* 31 */
 /***/ (function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(31)(undefined);
+exports = module.exports = __webpack_require__(32)(undefined);
 // imports
 
 
 // module
-exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n\n/* 3D view layers: flat floor (station, gate) < WebGL scene < main canvas (effects, HUD). */\n#gameboard > canvas.under-layer {\n    z-index: 1;\n    pointer-events: none;\n}\n\n#gameboard > canvas.gl-layer {\n    position: fixed;\n    top: 0;\n    left: 0;\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.main-layer {\n    z-index: 3;\n}\n", ""]);
+exports.push([module.i, "html, body {\n    background-color: #000;\n    margin: 0;\n    overflow: hidden;\n}\n\n.gameboard {\n    position: relative;\n}\n\ncanvas {\n    position: fixed;\n    top: 0;\n    left: 0;\n    background-color: rgba(0, 0, 0, 0);\n}\n\nbody.playing canvas {\n    cursor: none;\n}\n\n.info {\n    position: absolute;\n    margin-top: 5px;\n    margin-left: 5px;\n    z-index: 5;\n    pointer-events: none;\n    user-select: none;\n}\n\n.info p {\n    margin: 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n}\n\n.menu {\n    position: absolute;\n    margin-left: auto;\n    margin-right: auto;\n    top: 25vh;\n    min-height: 250px;\n    padding-bottom: 20px;\n    z-index: 10;\n    user-select: none;\n    left: 0;\n    right: 0;\n    margin: 0 auto !important;\n    text-align: center;\n\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n\n    background-color: rgba(0, 0, 0, 0.5);\n}\n\n.menu h1 {\n    margin-top: 50px; \n}\n\n.menu h2 {\n    margin: 0;\n}\n\n.menu-message {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.menu h4 {\n    margin: 0;\n    margin-top: 10px;\n}\n\n.menu h2:hover {\n    color: #fff;\n    cursor: pointer;\n}\n.menu-action {\n    display: inline-block;\n    padding: 2px 10px;\n}\n\n.menu h2.menu-action {\n    display: block;\n    margin: 4px 0;\n}\n\n.menu-credits {\n    margin: 0 0 10px;\n    min-height: 1em;\n}\n\n.pause-menu {\n    visibility: hidden;\n    min-height: 0;\n}\n\n.pause-menu h1 {\n    margin-top: 30px;\n}\n\n/* ---------------------------------------------------------------- HUD bars */\n\n.hud-bar-row {\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    margin: 2px 0;\n    text-shadow: 0px 0px 4px rgba(255, 255, 255, 1);\n    font-size: 13px;\n}\n\n.hud-bar-label {\n    width: 52px;\n}\n\n.hud-bar {\n    width: 140px;\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.7);\n    box-shadow: 0 0 4px rgba(255, 255, 255, 0.6);\n    background: rgba(0, 0, 0, 0.4);\n}\n\n.hud-bar-fill {\n    height: 100%;\n    width: 100%;\n    transition: width 0.15s linear;\n}\n\n.hud-bar.hull .hud-bar-fill {\n    background: #f4c46a;\n}\n\n.hud-bar.shield .hud-bar-fill {\n    background: #78d2ff;\n}\n\n.hud-bar-text {\n    font-size: 11px;\n}\n\n/* ---------------------------------------------------------------- Shipyard */\n\n.shipyard {\n    position: fixed;\n    inset: 0;\n    z-index: 20;\n    display: none;\n    flex-direction: column;\n    color: #dfe9ff;\n    background: rgba(2, 6, 16, 0.96);\n    user-select: none;\n}\n\n.shipyard.open {\n    display: flex;\n}\n\n.shipyard canvas {\n    position: static;\n}\n\n.shipyard-header {\n    display: flex;\n    align-items: center;\n    gap: 20px;\n    padding: 10px 20px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.25);\n}\n\n.shipyard-header h1 {\n    margin: 0;\n    font-size: 26px;\n    text-shadow: 0 0 8px rgba(140, 180, 255, 0.9);\n}\n\n.shipyard-credits {\n    flex: 1;\n    font-size: 18px;\n    color: #ffe08a;\n    text-shadow: 0 0 6px rgba(255, 200, 100, 0.7);\n}\n\n.shipyard-body {\n    flex: 1;\n    display: grid;\n    grid-template-columns: 260px 1fr 300px;\n    grid-template-rows: minmax(0, 1fr);\n    gap: 12px;\n    padding: 12px;\n    min-height: 0;\n}\n\n.shipyard-panel {\n    border: 1px solid rgba(140, 180, 255, 0.25);\n    background: rgba(10, 20, 40, 0.55);\n    padding: 10px;\n    overflow-y: auto;\n    min-height: 0;\n}\n\n.shipyard-panel h3 {\n    margin: 4px 0 8px;\n    font-size: 14px;\n    letter-spacing: 1px;\n    color: #9fc0ff;\n}\n\n.hull-cards {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-card {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 6px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    opacity: 0.75;\n}\n\n.hull-card.owned {\n    opacity: 1;\n}\n\n.hull-card.active {\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.35);\n    opacity: 1;\n}\n\n.hull-thumb {\n    flex: none;\n}\n\n.hull-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    min-width: 0;\n}\n\n.hull-name {\n    font-family: Bungee, sans-serif;\n    font-size: 15px;\n}\n\n.hull-class,\n.hull-meta {\n    color: #9fb2d8;\n    margin-bottom: 3px;\n}\n\n.hull-state {\n    color: #8cffa0;\n    font-family: Bungee, sans-serif;\n}\n\n.hull-view {\n    display: flex;\n    flex-direction: column;\n    gap: 8px;\n}\n\n.hull-title .title-name {\n    display: block;\n    font-size: 20px;\n}\n\n.hull-title .title-desc {\n    display: block;\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n}\n\n.hull-canvas-wrap {\n    flex: 1;\n    min-height: 200px;\n    position: relative;\n    border: 1px solid rgba(140, 180, 255, 0.15);\n}\n\n.hull-canvas {\n    position: absolute !important;\n    top: 0;\n    left: 0;\n}\n\n.shipyard-hint {\n    font-family: sans-serif;\n    font-size: 12px;\n    color: #9fb2d8;\n    text-align: center;\n}\n\n.ship-stats {\n    display: grid;\n    grid-template-columns: repeat(4, 1fr);\n    gap: 6px;\n}\n\n.stat {\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    padding: 4px 6px;\n}\n\n.stat-label {\n    display: block;\n    font-family: sans-serif;\n    font-size: 10px;\n    color: #9fb2d8;\n    text-transform: uppercase;\n}\n\n.stat-value {\n    font-size: 14px;\n}\n\n.module-palette {\n    display: flex;\n    flex-direction: column;\n    gap: 6px;\n    margin-bottom: 12px;\n}\n\n.module-item {\n    display: flex;\n    gap: 8px;\n    align-items: center;\n    padding: 5px;\n    border: 1px solid rgba(140, 180, 255, 0.2);\n    cursor: grab;\n    touch-action: none;\n}\n\n.module-item:hover {\n    border-color: rgba(200, 220, 255, 0.6);\n}\n\n.module-item.armed {\n    border-color: rgba(140, 255, 160, 0.9);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.4);\n}\n\n.module-item.unaffordable {\n    opacity: 0.45;\n}\n\n.module-icon {\n    flex: none;\n}\n\n.module-info {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #9fb2d8;\n    min-width: 0;\n}\n\n.module-name {\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #dfe9ff;\n}\n\n.module-price {\n    color: #ffe08a;\n    margin-top: 2px;\n}\n\n.inspector {\n    font-family: sans-serif;\n    font-size: 12px;\n}\n\n.inspector p {\n    margin: 4px 0;\n}\n\n.inspector .muted {\n    color: #9fb2d8;\n}\n\n.inspector-name {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n}\n\n.inspector-stats {\n    margin: 4px 0;\n}\n\n.inspector-next {\n    color: #9fb2d8;\n    margin-bottom: 8px;\n}\n\n.inspector-actions {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 6px;\n}\n\n.sy-button {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #dfe9ff;\n    background: rgba(40, 70, 130, 0.5);\n    border: 1px solid rgba(140, 180, 255, 0.6);\n    padding: 6px 14px;\n    cursor: pointer;\n}\n\n.sy-button:hover:not(:disabled) {\n    background: rgba(60, 100, 180, 0.7);\n    box-shadow: 0 0 8px rgba(140, 180, 255, 0.5);\n}\n\n.sy-button:disabled {\n    opacity: 0.4;\n    cursor: not-allowed;\n}\n\n.sy-button.small {\n    font-size: 11px;\n    padding: 3px 8px;\n}\n\n.sy-button.primary {\n    border-color: rgba(140, 255, 160, 0.8);\n    background: rgba(40, 110, 60, 0.5);\n}\n\n.sy-button.buy {\n    border-color: rgba(255, 220, 130, 0.8);\n    background: rgba(110, 90, 30, 0.5);\n}\n\n.sy-button.danger {\n    border-color: rgba(255, 130, 110, 0.7);\n    background: rgba(110, 40, 30, 0.5);\n}\n\n.shipyard-message {\n    position: absolute;\n    bottom: 24px;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 8px 16px;\n    border: 1px solid rgba(140, 180, 255, 0.5);\n    background: rgba(10, 20, 40, 0.95);\n    opacity: 0;\n    transition: opacity 0.2s;\n    pointer-events: none;\n}\n\n.shipyard-message.visible {\n    opacity: 1;\n}\n\n.drag-ghost {\n    position: fixed !important;\n    z-index: 30;\n    pointer-events: none;\n}\n\n@media (max-width: 900px) {\n    .shipyard-body {\n        grid-template-columns: 1fr;\n        grid-template-rows: none;\n        overflow-y: auto;\n    }\n\n    .hull-canvas-wrap {\n        min-height: 260px;\n    }\n\n    .ship-stats {\n        grid-template-columns: repeat(2, 1fr);\n    }\n}\n\n.hud-bar.cargo .hud-bar-fill {\n    background: #c8aaff;\n}\n\n.menu-tip {\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n/* ---------------------------------------------------------------- Shipyard tabs & market */\n\n.shipyard-tabs {\n    display: flex;\n    gap: 4px;\n}\n\n.sy-tab {\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    color: #9fb2d8;\n    background: transparent;\n    border: 1px solid rgba(140, 180, 255, 0.3);\n    padding: 5px 14px;\n    cursor: pointer;\n}\n\n.sy-tab.active {\n    color: #dfe9ff;\n    border-color: rgba(140, 255, 160, 0.8);\n    box-shadow: 0 0 8px rgba(140, 255, 160, 0.3);\n}\n\n.shipyard-market {\n    flex: 1;\n    padding: 12px;\n    min-height: 0;\n    overflow-y: auto;\n}\n\n.market-panel {\n    max-width: 720px;\n    margin: 0 auto;\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.market-panel .muted {\n    color: #9fb2d8;\n}\n\n.market-warning {\n    color: #ffc98a;\n}\n\n.market-section {\n    margin-top: 20px !important;\n}\n\n.market-table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 10px 0 14px;\n}\n\n.market-table th {\n    text-align: left;\n    font-family: Bungee, sans-serif;\n    font-weight: normal;\n    font-size: 11px;\n    color: #9fc0ff;\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.3);\n}\n\n.market-table td {\n    padding: 6px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.1);\n}\n\n.market-table tr.empty td {\n    color: #6c7a99;\n}\n\n.material-name {\n    font-family: Bungee, sans-serif;\n}\n\n.swatch {\n    display: inline-block;\n    width: 10px;\n    height: 10px;\n    margin-right: 8px;\n    transform: rotate(45deg);\n}\n\n/* ---------------------------------------------------------------- Shield toggle */\n\n.shield-button {\n    position: fixed;\n    top: 12px;\n    left: 50%;\n    transform: translateX(-50%);\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 16px;\n    color: #dff4ff;\n    background: rgba(10, 30, 60, 0.75);\n    border: 1px solid rgba(120, 210, 255, 0.8);\n    box-shadow: 0 0 10px rgba(120, 210, 255, 0.45);\n    cursor: pointer;\n}\n\n.shield-button.down {\n    color: #ffd9a0;\n    border-color: rgba(255, 190, 110, 0.8);\n    box-shadow: 0 0 10px rgba(255, 170, 80, 0.35);\n}\n\n.shield-button.depleted {\n    color: #ff9c8a;\n    border-color: rgba(255, 110, 90, 0.8);\n    box-shadow: none;\n}\n\n.shield-button.none {\n    opacity: 0.5;\n}\n\n/* ---------------------------------------------------------------- Cargo hold */\n\n.cargo-button {\n    position: fixed;\n    top: 12px;\n    right: 16px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #eadcff;\n    background: rgba(30, 15, 60, 0.75);\n    border: 1px solid rgba(200, 170, 255, 0.8);\n    box-shadow: 0 0 10px rgba(200, 170, 255, 0.35);\n    cursor: pointer;\n}\n\n.cargo-panel {\n    position: fixed;\n    top: 52px;\n    right: 16px;\n    z-index: 7;\n    width: 320px;\n    max-width: calc(100vw - 32px);\n    padding: 10px 12px;\n    color: #dfe9ff;\n    font-family: sans-serif;\n    font-size: 12px;\n    background: rgba(5, 12, 26, 0.92);\n    border: 1px solid rgba(200, 170, 255, 0.6);\n    box-shadow: 0 0 14px rgba(200, 170, 255, 0.25);\n}\n\n.cargo-header {\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n    font-family: Bungee, sans-serif;\n    font-size: 14px;\n    margin-bottom: 6px;\n}\n\n.cargo-capacity {\n    height: 8px;\n    border: 1px solid rgba(255, 255, 255, 0.5);\n    margin-bottom: 4px;\n}\n\n.cargo-capacity-fill {\n    height: 100%;\n    background: #c8aaff;\n}\n\n.cargo-sub {\n    color: #9fb2d8;\n    margin: 4px 0;\n}\n\n.cargo-panel table {\n    width: 100%;\n    border-collapse: collapse;\n    margin: 6px 0;\n}\n\n.cargo-panel td {\n    padding: 4px 2px;\n    border-bottom: 1px solid rgba(140, 180, 255, 0.12);\n    white-space: nowrap;\n}\n\n.cargo-panel td:first-child {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n}\n\n.cargo-panel button {\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    margin-left: 3px;\n    padding: 2px 6px;\n    color: #ffd9cc;\n    background: rgba(110, 40, 30, 0.5);\n    border: 1px solid rgba(255, 140, 110, 0.6);\n    cursor: pointer;\n}\n\n.cargo-panel .cargo-header button {\n    font-size: 14px;\n    color: #dfe9ff;\n    background: transparent;\n    border: none;\n}\n\n.cargo-panel .cargo-eject-all {\n    width: 100%;\n    margin: 6px 0 0;\n    padding: 5px;\n}\n\n/* ---------------------------------------------------------------- Debug mode */\n\n.debug-menu {\n    cursor: pointer;\n    opacity: 0.6;\n}\n\n.debug-menu.on {\n    opacity: 1;\n    color: #ff7a6a;\n}\n\n.sy-tab.debug-toggle.active {\n    color: #ffb0a0;\n    border-color: rgba(255, 120, 100, 0.9);\n    box-shadow: 0 0 8px rgba(255, 120, 100, 0.4);\n}\n\n/* ---------------------------------------------------------------- DHD */\n\n.dhd-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    align-items: center;\n    justify-content: center;\n    background: rgba(2, 4, 10, 0.72);\n    user-select: none;\n}\n\n.dhd-overlay.open {\n    display: flex;\n}\n\n.dhd-overlay canvas,\n.starmap-overlay canvas {\n    position: static;\n}\n\n.dhd-panel {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 6px;\n    padding: 14px;\n    color: #f0e2cf;\n    background: rgba(20, 16, 12, 0.92);\n    border: 1px solid rgba(240, 160, 90, 0.5);\n    box-shadow: 0 0 20px rgba(240, 140, 60, 0.25);\n    max-height: 100vh;\n    overflow-y: auto;\n}\n\n.dhd-header {\n    width: 100%;\n    display: flex;\n    justify-content: space-between;\n    align-items: center;\n}\n\n.dhd-title {\n    font-size: 16px;\n}\n\n.dhd-canvas {\n    cursor: pointer;\n}\n\n.dhd-status {\n    font-family: sans-serif;\n    font-size: 13px;\n    min-height: 1.2em;\n    color: #c8f0c0;\n}\n\n.dhd-status.error {\n    color: #ff9c8a;\n}\n\n.dhd-actions {\n    display: flex;\n    gap: 10px;\n    align-items: center;\n    max-width: 520px;\n}\n\n.dhd-hint {\n    font-family: sans-serif;\n    font-size: 11px;\n    color: #b8a890;\n}\n\n/* ---------------------------------------------------------------- Starmap */\n\n.starmap-overlay {\n    position: fixed;\n    inset: 0;\n    z-index: 25;\n    display: none;\n    background: rgb(3, 6, 14);\n    user-select: none;\n}\n\n.starmap-overlay.open {\n    display: flex;\n}\n\n.starmap-canvas {\n    flex: 1;\n    min-width: 0;\n    height: 100%;\n    cursor: grab;\n}\n\n.starmap-side {\n    width: 320px;\n    padding: 16px;\n    overflow-y: auto;\n    color: #dfe9ff;\n    background: rgba(8, 14, 30, 0.95);\n    border-left: 1px solid rgba(140, 180, 255, 0.3);\n    font-family: sans-serif;\n    font-size: 13px;\n}\n\n.starmap-title {\n    font-family: Bungee, sans-serif;\n    font-size: 22px;\n}\n\n.starmap-hint,\n.starmap-side .muted {\n    color: #9fb2d8;\n    font-size: 12px;\n}\n\n.starmap-here {\n    margin: 12px 0;\n    color: #8cffa0;\n}\n\n.starmap-name {\n    font-family: Bungee, sans-serif;\n    font-size: 20px;\n}\n\n.starmap-galaxy {\n    color: #9fc0ff;\n}\n\n.starmap-label {\n    margin-top: 12px;\n    font-family: Bungee, sans-serif;\n    font-size: 12px;\n    color: #9fc0ff;\n}\n\n.starmap-glyphs {\n    display: block;\n    margin: 6px 0;\n}\n\n.starmap-side .sy-button {\n    margin-top: 10px;\n}\n\n@media (max-width: 760px) {\n    .starmap-overlay.open {\n        flex-direction: column;\n    }\n\n    .starmap-side {\n        width: auto;\n        max-height: 45vh;\n    }\n}\n\n.starmap-button {\n    position: fixed;\n    top: 12px;\n    right: 200px;\n    z-index: 6;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    padding: 6px 14px;\n    color: #dfe9ff;\n    background: rgba(10, 25, 60, 0.75);\n    border: 1px solid rgba(140, 190, 255, 0.8);\n    box-shadow: 0 0 10px rgba(140, 190, 255, 0.35);\n    cursor: pointer;\n}\n\n/* Backdrop behind the game canvas: system nebula tint and the distant planet. */\n.backdrop {\n    position: fixed;\n    inset: 0;\n    z-index: 0;\n    pointer-events: none;\n    overflow: hidden;\n}\n\n#gameboard > canvas {\n    z-index: 1;\n}\n\n.backdrop canvas.backdrop-planet {\n    position: absolute;\n    top: 0;\n    left: 0;\n    will-change: transform;\n}\n\n/* ---------------------------------------------------------------- Touch controls */\n\nhtml, body {\n    overscroll-behavior: none;\n    -webkit-tap-highlight-color: transparent;\n    -webkit-touch-callout: none;\n}\n\n.touch-help {\n    display: none;\n}\n\nbody.touch .touch-help {\n    display: block;\n}\n\nbody.touch .menu h4:not(.touch-help):not(.menu-tip):not(.menu-action) {\n    display: none;\n}\n\n.touch-ui {\n    position: fixed;\n    inset: 0;\n    z-index: 7;\n    pointer-events: none;\n    user-select: none;\n    -webkit-user-select: none;\n}\n\n.touch-stick {\n    position: fixed;\n    left: 110px;\n    top: calc(100% - 110px);\n    width: 120px;\n    height: 120px;\n    margin: -60px 0 0 -60px;\n    border-radius: 50%;\n    border: 2px solid rgba(140, 190, 255, 0.35);\n    background: rgba(20, 40, 80, 0.18);\n    opacity: 0.55;\n}\n\n.touch-stick.active {\n    opacity: 1;\n}\n\n.touch-knob {\n    position: absolute;\n    left: 50%;\n    top: 50%;\n    width: 54px;\n    height: 54px;\n    border-radius: 50%;\n    transform: translate(-50%, -50%);\n    background: rgba(140, 190, 255, 0.45);\n    border: 2px solid rgba(200, 225, 255, 0.8);\n    box-shadow: 0 0 12px rgba(120, 180, 255, 0.5);\n}\n\n.touch-buttons {\n    position: fixed;\n    right: max(12px, env(safe-area-inset-right));\n    bottom: max(12px, env(safe-area-inset-bottom));\n    display: grid;\n    grid-template-columns: repeat(2, 64px);\n    gap: 10px;\n    direction: rtl;\n}\n\n.touch-button {\n    pointer-events: auto;\n    touch-action: none;\n    direction: ltr;\n    width: 64px;\n    height: 64px;\n    border-radius: 50%;\n    font-family: Bungee, sans-serif;\n    font-size: 10px;\n    color: #e6f0ff;\n    background: rgba(10, 25, 60, 0.6);\n    border: 2px solid rgba(140, 190, 255, 0.7);\n    box-shadow: 0 0 10px rgba(120, 180, 255, 0.3);\n    padding: 0;\n}\n\n.touch-button.pressed {\n    background: rgba(90, 150, 255, 0.55);\n    border-color: #fff;\n}\n\n.touch-button.missile {\n    border-color: rgba(255, 150, 90, 0.85);\n    color: #ffe2cc;\n}\n\n.touch-button.interact {\n    border-color: rgba(140, 255, 170, 0.9);\n    color: #d8ffe0;\n    background: rgba(10, 60, 30, 0.6);\n}\n\n.touch-corner {\n    position: fixed;\n    left: 50%;\n    bottom: max(8px, env(safe-area-inset-bottom));\n    transform: translateX(-50%);\n    display: flex;\n    gap: 8px;\n}\n\n.touch-button.small {\n    width: 40px;\n    height: 40px;\n    font-size: 14px;\n    border-radius: 8px;\n}\n\n.touch-rotate {\n    position: fixed;\n    top: 40%;\n    left: 50%;\n    transform: translateX(-50%);\n    padding: 10px 16px;\n    font-family: Bungee, sans-serif;\n    font-size: 13px;\n    color: #fff;\n    text-align: center;\n    background: rgba(0, 0, 0, 0.7);\n    border: 1px solid rgba(255, 255, 255, 0.4);\n}\n\n/* Compact HUD on touch screens: stats top-left, shield/cargo/map buttons stacked below. */\nbody.touch .info {\n    font-size: 11px;\n    margin: max(4px, env(safe-area-inset-top)) 0 0 max(6px, env(safe-area-inset-left));\n}\n\nbody.touch #fps {\n    display: none;\n}\n\nbody.touch .hud-bar-row {\n    font-size: 10px;\n    margin: 1px 0;\n}\n\nbody.touch .hud-bar-label {\n    width: 42px;\n}\n\nbody.touch .hud-bar {\n    width: 84px;\n    height: 6px;\n}\n\nbody.touch .hud-bar-text {\n    font-size: 9px;\n}\n\nbody.touch .shield-button,\nbody.touch .cargo-button,\nbody.touch .starmap-button {\n    left: max(6px, env(safe-area-inset-left));\n    right: auto;\n    transform: none;\n    font-size: 10px;\n    padding: 6px 10px;\n    min-width: 110px;\n}\n\nbody.touch .shield-button {\n    top: 92px;\n}\n\nbody.touch .cargo-button {\n    top: 124px;\n}\n\nbody.touch .starmap-button {\n    top: 156px;\n}\n\nbody.touch .cargo-panel {\n    z-index: 8;\n    top: 8px;\n    right: 8px;\n    max-height: 80vh;\n    overflow-y: auto;\n}\n\nbody.touch .dhd-canvas {\n    width: min(520px, 92vw, 58vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-address {\n    width: min(520px, 92vw, 80vh) !important;\n    height: auto !important;\n}\n\nbody.touch .dhd-hint {\n    display: none;\n}\n\nbody.touch .dhd-panel {\n    padding: 8px;\n}\n\nbody.touch .dhd-actions {\n    flex-wrap: wrap;\n    justify-content: center;\n    max-width: 92vw;\n}\n\nbody.touch .starmap-canvas {\n    touch-action: none;\n    cursor: default;\n}\n\n@media (max-height: 500px) and (orientation: landscape) {\n    body.touch .starmap-overlay.open {\n        flex-direction: row;\n    }\n\n    body.touch .starmap-side {\n        width: 240px;\n        max-height: none;\n        padding: 10px;\n    }\n\n    body.touch .starmap-title {\n        font-size: 16px;\n    }\n\n    body.touch .menu {\n        top: 4vh;\n        max-height: 92vh;\n        overflow-y: auto;\n    }\n\n    body.touch .menu h1 {\n        margin-top: 10px;\n    }\n}\n\n/* ---------------------------------------------------------------- Shipyard module popover */\n\n.module-popover {\n    position: absolute;\n    z-index: 2;\n    padding: 6px 8px 5px;\n    background: rgba(6, 14, 30, 0.94);\n    border: 1px solid rgba(140, 190, 255, 0.55);\n    box-shadow: 0 0 14px rgba(90, 150, 255, 0.3);\n    pointer-events: auto;\n    user-select: none;\n}\n\n.popover-name {\n    font-family: Bungee, sans-serif;\n    font-size: 11px;\n    color: #dfe9ff;\n    margin-bottom: 5px;\n    white-space: nowrap;\n}\n\n.popover-actions {\n    display: flex;\n    gap: 8px;\n}\n\n.popover-action {\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    gap: 2px;\n}\n\n.icon-button {\n    width: 34px;\n    height: 34px;\n    padding: 6px;\n    cursor: pointer;\n    color: #bff0c8;\n    background: rgba(30, 90, 60, 0.55);\n    border: 1px solid rgba(140, 255, 170, 0.7);\n    border-radius: 4px;\n}\n\n.icon-button svg {\n    width: 100%;\n    height: 100%;\n    fill: currentColor;\n    display: block;\n}\n\n.icon-button:hover:not(:disabled) {\n    background: rgba(50, 140, 90, 0.75);\n    color: #fff;\n}\n\n.icon-button.danger {\n    color: #ffc2b5;\n    background: rgba(110, 30, 25, 0.55);\n    border-color: rgba(255, 130, 110, 0.75);\n}\n\n.icon-button.danger:hover:not(:disabled) {\n    background: rgba(170, 50, 40, 0.8);\n    color: #fff;\n}\n\n.icon-button:disabled {\n    cursor: not-allowed;\n    opacity: 0.35;\n    filter: grayscale(1);\n}\n\n.popover-caption {\n    font-family: Bungee, sans-serif;\n    font-size: 9px;\n    color: #9fb2d8;\n    white-space: nowrap;\n}\n\n/* 3D view layers: WebGL scene < main canvas (effects, HUD). */\n#gameboard > canvas.gl-layer {\n    position: fixed;\n    top: 0;\n    left: 0;\n    z-index: 2;\n    pointer-events: none;\n}\n\n#gameboard > canvas.main-layer {\n    z-index: 3;\n}\n", ""]);
 
 // exports
 
 
 /***/ }),
-/* 31 */
+/* 32 */
 /***/ (function(module, exports) {
 
 /*
@@ -12813,7 +13486,7 @@ function toComment(sourceMap) {
 
 
 /***/ }),
-/* 32 */
+/* 33 */
 /***/ (function(module, exports, __webpack_require__) {
 
 /*
@@ -12869,7 +13542,7 @@ var singleton = null;
 var	singletonCounter = 0;
 var	stylesInsertedAtTop = [];
 
-var	fixUrls = __webpack_require__(33);
+var	fixUrls = __webpack_require__(34);
 
 module.exports = function(list, options) {
 	if (typeof DEBUG !== "undefined" && DEBUG) {
@@ -13185,7 +13858,7 @@ function updateLink (link, options, obj) {
 
 
 /***/ }),
-/* 33 */
+/* 34 */
 /***/ (function(module, exports) {
 
 

@@ -4,7 +4,7 @@ import { createSprite } from './sprites';
 
 const cache = {};
 
-const PALETTES = {
+export const PALETTES = {
     ocean: { base: [40, 90, 170], dark: [10, 30, 70], land: [70, 140, 120], cloud: [235, 245, 255], atmosphere: '120,180,255' },
     earth: { base: [40, 80, 160], dark: [10, 25, 60], land: [70, 130, 70], cloud: [245, 248, 255], atmosphere: '130,180,255' },
     desert: { base: [200, 160, 100], dark: [90, 60, 30], land: [170, 120, 70], cloud: [240, 225, 200], atmosphere: '240,200,140' },

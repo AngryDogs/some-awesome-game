@@ -93,6 +93,14 @@ const buildSymbols = () => createSprite(GATE_RADIUS * 2, GATE_RADIUS * 2, ctx =>
     }
 }, 2);
 
+export { CHEVRON_ANGLES };
+
+// The inner symbol ring image (also used as the 3D ring's texture).
+export const gateSymbolSprite = () => {
+    if(!symbolSprite) symbolSprite = buildSymbols();
+    return symbolSprite;
+};
+
 class Stargate {
 
     constructor(x, y) {
@@ -249,7 +257,9 @@ class Stargate {
         }
     }
 
-    draw(ctx, time) {
+    // `effectsOnly`: the 3D view draws the ring, symbols and chevrons; only the event
+    // horizon, kawoosh and chevron glow are drawn here.
+    draw(ctx, time, effectsOnly) {
         if(!ringSprite) ringSprite = buildRing();
         if(!symbolSprite) symbolSprite = buildSymbols();
         const R = GATE_RADIUS;
@@ -268,20 +278,29 @@ class Stargate {
             this.drawHorizon(ctx, time, fade);
         }
 
-        ctx.save();
-        ctx.rotate(this.spin);
-        ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
-        ctx.restore();
-        ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
+        if(!effectsOnly) {
+            ctx.save();
+            ctx.rotate(this.spin);
+            ctx.drawImage(symbolSprite.canvas, -R, -R, R * 2, R * 2);
+            ctx.restore();
+            ctx.drawImage(ringSprite.canvas, -R - 10, -R - 10, R * 2 + 20, R * 2 + 20);
+        }
 
         // Chevrons: locked ones glow.
         CHEVRON_ANGLES.forEach((a, i) => {
             const order = LOCK_ORDER.indexOf(i);
             const lit = order !== -1 && order < this.locked;
             const engaging = this.state === 'dialing' && this.lockFlash > 0 && order === this.locked - 1;
+            if(effectsOnly && !lit) return;
             ctx.save();
             ctx.rotate(a + Math.PI / 2);
             ctx.translate(0, -R + 2);
+            if(effectsOnly) {
+                ctx.globalCompositeOperation = 'lighter';
+                stamp(ctx, glowSprite('255,120,40'), 0, 2, 26, 26);
+                ctx.restore();
+                return;
+            }
             ctx.fillStyle = 'rgb(120, 118, 125)';
             ctx.strokeStyle = 'rgb(35, 35, 42)';
             ctx.lineWidth = 1;
@@ -408,10 +427,21 @@ class Stargate {
     }
 
     // DHD pedestal: octagonal base, two rings of keys, red dome. Glows when you're in range.
-    drawDHD(ctx, time, inRange) {
+    // `effectsOnly`: the 3D view draws the pedestal; only the glow and label are drawn here.
+    drawDHD(ctx, time, inRange, effectsOnly) {
         const d = this.dhd;
         ctx.save();
         ctx.translate(d.x, d.y);
+        if(effectsOnly) {
+            if(this.busy || inRange) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = this.busy ? 1 : (0.6 + 0.4 * Math.sin(time * 3)) * 0.6;
+                stamp(ctx, glowSprite('255,90,50'), 0, 0, 40, 40);
+            }
+            ctx.restore();
+            this.drawDHDLabel(ctx, inRange);
+            return;
+        }
         ctx.fillStyle = 'rgb(70, 68, 66)';
         ctx.strokeStyle = 'rgb(30, 28, 26)';
         ctx.lineWidth = 1.5;
@@ -442,13 +472,23 @@ class Stargate {
             stamp(ctx, glowSprite('255,90,50'), 0, 0, 40, 40);
         }
         ctx.restore();
+        this.drawDHDLabel(ctx, inRange);
+    }
 
+    drawDHDLabel(ctx, inRange) {
+        const d = this.dhd;
         ctx.save();
         ctx.font = '11px Bungee, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = inRange ? 'rgba(140, 255, 160, 0.95)' : 'rgba(200, 210, 230, 0.6)';
         ctx.fillText(inRange ? 'DHD · press B' : 'DHD', d.x, d.y + 46);
         ctx.restore();
+    }
+
+    // Which chevrons are lit (for the 3D view), by chevron index 0-8.
+    chevronLit(index) {
+        const order = LOCK_ORDER.indexOf(index);
+        return order !== -1 && order < this.locked;
     }
 }
 
