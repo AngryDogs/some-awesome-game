@@ -47,6 +47,8 @@ jobs:
           workspaces: native
       - name: Build
         run: cargo build --release
+      - name: Test (every embedded sound decodes)
+        run: cargo test --release
       - name: Package
         run: |
           mkdir -p dist/SomeAwesomeGame

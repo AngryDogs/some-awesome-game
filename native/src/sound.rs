@@ -103,7 +103,19 @@ impl Loops {
 
 pub fn setup_sounds(mut sounds: ResMut<Sounds>, mut sources: ResMut<Assets<AudioSource>>) {
     for (name, variants) in library() {
-        let handles = variants.into_iter().map(|bytes| sources.add(AudioSource { bytes: Arc::from(bytes) })).collect();
+        // Bevy's audio player crashes on a file it can't decode, so check each one up front
+        // with the same decoder and leave out any that fail.
+        let handles = variants
+            .into_iter()
+            .filter(|bytes| match rodio::Decoder::new(std::io::Cursor::new(*bytes)) {
+                Ok(_) => true,
+                Err(e) => {
+                    warn!("sound '{name}' can't be decoded and is left out: {e}");
+                    false
+                }
+            })
+            .map(|bytes| sources.add(AudioSource { bytes: Arc::from(bytes) }))
+            .collect();
         sounds.clips.insert(name, handles);
     }
 }
@@ -140,5 +152,28 @@ pub fn update_loops(mut commands: Commands, sounds: Res<Sounds>, loops: Res<Loop
         if let Some(handle) = sounds.clip(name) {
             commands.spawn((AudioPlayer::new(handle), PlaybackSettings { mode: PlaybackMode::Loop, volume: Volume::Linear(*volume), ..default() }, Loop(name)));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn every_sound_decodes() {
+        let mut broken = Vec::new();
+        for (name, variants) in super::library() {
+            for (i, bytes) in variants.iter().enumerate() {
+                match rodio::Decoder::new(std::io::Cursor::new(*bytes)) {
+                    Ok(d) => {
+                        let samples = d.count();
+                        println!("{name}[{i}]: {samples} samples");
+                        if samples == 0 {
+                            broken.push(format!("{name}[{i}]: no audio"));
+                        }
+                    }
+                    Err(e) => broken.push(format!("{name}[{i}]: {e:?}")),
+                }
+            }
+        }
+        assert!(broken.is_empty(), "undecodable sounds: {broken:#?}");
     }
 }
